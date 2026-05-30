@@ -1,11 +1,12 @@
 """Nastya Bot — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture (v4.0):
+Architecture (v5.0):
   - ErrorHandlingMiddleware — catches ALL exceptions, bot NEVER crashes
-  - AI Router with fallback chain: Chutes → Pollinations → OpenRouter → Cerebras
+  - AI Router: Pollinations (GPT-4o-mini) → Chutes (DeepSeek V3) → fallback chain
   - Per-operation DB connections — no stale connections
   - Stars donations with ACTIVE Pay buttons via send_invoice
   - Deep links from GitHub Pages → /start donate_NNN → sends invoice
+  - 30-day context memory (50 messages)
   - Proactive messages via asyncio background task
   - Keep-alive chain via GH PAT trigger
   - No Flask — simplified, runs pure aiogram polling
@@ -64,7 +65,7 @@ class ErrorHandlingMiddleware(BaseMiddleware):
                 if chat_id and bot:
                     await bot.send_message(
                         chat_id,
-                        "Ой, Настя на секунду зависла... но уже вернулась! 😵‍💫💕",
+                        "Ой, у Насти голова разболелась... но уже проходит! 😵‍💫💕",
                     )
             except Exception:
                 pass

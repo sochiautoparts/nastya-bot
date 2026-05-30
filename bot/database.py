@@ -201,8 +201,8 @@ class Database:
         )
         await self._db.commit()
 
-    async def get_history(self, user_id: int, limit: int = 30, max_age_hours: int = 2) -> List[Dict[str, str]]:
-        """Get recent chat history. 2 hours by default for context."""
+    async def get_history(self, user_id: int, limit: int = 50, max_age_hours: int = 720) -> List[Dict[str, str]]:
+        """Get recent chat history. 30 days (720h) by default for context."""
         cutoff = time.time() - (max_age_hours * 3600)
         messages = []
         async with self._db.execute(

@@ -1,11 +1,14 @@
-"""Voice transcription — HuggingFace Whisper (free tier) or skip."""
+"""Voice transcription — uses Groq Whisper (free tier) or HuggingFace."""
 import logging
-import tempfile
 import os
 from typing import Optional
 import httpx
 
 logger = logging.getLogger(__name__)
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+if GROQ_API_KEY in ("not_configured", "NOT_CONFIGURED", ""):
+    GROQ_API_KEY = ""
 
 HF_API_KEY = os.environ.get("HUGGINGFACE_API_KEY", "")
 if HF_API_KEY in ("not_configured", "NOT_CONFIGURED", ""):
@@ -13,49 +16,44 @@ if HF_API_KEY in ("not_configured", "NOT_CONFIGURED", ""):
 
 
 async def transcribe_voice_ogg(ogg_bytes: bytes) -> Optional[str]:
-    """Transcribe voice message using HuggingFace Whisper API.
-    Falls back gracefully if no key or API fails.
-    """
-    if not HF_API_KEY:
-        logger.debug("No HuggingFace API key for voice transcription")
-        return None
+    """Transcribe voice message. Try Groq first (fast), then HuggingFace."""
 
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
-            f.write(ogg_bytes)
-            tmp_path = f.name
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            with open(tmp_path, "rb") as audio_file:
+    # Try Groq Whisper first — fast and free tier available
+    if GROQ_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
-                    "https://api-inference.huggingface.co/models/openai/whisper-large-v3",
-                    headers={"Authorization": f"Bearer {HF_API_KEY}"},
-                    data=ogg_bytes,
-                    files={"file": ("voice.ogg", audio_file, "audio/ogg")},
-                    data={
-                        "model": "whisper-large-v3",
-                        "language": "ru",
-                        "response_format": "json",
-                    },
+                    "https://api.groq.com/openai/v1/audio/transcriptions",
+                    headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+                    files={"file": ("voice.ogg", ogg_bytes, "audio/ogg")},
+                    data={"model": "whisper-large-v3", "language": "ru", "response_format": "json"},
                 )
                 response.raise_for_status()
                 data = response.json()
                 text = data.get("text", "").strip()
                 if text:
-                    logger.info(f"Voice transcribed: {text[:50]}...")
+                    logger.info(f"Voice transcribed (Groq): {text[:50]}...")
                     return text
-                return None
+        except Exception as e:
+            logger.warning(f"Groq Whisper error: {e}")
 
-    except httpx.HTTPStatusError as e:
-        logger.warning(f"Whisper API HTTP error: {e.response.status_code}")
-        return None
-    except httpx.TimeoutException:
-        logger.warning("Whisper API timeout")
-        return None
-    except Exception as e:
-        logger.warning(f"Voice transcription error: {e}")
-        return None
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+    # Fallback: HuggingFace Whisper
+    if HF_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    "https://api-inference.huggingface.co/models/openai/whisper-large-v3",
+                    headers={"Authorization": f"Bearer {HF_API_KEY}"},
+                    data=ogg_bytes,
+                )
+                response.raise_for_status()
+                data = response.json()
+                text = data.get("text", "").strip()
+                if text:
+                    logger.info(f"Voice transcribed (HF): {text[:50]}...")
+                    return text
+        except Exception as e:
+            logger.warning(f"HuggingFace Whisper error: {e}")
+
+    logger.debug("No voice transcription available")
+    return None

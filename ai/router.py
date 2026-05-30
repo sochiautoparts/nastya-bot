@@ -1,5 +1,7 @@
 """AI Router — stable routing with retries and fallback chains.
 Supports text, vision (image understanding), and voice transcription.
+
+Chain: Pollinations (GPT-4o-mini, fast) → Chutes (DeepSeek V3, free) → others
 """
 import logging
 import asyncio
@@ -40,18 +42,18 @@ class AIRouter:
         self._vision_providers: List[str] = []
 
     async def init(self) -> None:
-        # Chutes — primary, free, has vision (DeepSeek VL2)
+        # Pollinations — PRIMARY, free, fast GPT-4o-mini, good Russian
+        pollinations = PollinationsProvider(timeout=PROVIDER_TIMEOUTS.get("text", 30.0))
+        await pollinations.init()
+        self.providers["pollinations"] = pollinations
+        logger.info("Provider: pollinations (GPT-4o-mini, FREE, PRIMARY)")
+
+        # Chutes — second, free, has vision (DeepSeek VL2) + text (DeepSeek V3)
         chutes = ChutesProvider(timeout=PROVIDER_TIMEOUTS.get("text", 30.0))
         await chutes.init()
         self.providers["chutes"] = chutes
         self._vision_providers.append("chutes")
         logger.info("Provider: chutes (DeepSeek V3 + VL2, FREE)")
-
-        # Pollinations — always available fallback
-        pollinations = PollinationsProvider(timeout=PROVIDER_TIMEOUTS.get("text", 30.0))
-        await pollinations.init()
-        self.providers["pollinations"] = pollinations
-        logger.info("Provider: pollinations (FREE)")
 
         # OpenAI-compatible providers with API keys
         for name, base_url, model, api_key in PROVIDER_CONFIGS:
@@ -69,10 +71,10 @@ class AIRouter:
                 except Exception as exc:
                     logger.error(f"Failed to init {name}: {exc}")
 
-        # Build chain
+        # Build chain from config, fallback to default order
         self._chain = [p for p in PROVIDER_CHAIN if p in self.providers]
         if not self._chain:
-            self._chain = ["chutes", "pollinations"]
+            self._chain = ["pollinations", "chutes"]
         logger.info(f"AI chain: {' -> '.join(self._chain)}")
 
     async def close(self) -> None:

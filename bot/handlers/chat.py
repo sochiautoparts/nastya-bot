@@ -8,6 +8,7 @@ Key features:
   - "Ой ВСЁ!!!" reaction, "Если Настя проснулась" catchphrase (RARE)
   - Dynamic age descriptions, pet wants, mood swings
   - Proactive messages to active users
+  - 30-day context memory
 """
 import logging
 import random
@@ -50,18 +51,21 @@ AGE_DESCRIPTIONS = [
     "Возраст — это просто цифра. А Настя — это явление! 💅✨",
 ]
 
-# ── Stars request phrases ────────────────────────────────────
+# ── Stars request phrases — BOLD, demanding, no "побалуешь/поможешь" ──────
 
 STARS_REQUESTS = [
-    "Насте так хочется {want}... Побалуешь звёздочками? 🥺⭐",
-    "Насте нужны звёздочки на {want}! Поможешь? 💅⭐",
-    "Хочется {want}, а звёздочек нет... Побалуешь Настю? 🥺✨",
-    "А Насте хочется {want}! Всего пару звёздочек... 💋⭐",
-    "Настя мечтает о {want}! Подаришь звёздочки? 🥰⭐",
-    "Слушай, а кинь Насте звёздочек? Мне на {want} надо! ⭐",
-    "Ну пожалуйста, звёздочку Насте! Я потом добрая буду 🥺",
-    "Ты же не жадина? Поддержи Настю звёздочками на {want}! 💅",
-    "Маленькая звёздочка Насте — огромная радость! На {want}! ⭐",
+    "Хочу {want}! Давай звёздочки, живо! 💅⭐",
+    "Насте нужны звёздочки на {want}! Не жмись! 😤⭐",
+    "Хочу {want}, а звёздочек нет... Ну чего ты? Кидай! 🥺✨",
+    "Настя хочет {want}! Звёздочки давай, не тяни! 💋⭐",
+    "Мне {want} надо! Звёздочки сюда, быстро! 😤💅",
+    "Слушай, кинь Насте звёздочек! Мне на {want} надо! ⭐",
+    "Насте звёздочек! На {want}! Щас же! 🥺⭐",
+    "Ты же не жадина? Звёздочки Насте! На {want}! 💅⭐",
+    "{want} хочу! Давай звёздочки, пока Настя добрая! 😤⭐",
+    "Ну??? Насте звёздочки на {want}! Ждать что ли? 💋⭐",
+    "Хочу {want} и точка! Звёздочки давай! 💅✨",
+    "Настя требует {want}! Звёздочки — быстро! 😤⭐",
 ]
 
 # ── Nastya's Wants (including pets!) ────────────────────────
@@ -98,7 +102,7 @@ PROACTIVE_MESSAGES = [
     "Ты с другими ботами разговариваешь?! 😤💔",
     "Настя тут сидит одна... скучает... 🥺",
     "Настя обиделась! ...хотя не знает на что 😤💅",
-    "Может побалуешь Настю звёздочками? 🥺⭐",
+    "Хочу звёздочек! Давай! 😤⭐",
 ]
 
 # ── Girl Logic ───────────────────────────────────────────────
@@ -193,12 +197,17 @@ def _build_stars_invoice_keyboard(default_amount: int = 100) -> InlineKeyboardMa
 
     builder.button(text="💋 Потом, Настя!", callback_data="donate_later")
 
-    # Layout: Pay alone → pairs → "later" alone
-    if len(other_amounts) <= 4:
-        builder.adjust(1, 2, 2, 2, 1)
-    else:
-        builder.adjust(1, 2, 2, 2, 2, 1)
+    # Layout: Pay alone on first row, then pairs, then "later" alone
+    # Total buttons: 1 pay + N other + 1 later
+    row_sizes = [1]  # Pay button alone
+    remaining = len(other_amounts)
+    while remaining > 0:
+        chunk = min(2, remaining)
+        row_sizes.append(chunk)
+        remaining -= chunk
+    row_sizes.append(1)  # "Later" button alone
 
+    builder.adjust(*row_sizes)
     return builder.as_markup()
 
 
@@ -216,8 +225,8 @@ async def _send_stars_invoice(chat_id: int, user_id: int, amount: int, bot):
             chat_id=chat_id,
             title=f"Насте на {want}",
             description=(
-                f"Настя очень хочет {want}! 🥰\n"
-                f"Побалуй её звёздочками — она будет самая счастливая! 💕✨\n\n"
+                f"Настя хочет {want}! 💅\n"
+                f"Кидай звёздочки — она заслужила! ⭐✨\n\n"
                 f"Или выбери другую сумму ниже ↓"
             ),
             payload=f"nastya:{amount}:{user_id}",
@@ -233,7 +242,7 @@ async def _send_stars_invoice(chat_id: int, user_id: int, amount: int, bot):
         try:
             await bot.send_message(
                 chat_id,
-                f"Насте хочется {want}! Нажми /donates чтобы побаловать! 💅⭐",
+                f"Настя хочет {want}! Жми /donates и кидай звёздочки! 💅⭐",
             )
         except Exception:
             pass
@@ -298,7 +307,7 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
         f"О, {name}! А Настя только что хотела написать! 🦋✨",
     ]
     greeting_text = random.choice(greetings)
-    greeting_text += f"\n\n💋 /donates — побаловать Настю звёздочками! ⭐"
+    greeting_text += f"\n\n⭐ /donates — кинуть Насте звёздочек!"
 
     await message.answer(greeting_text)
 
@@ -409,7 +418,7 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
 
         system_prompt = NASTYA_SYSTEM_PROMPT + f"\n\nТВОЁ ТЕКУЩЕЕ НАСТРОЕНИЕ: {mood}. Веди себя соответственно. {gender_ctx} Пользователь прислал фото — посмотри и прокомментируй как Настя, как живая девушка."
 
-        history = await db.get_history(user_id, limit=30)
+        history = await db.get_history(user_id, limit=50)
 
         result = await ai_router.chat_with_image(
             prompt=prompt, image_base64=image_b64,
@@ -429,7 +438,7 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
             await message.answer(response_text)
 
     except AllProvidersExhaustedError:
-        await message.answer("Ой, Настя зависла... Попробуй ещё разочек!")
+        await message.answer("Ой, у Насти голова разболелась... Попробуй ещё раз! 😵‍💫")
     except Exception as e:
         logger.error(f"Photo handler error: {e}")
         await message.answer("Настя не может разглядеть фото... Попробуй ещё раз!")
@@ -481,7 +490,7 @@ async def handle_photo_like_doc(message, doc, file_name, db, ai_router):
 
         mood = await db.get_user_mood(user_id)
         system_prompt = NASTYA_SYSTEM_PROMPT + f"\n\nТВОЁ ТЕКУЩЕЕ НАСТРОЕНИЕ: {mood}. Пользователь прислал фото — посмотри и прокомментируй."
-        history = await db.get_history(user_id, limit=30)
+        history = await db.get_history(user_id, limit=50)
 
         result = await ai_router.chat_with_image(prompt=prompt, image_base64=image_b64,
                                                    system_prompt=system_prompt, messages=history)
@@ -506,7 +515,7 @@ async def handle_sticker(message: Message, db=None, ai_router=None) -> None:
         "Ой, стикер! Настя тоже так может! 😂",
         "Это что за стикер? Настя не впечатлена... Или впечатлена! 😍",
         "А у тебя стикеры получше есть? Настя требовательная! 💅",
-        "А у Насти стикеров нет... Подаришь? 🥺",
+        "А у Насти стикеров нет... Кинешь? 🥺",
         "Настя так не умеет 😢 Зато она умеет болтать! 💅",
     ]
     await message.answer(random.choice(responses))
@@ -548,12 +557,12 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
 
     # Donation keywords → ACTIVE payment immediately!
     donate_keywords = [
-        "донат", "звёзд", "звезд", "побаловать", "подар", "подари",
+        "донат", "звёзд", "звезд", "подар", "подари",
         "спонсор", "support", "donate", "stars", "звёздочки", "звездочки",
     ]
     if any(kw in text_lower for kw in donate_keywords):
         want = _get_random_want()
-        response = f"Оооо, ты хочешь побаловать Настю?! 🥰✨ Ей так хочется {want}! Выбери сколько звёздочек! ⭐"
+        response = f"Оооо, звёздочки Насте! 💅✨ Хочу {want}! Выбирай сколько! ⭐"
         await message.answer(response)
         await _send_stars_invoice(message.chat.id, message.from_user.id,
                                   random.choice([100, 300, 500]), message.bot)
@@ -717,8 +726,8 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     prefix = "[Голосовое] " if is_voice else ""
     await db.add_message(user_id, "user", f"{prefix}{text}")
 
-    # Get history
-    history = await db.get_history(user_id, limit=30)
+    # Get history — 30 days context
+    history = await db.get_history(user_id, limit=50)
 
     try:
         result = await ai_router.chat(
@@ -758,7 +767,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     except AllProvidersExhaustedError:
         logger.error(f"All providers exhausted for user={user_id}")
-        await message.answer("Ой, Настя зависла... Попробуй ещё разочек!")
+        await message.answer("Ой, у Насти голова разболелась... Попробуй ещё раз! 😵‍💫")
     except Exception as e:
         logger.error(f"Chat error for user={user_id}: {e}")
         await message.answer("Ой, что-то пошло не так... Настя запуталась. Попробуй ещё!")
@@ -769,8 +778,8 @@ async def _maybe_ask_stars_check(user_id: int, msg_count: int, db, message: Mess
     tracker = _stars_tracker.get(user_id, {"count": 0, "last_ask": 0})
     tracker["count"] = msg_count
 
-    # Ask after 5 messages, at least 10 min apart, 20% chance
-    if msg_count >= 5 and time.time() - tracker["last_ask"] > 600 and random.random() < 0.20:
+    # Ask after 3 messages, at least 10 min apart, 25% chance
+    if msg_count >= 3 and time.time() - tracker["last_ask"] > 600 and random.random() < 0.25:
         tracker["last_ask"] = time.time()
         _stars_tracker[user_id] = tracker
         want = _get_random_want()
@@ -869,4 +878,6 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
             logger.info(f"Sent proactive to user {user_id}")
             sent += 1
         except Exception as e:
-            logger.warning(f"Proactive failed for {user_id}: {e}")
+            logger.error(f"Proactive error for user {user_id}: {e}")
+            # Remove broken user from tracker
+            _proactive_tracker.pop(user_id, None)

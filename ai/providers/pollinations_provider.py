@@ -1,4 +1,5 @@
-"""Pollinations.ai — FREE, unlimited, no API key needed! 🎀"""
+"""Pollinations.ai — FREE, unlimited, no API key needed! 🎀
+Primary provider — uses GPT-4o-mini (fast, good Russian, grammatical)."""
 import logging
 from typing import Any, Dict, List, Optional
 import httpx
@@ -18,7 +19,7 @@ class PollinationsProvider(BaseProvider):
             timeout=httpx.Timeout(self.timeout, connect=15.0),
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
             follow_redirects=True,
-            headers={"User-Agent": "NastyaBot/1.0"},
+            headers={"User-Agent": "NastyaBot/2.0"},
         )
 
     def is_available(self) -> bool:
@@ -28,6 +29,7 @@ class PollinationsProvider(BaseProvider):
         if not self._client:
             await self.init()
 
+        # Use openai model = GPT-4o-mini — fast, good Russian, grammatical
         model: str = kwargs.get("model", "openai")
         system_prompt: str = kwargs.get("system_prompt", "")
         temperature: float = kwargs.get("temperature", 0.85)
