@@ -4,6 +4,7 @@ import logging
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
 from bot.config import DB_PATH
 
 logger = logging.getLogger(__name__)
@@ -13,10 +14,13 @@ CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
     username TEXT,
     first_name TEXT,
+    gender TEXT DEFAULT 'unknown',
     language_code TEXT DEFAULT 'ru',
     created_at REAL,
     total_messages INTEGER DEFAULT 0,
-    last_active REAL
+    last_active REAL,
+    last_mood TEXT DEFAULT 'капризная',
+    last_mood_change REAL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS chat_history (
@@ -48,13 +52,15 @@ CREATE INDEX IF NOT EXISTS idx_donations_user ON donations(user_id);
 
 MOODS = [
     ("капризная", "😤", "Настя в капризном настроении", 0.22),
-    ("любящая", "🥰", "Настя сегодня ласковая", 0.18),
-    ("загадочная", "🔮", "Настя говорит загадками", 0.12),
-    ("модная", "👗", "Настя одержима модой", 0.12),
-    ("ремонтная", "🔨", "Настя одержима ремонтом и дизайном", 0.10),
-    ("философская", "🧘‍♀️", "Настя философствует", 0.10),
-    ("драма", "🎭", "Настя в драме", 0.10),
-    ("щедрая", "💝", "Настя добрая сегодня", 0.06),
+    ("любящая", "🥰", "Настя сегодня ласковая", 0.16),
+    ("загадочная", "🔮", "Настя говорит загадками", 0.10),
+    ("модная", "👗", "Настя одержима модой", 0.10),
+    ("ремонтная", "🔨", "Настя одержима ремонтом", 0.08),
+    ("спортивная", "🏃‍♀️", "Настя в спортивном настроении", 0.08),
+    ("голодная", "🍽️", "Настя хочет есть", 0.08),
+    ("философская", "🧘‍♀️", "Настя философствует", 0.08),
+    ("драма", "🎭", "Настя в драме", 0.06),
+    ("щедрая", "💝", "Настя добрая сегодня", 0.04),
 ]
 
 
@@ -70,7 +76,7 @@ class Database:
         await self._db.execute("PRAGMA synchronous=NORMAL")
         await self._db.executescript(SCHEMA_SQL)
 
-        # Insert moods if empty
+        # Insert moods
         async with self._db.execute("SELECT COUNT(*) FROM nastya_moods") as cur:
             count = (await cur.fetchone())[0]
         if count == 0:
@@ -80,6 +86,22 @@ class Database:
                     (mood, emoji, desc, prob),
                 )
             await self._db.commit()
+
+        # Add gender column if not exists (migration)
+        try:
+            await self._db.execute("ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'unknown'")
+            await self._db.commit()
+        except Exception:
+            pass  # Column already exists
+
+        # Add last_mood columns if not exists
+        try:
+            await self._db.execute("ALTER TABLE users ADD COLUMN last_mood TEXT DEFAULT 'капризная'")
+            await self._db.execute("ALTER TABLE users ADD COLUMN last_mood_change REAL DEFAULT 0")
+            await self._db.commit()
+        except Exception:
+            pass
+
         logger.info(f"Database initialized: {self.db_path}")
 
     async def close(self) -> None:
@@ -89,7 +111,8 @@ class Database:
 
     # ── Users ────────────────────────────────────────────────
 
-    async def get_or_create_user(self, user_id: int, username: str = "", first_name: str = "", language_code: str = "ru") -> Dict:
+    async def get_or_create_user(self, user_id: int, username: str = "",
+                                  first_name: str = "", language_code: str = "ru") -> Dict:
         async with self._db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cur:
             row = await cur.fetchone()
             if row:
@@ -98,12 +121,23 @@ class Database:
 
         now = time.time()
         await self._db.execute(
-            """INSERT OR IGNORE INTO users (user_id, username, first_name, language_code, created_at, total_messages, last_active)
-            VALUES (?, ?, ?, ?, ?, 0, ?)""",
+            """INSERT OR IGNORE INTO users
+            (user_id, username, first_name, gender, language_code, created_at, total_messages, last_active, last_mood, last_mood_change)
+            VALUES (?, ?, ?, 'unknown', ?, ?, 0, ?, 'капризная', 0)""",
             (user_id, username, first_name, language_code, now, now),
         )
         await self._db.commit()
-        return {"user_id": user_id, "username": username, "first_name": first_name, "total_messages": 0}
+        return {"user_id": user_id, "username": username, "first_name": first_name,
+                "gender": "unknown", "total_messages": 0, "last_mood": "капризная"}
+
+    async def set_gender(self, user_id: int, gender: str) -> None:
+        await self._db.execute("UPDATE users SET gender = ? WHERE user_id = ?", (gender, user_id))
+        await self._db.commit()
+
+    async def get_gender(self, user_id: int) -> str:
+        async with self._db.execute("SELECT gender FROM users WHERE user_id = ?", (user_id,)) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else "unknown"
 
     async def increment_messages(self, user_id: int) -> int:
         now = time.time()
@@ -116,6 +150,47 @@ class Database:
             row = await cur.fetchone()
             return row[0] if row else 0
 
+    async def get_user_mood(self, user_id: int) -> str:
+        """Get current mood for user, change it periodically."""
+        async with self._db.execute(
+            "SELECT last_mood, last_mood_change FROM users WHERE user_id = ?", (user_id,)
+        ) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return "капризная"
+            mood, last_change = row
+            # Change mood every 15-30 minutes
+            if time.time() - (last_change or 0) > 900:
+                new_mood = await self._pick_random_mood()
+                await self._db.execute(
+                    "UPDATE users SET last_mood = ?, last_mood_change = ? WHERE user_id = ?",
+                    (new_mood, time.time(), user_id),
+                )
+                await self._db.commit()
+                return new_mood
+            return mood or "капризная"
+
+    async def _pick_random_mood(self) -> str:
+        import random
+        moods = []
+        probs = []
+        async with self._db.execute("SELECT mood, probability FROM nastya_moods") as cur:
+            async for row in cur:
+                moods.append(row[0])
+                probs.append(row[1])
+        if not moods:
+            return "капризная"
+        total = sum(probs)
+        probs = [p / total for p in probs]
+        return random.choices(moods, weights=probs, k=1)[0]
+
+    async def set_user_mood(self, user_id: int, mood: str) -> None:
+        await self._db.execute(
+            "UPDATE users SET last_mood = ?, last_mood_change = ? WHERE user_id = ?",
+            (mood, time.time(), user_id),
+        )
+        await self._db.commit()
+
     # ── Chat History ─────────────────────────────────────────
 
     async def add_message(self, user_id: int, role: str, content: str) -> None:
@@ -126,11 +201,13 @@ class Database:
         )
         await self._db.commit()
 
-    async def get_history(self, user_id: int, limit: int = 30) -> List[Dict[str, str]]:
+    async def get_history(self, user_id: int, limit: int = 30, max_age_hours: int = 2) -> List[Dict[str, str]]:
+        """Get recent chat history. 2 hours by default for context."""
+        cutoff = time.time() - (max_age_hours * 3600)
         messages = []
         async with self._db.execute(
-            "SELECT role, content FROM chat_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-            (user_id, limit),
+            "SELECT role, content FROM chat_history WHERE user_id = ? AND created_at > ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, cutoff, limit),
         ) as cur:
             async for row in cur:
                 messages.append({"role": row[0], "content": row[1]})
@@ -153,7 +230,9 @@ class Database:
         return cur.lastrowid
 
     async def get_total_donated(self, user_id: int) -> int:
-        async with self._db.execute("SELECT COALESCE(SUM(stars_amount),0) FROM donations WHERE user_id = ?", (user_id,)) as cur:
+        async with self._db.execute(
+            "SELECT COALESCE(SUM(stars_amount),0) FROM donations WHERE user_id = ?", (user_id,)
+        ) as cur:
             return (await cur.fetchone())[0]
 
     async def get_donation_count(self, user_id: int) -> int:

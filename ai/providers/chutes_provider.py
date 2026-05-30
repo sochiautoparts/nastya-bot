@@ -1,20 +1,21 @@
-"""Chutes.ai — FREE DeepSeek V3 + Vision support! No API key needed."""
+"""Chutes.ai — FREE DeepSeek V3 + DeepSeek VL2 vision. No API key needed."""
 import logging
-import base64
 from typing import Any, Dict, List, Optional
 import httpx
 from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
+TEXT_MODEL = "deepseek-ai/DeepSeek-V3-0324"
+VISION_MODEL = "deepseek-ai/deepseek-vl2"
+
 
 class ChutesProvider(BaseProvider):
     name: str = "chutes"
+    NO_KEY_PROVIDERS = {"chutes"}
 
     def __init__(self, api_key: str = "", timeout: float = 45.0):
         super().__init__(api_key="", timeout=timeout)
-        self._default_model = "deepseek-ai/DeepSeek-V3-0324"
-        self._vision_model = "deepseek-ai/deepseek-vl2"
 
     async def init(self) -> None:
         self._client = httpx.AsyncClient(
@@ -24,10 +25,10 @@ class ChutesProvider(BaseProvider):
             follow_redirects=True,
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": "NastyaBot/2.0",
+                "User-Agent": "NastyaBot/3.0",
             },
         )
-        logger.info("Chutes provider initialized (DeepSeek V3 + VL2)")
+        logger.info("Chutes provider initialized")
 
     def is_available(self) -> bool:
         return True
@@ -37,29 +38,22 @@ class ChutesProvider(BaseProvider):
             await self.init()
 
         system_prompt: str = kwargs.get("system_prompt", "")
-        temperature: float = kwargs.get("temperature", 0.85)
+        temperature: float = kwargs.get("temperature", 0.8)
         messages_history: Optional[List[Dict[str, Any]]] = kwargs.get("messages")
         image_base64: Optional[str] = kwargs.get("image_base64")
 
         # Build messages
         messages = self._build_messages(prompt, system_prompt, messages_history)
 
-        # If image provided, use vision model
-        model = self._default_model
+        # If image, use vision model with multimodal content
+        model = TEXT_MODEL
         if image_base64:
-            model = self._vision_model
-            # Replace the last user message with multimodal content
+            model = VISION_MODEL
             messages[-1] = {
                 "role": "user",
                 "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}
-                    },
-                    {
-                        "type": "text",
-                        "text": prompt
-                    }
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
+                    {"type": "text", "text": prompt},
                 ]
             }
 
@@ -89,8 +83,8 @@ class ChutesProvider(BaseProvider):
                 tokens_used=usage.get("total_tokens", 0),
             )
 
-        except httpx.TimeoutException as exc:
-            raise ProviderError(self.name, f"Timeout: {exc}", retryable=True)
+        except httpx.TimeoutException:
+            raise ProviderError(self.name, "Timeout", retryable=True)
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
             retryable = status in (429, 500, 502, 503, 504)
@@ -99,3 +93,25 @@ class ChutesProvider(BaseProvider):
             raise
         except Exception as exc:
             raise ProviderError(self.name, f"Error: {exc}", retryable=True)
+
+    @staticmethod
+    def _build_messages(prompt: str, system_prompt: str = "",
+                        history: Optional[List[Dict]] = None) -> List[Dict]:
+        messages: List[Dict] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        if history:
+            for msg in history:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": content})
+        # Avoid duplicate
+        last_is_current = (
+            history and len(history) > 0
+            and history[-1].get("role") == "user"
+            and history[-1].get("content") == prompt
+        )
+        if not last_is_current:
+            messages.append({"role": "user", "content": prompt})
+        return messages

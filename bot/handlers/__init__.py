@@ -1,4 +1,4 @@
-"""Nastya Bot Handlers 🎀"""
+"""Nastya Bot Handlers"""
 from aiogram import Router
 from bot.handlers.chat import router as chat_router
 from bot.handlers.fun import router as fun_router

@@ -1,8 +1,4 @@
-"""Nastya Bot — Main Entry Point
-
-Runs Telegram bot (aiogram 3.x) + Flask API server.
-24/7 via GitHub Actions. Features: VLM, ASR, proactive messages, mood system.
-"""
+"""Nastya Bot — Main Entry Point. Runs Telegram bot + Flask API. 24/7 via GitHub Actions."""
 import asyncio
 import json
 import logging
@@ -10,7 +6,6 @@ import os
 import sys
 import time
 import threading
-from pathlib import Path
 
 logging.basicConfig(
     level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO"), logging.INFO),
@@ -18,10 +13,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("nastya-bot")
 
-from bot.config import (
-    BOT_TOKEN, ADMIN_IDS, API_HOST, API_PORT, DB_PATH,
-    SESSION_DURATION_SECONDS, OWNER_ID,
-)
+from bot.config import BOT_TOKEN, ADMIN_IDS, API_HOST, API_PORT, DB_PATH, SESSION_DURATION_SECONDS, OWNER_ID
 
 if not BOT_TOKEN:
     logger.critical("Missing BOT_TOKEN")
@@ -34,7 +26,6 @@ from bot.database import Database
 from bot.handlers import all_routers
 from ai.router import AIRouter
 
-# Globals
 db: Database = None
 ai_router: AIRouter = None
 bot: Bot = None
@@ -43,11 +34,11 @@ _start_time: float = 0
 
 
 async def proactive_scheduler(bot_instance: Bot) -> None:
-    """Background task: periodically check and send proactive messages."""
+    """Background task: periodically send proactive messages."""
     from bot.handlers.chat import check_and_send_proactive
     while True:
         try:
-            await asyncio.sleep(300)  # Check every 5 minutes
+            await asyncio.sleep(300)
             if db and ai_router:
                 await check_and_send_proactive(bot_instance, db, ai_router)
         except Exception as e:
@@ -57,7 +48,6 @@ async def proactive_scheduler(bot_instance: Bot) -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time, bot
     _start_time = time.time()
-
     logger.info("=== Nastya Bot Starting ===")
 
     db = Database(DB_PATH)
@@ -66,28 +56,21 @@ async def on_startup(**kwargs) -> None:
 
     ai_router = AIRouter()
     await ai_router.init()
-    logger.info(f"AI Router: {len(ai_router.providers)} providers")
+    logger.info(f"AI Router: {len(ai_router.providers)} providers, chain: {ai_router._chain}")
 
-    # Ensure owner
     try:
         await db.get_or_create_user(OWNER_ID, "owner", "Owner")
     except Exception as e:
         logger.error(f"Owner setup error: {e}")
 
-    # Set workflow_data
     dp_ref = kwargs.get("dispatcher") or kwargs.get("router") or dp
     if dp_ref:
         dp_ref.workflow_data["db"] = db
         dp_ref.workflow_data["ai_router"] = ai_router
 
-    # Start proactive scheduler
     if bot:
         asyncio.create_task(proactive_scheduler(bot))
-
-    # Notify admins
-    if bot:
         provider_list = ", ".join(ai_router.providers.keys())
-        vision = ai_router._vision_provider or "none"
         for admin_id in ADMIN_IDS:
             if admin_id:
                 try:
@@ -96,8 +79,6 @@ async def on_startup(**kwargs) -> None:
                         f"Настя проснулась!\n\n"
                         f"AI: {len(ai_router.providers)} провайдеров\n"
                         f"Цепочка: {provider_list}\n"
-                        f"Vision: {vision}\n"
-                        f"Сессия: {SESSION_DURATION_SECONDS // 60} мин\n"
                         f"Настроение: капризное (как обычно)",
                     )
                 except Exception:
@@ -129,10 +110,8 @@ async def on_shutdown(**kwargs) -> None:
 def setup_dispatcher() -> Dispatcher:
     global dp
     dp = Dispatcher()
-
     for router in all_routers:
         dp.include_router(router)
-
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
     return dp
@@ -144,15 +123,7 @@ def create_flask_app():
 
     @app.route("/api/health", methods=["GET"])
     def health():
-        return jsonify({"status": "ok", "bot": "nastya-bot", "version": "2.0.0"})
-
-    @app.route("/api/stats", methods=["GET"])
-    def stats():
-        try:
-            with open("data/stats.json") as f:
-                return jsonify(json.load(f))
-        except Exception:
-            return jsonify({"error": "no stats"}), 404
+        return jsonify({"status": "ok", "bot": "nastya-bot", "version": "3.0.0"})
 
     return app
 
@@ -169,9 +140,8 @@ async def main():
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 
-    dp = setup_dispatcher()
+    dispatcher = setup_dispatcher()
 
-    # Flask in background
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
@@ -181,7 +151,7 @@ async def main():
             raise SystemExit(0)
 
         timeout_task = asyncio.create_task(session_timeout())
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        await dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types())
     except SystemExit:
         logger.info("Session timeout")
     except Exception as e:
