@@ -1,5 +1,7 @@
-"""Chutes.ai — FREE DeepSeek V3 + DeepSeek VL2 vision. No API key needed."""
+"""Chutes.ai — FREE DeepSeek V3 + DeepSeek VL2 vision. No API key needed.
+Includes retry with backoff for reliability."""
 import logging
+import asyncio
 from typing import Any, Dict, List, Optional
 import httpx
 from ai.providers.base import AIResponse, BaseProvider, ProviderError
@@ -20,7 +22,7 @@ class ChutesProvider(BaseProvider):
     async def init(self) -> None:
         self._client = httpx.AsyncClient(
             base_url="https://llm.chutes.ai",
-            timeout=httpx.Timeout(self.timeout, connect=15.0),
+            timeout=httpx.Timeout(self.timeout, connect=10.0),
             limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
             follow_redirects=True,
             headers={
@@ -61,38 +63,52 @@ class ChutesProvider(BaseProvider):
             "model": model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": 2048,
+            "max_tokens": 1024,
         }
 
-        try:
-            response = await self._client.post("/v1/chat/completions", json=payload)
-            response.raise_for_status()
-            data = response.json()
+        # Retry up to 2 times
+        for attempt in range(2):
+            try:
+                response = await self._client.post("/v1/chat/completions", json=payload)
+                response.raise_for_status()
+                data = response.json()
 
-            choice = data["choices"][0]
-            text = choice["message"]["content"]
-            usage = data.get("usage", {})
+                choice = data["choices"][0]
+                text = choice["message"]["content"]
+                usage = data.get("usage", {})
 
-            if not text:
-                raise ProviderError(self.name, "Empty response", retryable=True)
+                if not text:
+                    raise ProviderError(self.name, "Empty response", retryable=True)
 
-            return AIResponse(
-                text=text,
-                provider=self.name,
-                model=f"chutes:{model}",
-                tokens_used=usage.get("total_tokens", 0),
-            )
+                return AIResponse(
+                    text=text,
+                    provider=self.name,
+                    model=f"chutes:{model}",
+                    tokens_used=usage.get("total_tokens", 0),
+                )
 
-        except httpx.TimeoutException:
-            raise ProviderError(self.name, "Timeout", retryable=True)
-        except httpx.HTTPStatusError as exc:
-            status = exc.response.status_code
-            retryable = status in (429, 500, 502, 503, 504)
-            raise ProviderError(self.name, f"HTTP {status}", retryable=retryable)
-        except ProviderError:
-            raise
-        except Exception as exc:
-            raise ProviderError(self.name, f"Error: {exc}", retryable=True)
+            except httpx.TimeoutException:
+                if attempt == 0:
+                    logger.warning("Chutes timeout, retrying...")
+                    await asyncio.sleep(2)
+                    continue
+                raise ProviderError(self.name, "Timeout after retry", retryable=True)
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                retryable = status in (429, 500, 502, 503, 504)
+                if retryable and attempt == 0:
+                    logger.warning(f"Chutes HTTP {status}, retrying...")
+                    await asyncio.sleep(2)
+                    continue
+                raise ProviderError(self.name, f"HTTP {status}", retryable=retryable)
+            except ProviderError:
+                raise
+            except Exception as exc:
+                if attempt == 0:
+                    logger.warning(f"Chutes error, retrying: {exc}")
+                    await asyncio.sleep(2)
+                    continue
+                raise ProviderError(self.name, f"Error: {exc}", retryable=True)
 
     @staticmethod
     def _build_messages(prompt: str, system_prompt: str = "",
