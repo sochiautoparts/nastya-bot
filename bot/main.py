@@ -20,18 +20,12 @@ logger = logging.getLogger("nastya-bot")
 
 from bot.config import (
     BOT_TOKEN, ADMIN_IDS, API_HOST, API_PORT, DB_PATH,
-    SESSION_DURATION_SECONDS, OWNER_ID, validate_config,
+    SESSION_DURATION_SECONDS, OWNER_ID,
 )
 
 # Validate
-def validate_config():
-    if not BOT_TOKEN:
-        return ["BOT_TOKEN"]
-    return []
-
-missing = validate_config()
-if missing:
-    logger.critical(f"Missing: {', '.join(missing)}")
+if not BOT_TOKEN:
+    logger.critical("Missing BOT_TOKEN")
     sys.exit(1)
 
 from aiogram import Bot, Dispatcher
@@ -53,7 +47,7 @@ async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time, bot
     _start_time = time.time()
 
-    logger.info("=== Nastya Bot Starting 🎀 ===")
+    logger.info("=== Nastya Bot Starting ===")
 
     db = Database(DB_PATH)
     await db.init()
@@ -93,12 +87,12 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot Ready 🎀 ===")
+    logger.info("=== Nastya Bot Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:
     global db, ai_router
-    logger.info("=== Nastya Bot Shutting Down 🎀 ===")
+    logger.info("=== Nastya Bot Shutting Down ===")
 
     if bot:
         for admin_id in ADMIN_IDS:
