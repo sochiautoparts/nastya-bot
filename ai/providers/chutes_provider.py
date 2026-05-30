@@ -1,0 +1,101 @@
+"""Chutes.ai — FREE DeepSeek V3 + Vision support! No API key needed."""
+import logging
+import base64
+from typing import Any, Dict, List, Optional
+import httpx
+from ai.providers.base import AIResponse, BaseProvider, ProviderError
+
+logger = logging.getLogger(__name__)
+
+
+class ChutesProvider(BaseProvider):
+    name: str = "chutes"
+
+    def __init__(self, api_key: str = "", timeout: float = 45.0):
+        super().__init__(api_key="", timeout=timeout)
+        self._default_model = "deepseek-ai/DeepSeek-V3-0324"
+        self._vision_model = "deepseek-ai/deepseek-vl2"
+
+    async def init(self) -> None:
+        self._client = httpx.AsyncClient(
+            base_url="https://llm.chutes.ai",
+            timeout=httpx.Timeout(self.timeout, connect=15.0),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            follow_redirects=True,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "NastyaBot/2.0",
+            },
+        )
+        logger.info("Chutes provider initialized (DeepSeek V3 + VL2)")
+
+    def is_available(self) -> bool:
+        return True
+
+    async def generate(self, prompt: str, **kwargs) -> AIResponse:
+        if not self._client:
+            await self.init()
+
+        system_prompt: str = kwargs.get("system_prompt", "")
+        temperature: float = kwargs.get("temperature", 0.85)
+        messages_history: Optional[List[Dict[str, Any]]] = kwargs.get("messages")
+        image_base64: Optional[str] = kwargs.get("image_base64")
+
+        # Build messages
+        messages = self._build_messages(prompt, system_prompt, messages_history)
+
+        # If image provided, use vision model
+        model = self._default_model
+        if image_base64:
+            model = self._vision_model
+            # Replace the last user message with multimodal content
+            messages[-1] = {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
+                ]
+            }
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": 2048,
+        }
+
+        try:
+            response = await self._client.post("/v1/chat/completions", json=payload)
+            response.raise_for_status()
+            data = response.json()
+
+            choice = data["choices"][0]
+            text = choice["message"]["content"]
+            usage = data.get("usage", {})
+
+            if not text:
+                raise ProviderError(self.name, "Empty response", retryable=True)
+
+            return AIResponse(
+                text=text,
+                provider=self.name,
+                model=f"chutes:{model}",
+                tokens_used=usage.get("total_tokens", 0),
+            )
+
+        except httpx.TimeoutException as exc:
+            raise ProviderError(self.name, f"Timeout: {exc}", retryable=True)
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            retryable = status in (429, 500, 502, 503, 504)
+            raise ProviderError(self.name, f"HTTP {status}", retryable=retryable)
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError(self.name, f"Error: {exc}", retryable=True)

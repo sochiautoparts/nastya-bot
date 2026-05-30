@@ -1,5 +1,6 @@
-"""Nastya Fun Commands 🎀 — horoscope, numerology, psychology, shopping, mood."""
+"""Nastya Fun Commands — horoscope, numerology, psychology, shopping, repair, mood, wants."""
 import logging
+import random
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -7,7 +8,7 @@ from bot.config import NASTYA_SYSTEM_PROMPT
 from bot.nastya import (
     generate_daily_horoscope, calculate_numerology, get_zodiac_info,
     get_random_fact, get_psycho_phrase, get_shopping_advice,
-    ZODIAC_SIGNS,
+    get_random_want, ZODIAC_SIGNS,
 )
 from ai.router import AllProvidersExhaustedError
 
@@ -18,7 +19,6 @@ router = Router()
 @router.message(Command("horoscope"))
 async def cmd_horoscope(message: Message, db=None, ai_router=None) -> None:
     """Daily horoscope in Nastya style."""
-    # Build inline keyboard with zodiac signs
     buttons = []
     row = []
     for sign, emoji in ZODIAC_SIGNS.items():
@@ -28,33 +28,25 @@ async def cmd_horoscope(message: Message, db=None, ai_router=None) -> None:
             row = []
     if row:
         buttons.append(row)
-
-    # Add "random" button
-    buttons.append([InlineKeyboardButton(text="🎲 Случайный знак", callback_data="zodiac_random")])
-
+    buttons.append([InlineKeyboardButton(text="Случайный знак", callback_data="zodiac_random")])
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     horo = generate_daily_horoscope()
-    text = f"🔮 Гороскоп от Насти на сегодня:\n\n{horo}\n\nВыбери свой знак для персонального гороскопа:"
-
+    text = f"Гороскоп от Насти на сегодня:\n\n{horo}\n\nВыбери свой знак для персонального гороскопа:"
     await message.answer(text, reply_markup=kb)
 
 
 @router.callback_query(F.data.startswith("zodiac_"))
 async def callback_zodiac(callback, db=None, ai_router=None) -> None:
-    """Handle zodiac sign selection."""
     sign = callback.data.replace("zodiac_", "")
-
     if sign == "random":
-        import random
         sign = random.choice(list(ZODIAC_SIGNS.keys()))
 
     info = get_zodiac_info(sign)
     if not info:
-        await callback.answer("Не знаю такой знак 🤷‍♀️")
+        await callback.answer("Не знаю такой знак")
         return
 
-    # Generate personalized horoscope via AI
     if ai_router:
         try:
             result = await ai_router.chat(
@@ -74,35 +66,25 @@ async def callback_zodiac(callback, db=None, ai_router=None) -> None:
 
 @router.message(Command("numerology"))
 async def cmd_numerology(message: Message, db=None, ai_router=None) -> None:
-    """Calculate numerology."""
     text = message.text or ""
     parts = text.split()
-
     if len(parts) > 1:
-        # User provided a number
         number_str = parts[1]
         result = calculate_numerology(number_str)
-        text = (
-            f"🔢 Нумерология от Насти:\n\n"
-            f"Твоё число: {result['number']}\n"
-            f"{result['meaning']}"
-        )
+        text = f"Нумерология от Насти:\n\nТвоё число: {result['number']}\n{result['meaning']}"
     else:
         text = (
-            "🔢 Нумерология от Насти!\n\n"
+            "Нумерология от Насти!\n\n"
             "Пришли мне число или дату рождения, и я рассчитаю твою судьбу!\n"
             "Например: /numerology 15081999\n\n"
-            "Настя верит в числа... иногда 🧮"
+            "Настя верит в числа... иногда"
         )
-
     await message.answer(text)
 
 
 @router.message(Command("shop"))
 async def cmd_shop(message: Message, db=None, ai_router=None) -> None:
-    """Shopping advice from Nastya."""
     advice = get_shopping_advice()
-
     if ai_router:
         try:
             result = await ai_router.chat(
@@ -112,40 +94,68 @@ async def cmd_shop(message: Message, db=None, ai_router=None) -> None:
             advice = result.text
         except Exception:
             pass
-
-    await message.answer(f"🛍️ Совет от Насти:\n\n{advice}")
+    await message.answer(f"Совет от Насти:\n\n{advice}")
 
 
 @router.message(Command("psych"))
 async def cmd_psych(message: Message, db=None, ai_router=None) -> None:
-    """Psychology 'analysis' from Nastya."""
     text = message.text or ""
     parts = text.split(maxsplit=1)
-
     if len(parts) > 1 and ai_router:
-        # User asked about something specific
         try:
             result = await ai_router.chat(
                 prompt=f"Сделай шуточный психоанализ: {parts[1]}. Как Настя — капризная психологиня. 2-3 предложения, смешно и в стиле стереотипов о Настях.",
                 system_prompt=NASTYA_SYSTEM_PROMPT + "\nТы делаешь шуточный психоанализ. Отвечай коротко, 2-3 предложения, как капризная психологиня Настя.",
             )
-            await message.answer(f"🧠 Психоанализ от Насти:\n\n{result.text}")
+            await message.answer(f"Психоанализ от Насти:\n\n{result.text}")
         except Exception:
             phrase = get_psycho_phrase()
-            await message.answer(f"🧠 Настя-психолог говорит: {phrase}")
+            await message.answer(f"Настя-психолог говорит: {phrase}")
     else:
         phrase = get_psycho_phrase()
         fact = get_random_fact()
         await message.answer(
-            f"🧠 Настя-психолог:\n\n{phrase}\n\n💡 Факт о Настях: {fact}\n\n"
+            f"Настя-психолог:\n\n{phrase}\n\nФакт о Настях: {fact}\n\n"
             "Напиши /psych и тему, и Настя разберётся! Например:\n"
             "/psych почему я всё откладываю"
         )
 
 
+@router.message(Command("repair"))
+async def cmd_repair(message: Message, db=None, ai_router=None) -> None:
+    """Renovation advice from Nastya."""
+    text = message.text or ""
+    parts = text.split(maxsplit=1)
+    if len(parts) > 1 and ai_router:
+        try:
+            result = await ai_router.chat(
+                prompt=f"Пользователь спрашивает про ремонт: {parts[1]}. Дай совет в стиле Насти — капризной, но разбирающейся в ремонте девушки. Обои, плитка, сантехника, дизайн, цвета — Настя знает! 2-4 предложения, живо и весело.",
+                system_prompt=NASTYA_SYSTEM_PROMPT + "\nТы даёшь совет по ремонту/дизайну интерьера. Капризно, но со знанием дела. Настя разбирается в обоях, плитке, сантехнике, цветах стен, подсветке, мебели.",
+            )
+            await message.answer(f"Совет по ремонту от Насти:\n\n{result.text}")
+        except Exception:
+            await message.answer("Ой, Настя сейчас занята... Выбирает плитку для ванной! Попробуй позже")
+    else:
+        repair_topics = [
+            "какие обои выбрать",
+            "какую плитку в ванную",
+            "какой цвет стен модный",
+            "как сделать подсветку",
+            "какой ламинат лучше",
+            "как обустроить кухню",
+            "какой смеситель выбрать",
+        ]
+        topics_text = "\n".join(f"  /repair {t}" for t in random.sample(repair_topics, 4))
+        await message.answer(
+            "Настя разбирается в ремонте! Спроси меня!\n\n"
+            "Например:\n"
+            f"{topics_text}\n\n"
+            "Или просто опиши что делаешь — Настя покритикует и посоветует!"
+        )
+
+
 @router.message(Command("mood"))
 async def cmd_mood(message: Message, db=None, ai_router=None) -> None:
-    """Check Nastya's current mood."""
     if db:
         mood_data = await db.get_random_mood()
     else:
@@ -155,7 +165,6 @@ async def cmd_mood(message: Message, db=None, ai_router=None) -> None:
     emoji = mood_data.get("emoji", "🎀")
     desc = mood_data.get("description", "")
 
-    # Count user messages
     msg_count = 0
     if db:
         user = await db.get_or_create_user(
@@ -165,23 +174,17 @@ async def cmd_mood(message: Message, db=None, ai_router=None) -> None:
         )
         msg_count = user.get("total_messages", 0)
 
-    text = (
-        f"{emoji} Настроение Насти: {mood}\n\n"
-        f"{desc}\n\n"
-        f"💬 Сообщений от тебя: {msg_count}\n"
-    )
+    text = f"{emoji} Настроение Насти: {mood}\n\n{desc}\n\nСообщений от тебя: {msg_count}"
 
-    # Stars donated?
     if db:
         total_stars = await db.get_total_donated(message.from_user.id)
         if total_stars > 0:
-            text += f"💝 Звёзд Насте: {total_stars}\n"
+            text += f"\nЗвёзд Насте: {total_stars}"
 
     await message.answer(text)
 
 
 @router.message(Command("fact"))
 async def cmd_fact(message: Message, db=None, ai_router=None) -> None:
-    """Random fun fact about Nastyas."""
     fact = get_random_fact()
-    await message.answer(f"🎀 Факт о Настях:\n\n{fact}")
+    await message.answer(f"Факт о Настях:\n\n{fact}")

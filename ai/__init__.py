@@ -1,1 +1,1 @@
-"""AI providers for Nastya Bot."""
+"""AI module for Nastya Bot."""

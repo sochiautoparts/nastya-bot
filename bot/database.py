@@ -1,11 +1,9 @@
-"""Nastya Bot — Database 🎀 SQLite with WAL mode."""
+"""Nastya Bot — Database. SQLite with WAL mode."""
 import aiosqlite
 import logging
 import time
-import secrets
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 from bot.config import DB_PATH
 
 logger = logging.getLogger(__name__)
@@ -49,19 +47,18 @@ CREATE INDEX IF NOT EXISTS idx_donations_user ON donations(user_id);
 """
 
 MOODS = [
-    ("капризная", "😤", "Настя в капризном настроении", 0.25),
-    ("любящая", "🥰", "Настя сегодня ласковая", 0.20),
-    ("загадочная", "🔮", "Настя говорит загадками", 0.15),
-    ("модная", "👗", "Настя одержима модой", 0.15),
+    ("капризная", "😤", "Настя в капризном настроении", 0.22),
+    ("любящая", "🥰", "Настя сегодня ласковая", 0.18),
+    ("загадочная", "🔮", "Настя говорит загадками", 0.12),
+    ("модная", "👗", "Настя одержима модой", 0.12),
+    ("ремонтная", "🔨", "Настя одержима ремонтом и дизайном", 0.10),
     ("философская", "🧘‍♀️", "Настя философствует", 0.10),
     ("драма", "🎭", "Настя в драме", 0.10),
-    ("щедрая", "💝", "Настя добрая сегодня", 0.05),
+    ("щедрая", "💝", "Настя добрая сегодня", 0.06),
 ]
 
 
 class Database:
-    """Async SQLite database."""
-
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
         self._db: Optional[aiosqlite.Connection] = None
@@ -129,7 +126,7 @@ class Database:
         )
         await self._db.commit()
 
-    async def get_history(self, user_id: int, limit: int = 20) -> List[Dict[str, str]]:
+    async def get_history(self, user_id: int, limit: int = 30) -> List[Dict[str, str]]:
         messages = []
         async with self._db.execute(
             "SELECT role, content FROM chat_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",

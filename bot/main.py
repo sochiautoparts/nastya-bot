@@ -1,7 +1,7 @@
-"""Nastya Bot — Main Entry Point 🎀
+"""Nastya Bot — Main Entry Point
 
 Runs Telegram bot (aiogram 3.x) + Flask API server.
-24/7 via GitHub Actions.
+24/7 via GitHub Actions. Features: VLM, ASR, proactive messages, mood system.
 """
 import asyncio
 import json
@@ -23,7 +23,6 @@ from bot.config import (
     SESSION_DURATION_SECONDS, OWNER_ID,
 )
 
-# Validate
 if not BOT_TOKEN:
     logger.critical("Missing BOT_TOKEN")
     sys.exit(1)
@@ -41,6 +40,18 @@ ai_router: AIRouter = None
 bot: Bot = None
 dp: Dispatcher = None
 _start_time: float = 0
+
+
+async def proactive_scheduler(bot_instance: Bot) -> None:
+    """Background task: periodically check and send proactive messages."""
+    from bot.handlers.chat import check_and_send_proactive
+    while True:
+        try:
+            await asyncio.sleep(300)  # Check every 5 minutes
+            if db and ai_router:
+                await check_and_send_proactive(bot_instance, db, ai_router)
+        except Exception as e:
+            logger.error(f"Proactive scheduler error: {e}")
 
 
 async def on_startup(**kwargs) -> None:
@@ -69,20 +80,25 @@ async def on_startup(**kwargs) -> None:
         dp_ref.workflow_data["db"] = db
         dp_ref.workflow_data["ai_router"] = ai_router
 
+    # Start proactive scheduler
+    if bot:
+        asyncio.create_task(proactive_scheduler(bot))
+
     # Notify admins
     if bot:
+        provider_list = ", ".join(ai_router.providers.keys())
+        vision = ai_router._vision_provider or "none"
         for admin_id in ADMIN_IDS:
             if admin_id:
                 try:
-                    provider_list = ", ".join(ai_router.providers.keys())
                     await bot.send_message(
                         admin_id,
-                        f"🎀 <b>Настя проснулась!</b>\n\n"
-                        f"🤖 AI: {len(ai_router.providers)} провайдеров\n"
-                        f"⚡ Цепочка: {provider_list}\n"
-                        f"⏱ Сессия: {SESSION_DURATION_SECONDS // 60} мин\n"
-                        f"😤 Настроение: капризное (как обычно)",
-                        parse_mode="HTML",
+                        f"Настя проснулась!\n\n"
+                        f"AI: {len(ai_router.providers)} провайдеров\n"
+                        f"Цепочка: {provider_list}\n"
+                        f"Vision: {vision}\n"
+                        f"Сессия: {SESSION_DURATION_SECONDS // 60} мин\n"
+                        f"Настроение: капризное (как обычно)",
                     )
                 except Exception:
                     pass
@@ -100,7 +116,7 @@ async def on_shutdown(**kwargs) -> None:
                 uptime = int(time.time() - _start_time) if _start_time else 0
                 h, rem = divmod(uptime, 3600)
                 m, s = divmod(rem, 60)
-                await bot.send_message(admin_id, f"🎀 Настя уснула... Uptime: {h}ч {m}м {s}с 😴", parse_mode="HTML")
+                await bot.send_message(admin_id, f"Настя уснула... Uptime: {h}ч {m}м {s}с")
             except Exception:
                 pass
 
@@ -128,7 +144,7 @@ def create_flask_app():
 
     @app.route("/api/health", methods=["GET"])
     def health():
-        return jsonify({"status": "ok", "bot": "nastya-bot", "version": "1.0.0"})
+        return jsonify({"status": "ok", "bot": "nastya-bot", "version": "2.0.0"})
 
     @app.route("/api/stats", methods=["GET"])
     def stats():
@@ -158,8 +174,6 @@ async def main():
     # Flask in background
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-
-    session_end = time.time() + SESSION_DURATION_SECONDS
 
     try:
         async def session_timeout():

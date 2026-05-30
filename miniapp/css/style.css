@@ -1,271 +1,92 @@
+/* Nastya Bot Mini App CSS */
 * { margin: 0; padding: 0; box-sizing: border-box; }
-
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: linear-gradient(135deg, #fce4ec 0%, #f8bbd0 50%, #f48fb1 100%);
+    background: linear-gradient(135deg, #fff0f5 0%, #ffe4e1 50%, #fff0f5 100%);
+    color: #333;
     min-height: 100vh;
-    color: #4a2040;
 }
+.container { max-width: 600px; margin: 0 auto; padding: 20px; }
 
-.container {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 20px;
-}
+header { text-align: center; padding: 30px 0; }
+header h1 { font-size: 2em; color: #ff69b4; margin: 10px 0 5px; }
+.subtitle { color: #888; font-size: 1.1em; }
 
-header {
-    text-align: center;
-    padding: 40px 20px;
-    animation: fadeIn 0.8s ease;
-}
-
-.nastya-avatar {
-    font-size: 80px;
-    margin-bottom: 10px;
-    animation: bounce 2s infinite;
-}
-
-h1 {
-    font-size: 2.5em;
-    color: #c2185b;
-    text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
-}
-
-.subtitle {
-    font-size: 1.2em;
-    color: #880e4f;
-    margin-top: 8px;
-}
-
-.features {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 16px;
-    margin: 30px 0;
-}
-
+.features { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0; }
 .feature-card {
-    background: rgba(255,255,255,0.9);
-    border-radius: 16px;
-    padding: 24px 16px;
-    text-align: center;
-    box-shadow: 0 4px 15px rgba(194,24,91,0.15);
-    transition: transform 0.3s, box-shadow 0.3s;
+    background: white; border-radius: 16px; padding: 18px; text-align: center;
+    box-shadow: 0 2px 8px rgba(255,105,180,0.1); transition: transform 0.2s;
 }
+.feature-card:hover { transform: translateY(-3px); }
+.feature-card .emoji { font-size: 2em; display: block; margin-bottom: 8px; }
+.feature-card h3 { color: #ff69b4; margin-bottom: 6px; }
+.feature-card p { font-size: 0.85em; color: #666; line-height: 1.4; }
 
-.feature-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 8px 25px rgba(194,24,91,0.25);
-}
-
-.feature-card .emoji {
-    font-size: 2.5em;
-    display: block;
-    margin-bottom: 10px;
-}
-
-.feature-card h3 {
-    color: #c2185b;
-    margin-bottom: 8px;
-}
-
-.feature-card p {
-    font-size: 0.9em;
-    color: #6a1b4d;
-    line-height: 1.4;
-}
-
-.chat-demo {
-    background: rgba(255,255,255,0.85);
-    border-radius: 20px;
-    padding: 24px;
-    margin: 30px 0;
-    box-shadow: 0 4px 20px rgba(194,24,91,0.15);
-}
-
+.chat-demo { margin: 20px 0; }
 .chat-bubble {
-    max-width: 75%;
-    padding: 12px 16px;
-    border-radius: 16px;
-    margin-bottom: 12px;
-    position: relative;
-    animation: slideIn 0.5s ease;
+    padding: 12px 16px; border-radius: 16px; margin: 8px 0;
+    max-width: 80%; position: relative;
 }
-
 .chat-bubble.nastya {
-    background: #fce4ec;
+    background: #ff69b4; color: white; margin-right: auto;
     border-bottom-left-radius: 4px;
-    margin-right: auto;
 }
-
 .chat-bubble.user {
-    background: #e1f5fe;
+    background: #e8e8e8; color: #333; margin-left: auto;
     border-bottom-right-radius: 4px;
-    margin-left: auto;
 }
+.chat-bubble .name { font-weight: bold; font-size: 0.8em; display: block; margin-bottom: 4px; opacity: 0.8; }
 
-.chat-bubble .name {
-    font-size: 0.75em;
-    font-weight: bold;
-    color: #c2185b;
-    display: block;
-    margin-bottom: 4px;
-}
-
-.chat-bubble.user .name {
-    color: #0277bd;
-}
-
-.moods {
-    margin: 30px 0;
-}
-
-.moods h2, .donations h2, .commands h2, .cta h2 {
-    text-align: center;
-    color: #c2185b;
-    margin-bottom: 16px;
-}
-
-.mood-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 12px;
-}
-
+.moods { margin: 20px 0; }
+.moods h2 { color: #ff69b4; margin-bottom: 12px; text-align: center; }
+.mood-grid { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .mood-card {
-    background: rgba(255,255,255,0.9);
-    border-radius: 12px;
-    padding: 16px;
-    text-align: center;
-    font-weight: 600;
-    box-shadow: 0 2px 10px rgba(194,24,91,0.1);
+    background: white; border-radius: 20px; padding: 8px 16px;
+    font-size: 0.9em; box-shadow: 0 1px 4px rgba(255,105,180,0.1);
     transition: transform 0.2s;
 }
+.mood-card:hover { transform: scale(1.05); }
 
-.mood-card:hover {
-    transform: scale(1.05);
-}
-
-.cta {
-    text-align: center;
-    margin: 40px 0;
-    padding: 30px;
-    background: rgba(255,255,255,0.9);
-    border-radius: 20px;
-}
-
+.cta { text-align: center; margin: 30px 0; padding: 30px; background: white; border-radius: 20px; }
+.cta h2 { color: #ff69b4; margin-bottom: 15px; }
 .btn-primary {
-    display: inline-block;
-    background: linear-gradient(135deg, #c2185b, #e91e63);
-    color: white;
-    padding: 16px 40px;
-    border-radius: 30px;
-    text-decoration: none;
-    font-size: 1.2em;
-    font-weight: 700;
-    margin: 16px 0;
-    box-shadow: 0 4px 15px rgba(194,24,91,0.4);
-    transition: transform 0.2s, box-shadow 0.2s;
+    display: inline-block; background: linear-gradient(135deg, #ff69b4, #ff1493);
+    color: white; padding: 14px 32px; border-radius: 30px; text-decoration: none;
+    font-size: 1.1em; font-weight: bold; transition: transform 0.2s;
 }
+.btn-primary:hover { transform: scale(1.05); }
+.hint { color: #888; margin-top: 10px; font-size: 0.9em; }
 
-.btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(194,24,91,0.5);
-}
+.wants { margin: 20px 0; text-align: center; padding: 20px; background: white; border-radius: 20px; }
+.wants h2 { color: #ff69b4; margin-bottom: 10px; }
+.wants p { color: #666; line-height: 1.5; }
+#nastya-want { transition: opacity 0.3s; }
 
-.hint {
-    font-size: 0.9em;
-    color: #880e4f;
-    margin-top: 8px;
-}
-
-.donations {
-    text-align: center;
-    margin: 30px 0;
-    padding: 24px;
-    background: rgba(255,255,255,0.85);
-    border-radius: 20px;
-}
-
-.donate-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 12px;
-    margin-top: 16px;
-}
-
+.donations { margin: 20px 0; text-align: center; }
+.donations h2 { color: #ff69b4; margin-bottom: 10px; }
+.donations p { color: #666; margin-bottom: 15px; }
+.donate-grid { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .donate-card {
-    background: #fce4ec;
-    border-radius: 12px;
-    padding: 14px;
-    font-weight: 600;
-    transition: transform 0.2s;
+    background: white; border-radius: 12px; padding: 10px 18px;
+    font-size: 0.9em; box-shadow: 0 1px 4px rgba(255,105,180,0.1);
 }
-
-.donate-card:hover {
-    transform: scale(1.05);
-}
-
 .donate-card.highlight {
-    background: linear-gradient(135deg, #ffd700, #ffab00);
-    color: #4a2040;
+    background: linear-gradient(135deg, #ff69b4, #ff1493);
+    color: white;
 }
 
-.commands {
-    margin: 30px 0;
-    padding: 24px;
-    background: rgba(255,255,255,0.85);
-    border-radius: 20px;
-}
+.commands { margin: 20px 0; }
+.commands h2 { color: #ff69b4; margin-bottom: 12px; text-align: center; }
+.cmd-list { background: white; border-radius: 16px; padding: 16px; }
+.cmd { padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.9em; }
+.cmd:last-child { border-bottom: none; }
+.cmd code { background: #fff0f5; color: #ff69b4; padding: 2px 8px; border-radius: 4px; }
 
-.cmd-list {
-    display: grid;
-    gap: 8px;
-}
+footer { text-align: center; padding: 20px 0; color: #888; font-size: 0.85em; }
+footer a { color: #ff69b4; text-decoration: none; }
+.small { font-size: 0.8em; margin-top: 5px; }
 
-.cmd {
-    padding: 8px 12px;
-    border-radius: 8px;
-    background: #fce4ec;
-}
-
-.cmd code {
-    font-weight: bold;
-    color: #c2185b;
-}
-
-footer {
-    text-align: center;
-    padding: 30px;
-    color: #880e4f;
-}
-
-footer a {
-    color: #c2185b;
-}
-
-.small {
-    font-size: 0.85em;
-    margin-top: 4px;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes bounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
-}
-
-@keyframes slideIn {
-    from { opacity: 0; transform: translateX(-20px); }
-    to { opacity: 1; transform: translateX(0); }
-}
-
-@media (max-width: 600px) {
-    h1 { font-size: 2em; }
-    .nastya-avatar { font-size: 60px; }
+@media (max-width: 400px) {
+    .features { grid-template-columns: 1fr; }
     .container { padding: 12px; }
 }

@@ -1,48 +1,30 @@
-// Nastya Mini-App 🎀
-document.addEventListener('DOMContentLoaded', () => {
-    // Animate chat bubbles with delay
-    const bubbles = document.querySelectorAll('.chat-bubble');
-    bubbles.forEach((bubble, i) => {
-        bubble.style.opacity = '0';
-        bubble.style.transform = 'translateY(20px)';
-        setTimeout(() => {
-            bubble.style.transition = 'all 0.5s ease';
-            bubble.style.opacity = '1';
-            bubble.style.transform = 'translateY(0)';
-        }, 300 + i * 500);
-    });
-
-    // Random mood highlight
-    const moodCards = document.querySelectorAll('.mood-card');
-    if (moodCards.length) {
-        const randomMood = moodCards[Math.floor(Math.random() * moodCards.length)];
-        randomMood.style.background = 'linear-gradient(135deg, #fce4ec, #f8bbd0)';
-        randomMood.style.transform = 'scale(1.05)';
-    }
-
-    // Nastya facts rotation
-    const facts = [
-        "Настя никогда не опаздывает — она задерживается! 😤",
-        "Каждая третья Настя хочет стать психологом 🧠",
-        "Насти верят в астрологию, но не в гороскопы из инета 🔮",
-        "Если Настя говорит 'мне всё равно' — ей НЕ всё равно! 😤",
-        "Настя может спорить с навигатором 🗺️",
+// Nastya Bot Mini App JS
+document.addEventListener('DOMContentLoaded', function() {
+    const wants = [
+        "Настя хочет шоколадку... Нет, мороженку! Нет, и то и то!",
+        "Насте нужен новый айфон! Этот уже второй день как вышел!",
+        "Хочу пироженку... Наполеон. Или медовик. Ладно, оба!",
+        "Настя хочет ремонт... Обои сменить. И плитку. И вообще всё!",
+        "Хочу вафельку с кремом! И латте на кокосовом!",
+        "Насте нужна новая сумочка! Эта уже неделю как покупана!",
+        "Хочу на Бали... Или на Пхукет... Ладно, куда угодно, лишь бы море!",
+        "Хочу щенка! Или котёнка. Нет, обоих!",
+        "Настя хочет весы... Нет, не хочет. Нет, хочет. Ладно, НЕ хочет!",
+        "Хочу кроссовки... Белые. Нет, розовые! Блин, все!",
+        "Насте нужен робот-пылесос! Я не пылесошу, но хочу чтобы он был!",
+        "Хочу худеть... Нет, хочу пироженку. Ладно, сначала пироженку!",
+        "Настя хочет спать... Но сначала сериал. Но сначала шоколадку...",
     ];
 
-    // Add rotating fact to header
-    const subtitle = document.querySelector('.subtitle');
-    if (subtitle) {
-        let factIndex = 0;
-        setInterval(() => {
-            factIndex = (factIndex + 1) % facts.length;
-            subtitle.style.transition = 'opacity 0.3s';
-            subtitle.style.opacity = '0';
-            setTimeout(() => {
-                subtitle.textContent = facts[factIndex];
-                subtitle.style.opacity = '1';
+    const wantEl = document.getElementById('nastya-want');
+    if (wantEl) {
+        wantEl.textContent = wants[Math.floor(Math.random() * wants.length)];
+        setInterval(function() {
+            wantEl.style.opacity = '0';
+            setTimeout(function() {
+                wantEl.textContent = wants[Math.floor(Math.random() * wants.length)];
+                wantEl.style.opacity = '1';
             }, 300);
-        }, 4000);
+        }, 5000);
     }
-
-    console.log('🎀 Настя Mini-App loaded!');
 });
