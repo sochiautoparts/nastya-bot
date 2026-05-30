@@ -42,7 +42,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v7
+          key: nastya-db-v8
           restore-keys: |
             nastya-db-
 
@@ -68,7 +68,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v7-${{ github.run_id }}
+          key: nastya-db-v8-${{ github.run_id }}
 
       - name: Trigger next session (keep-alive chain)
         if: always()
