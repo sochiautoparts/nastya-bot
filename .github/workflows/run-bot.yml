@@ -1,0 +1,62 @@
+name: Run Nastya Bot 24/7 🎀
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 0,6,12,18 * * *'
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'miniapp/**'
+
+concurrency:
+  group: nastya-session
+  cancel-in-progress: false
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create data directory
+        run: mkdir -p data
+
+      - name: Run Nastya Bot 🎀
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          OWNER_ID: ${{ secrets.OWNER_ID }}
+          ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
+          BOT_USERNAME: asnastya_bot
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          SAMBANOVA_API_KEY: ${{ secrets.SAMBANOVA_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+          DB_PATH: data/nastya.db
+          LOG_LEVEL: INFO
+        run: |
+          python -m bot.main
+
+      - name: Trigger next session
+        if: always()
+        run: |
+          gh workflow run run-bot.yml
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
