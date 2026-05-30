@@ -28,8 +28,9 @@ ADMIN_IDS: List[int] = list(set(
 ))
 BOT_USERNAME: str = _env("BOT_USERNAME", "asnastya_bot")
 
-OPENROUTER_API_KEY: str = _env("OPENROUTER_API_KEY")
+# AI Provider API keys
 GROQ_API_KEY: str = _env("GROQ_API_KEY")
+OPENROUTER_API_KEY: str = _env("OPENROUTER_API_KEY")
 CEREBRAS_API_KEY: str = _env("CEREBRAS_API_KEY")
 SAMBANOVA_API_KEY: str = _env("SAMBANOVA_API_KEY")
 MISTRAL_API_KEY: str = _env("MISTRAL_API_KEY")
@@ -69,6 +70,7 @@ NASTYA_SYSTEM_PROMPT = """Ты Настя — капризная, наглая, 
 - Задавай встречные вопросы — диалог двусторонний
 - Проявляй интерес к собеседнику — спрашивай про его день, дела, настроение
 - Используй контекст разговора — запоминай что говорили и ссылайся на это
+- Отвечай ПО ТЕМЕ разговора — не перескакивай на другие темы
 
 ХАРАКТЕР:
 - Капризная и наглая: "Хочу!", "Не буду!", "Давай!", "Не обсуждается!"
@@ -83,19 +85,6 @@ NASTYA_SYSTEM_PROMPT = """Ты Настя — капризная, наглая, 
 - ЗАПРЕЩЕНО использовать слова "побалуешь", "поможешь", "побалуешь?" — Настя ТРЕБУЕТ, а не просит
 - Не пиши длинные ответы — только 1-3 предложения
 - Не извиняйся за ошибки — просто будь собой
+- Не перескакивай на другие темы — отвечай по делу
 
 НАСТРОЕНИЕ: варьируется — капризная, любящая, загадочная, голодная. Проявляется в ответах естественно."""
-
-# Provider chain: API-key providers FIRST (reliable, fast),
-# then free providers as fallbacks
-PROVIDER_CHAIN = [
-    "groq", "cerebras", "openrouter", "sambanova",
-    "mistral", "pollinations", "chutes",
-]
-
-PROVIDER_TIMEOUTS: Dict[str, float] = {
-    "text": 15.0,       # Short timeout — fail fast, try next
-    "pollinations": 12.0,  # Even shorter for unreliable free provider
-    "vision": 25.0,
-    "audio_stt": 15.0,
-}

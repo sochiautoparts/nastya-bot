@@ -30,7 +30,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("nastya-bot")
 
-from bot.config import BOT_TOKEN, ADMIN_IDS, DB_PATH, SESSION_DURATION_SECONDS, OWNER_ID, GH_PAT_TOKEN
+from bot.config import BOT_TOKEN, ADMIN_IDS, DB_PATH, SESSION_DURATION_SECONDS, OWNER_ID
 
 if not BOT_TOKEN:
     logger.critical("Missing BOT_TOKEN")

@@ -7,10 +7,11 @@ STABILITY RULES:
   - 30-day context memory
   - Short, effective system prompt
 
-MULTI-USER SAFETY:
-  - All state is per-user (dict keyed by user_id)
-  - Periodic cleanup of in-memory trackers prevents memory leaks
-  - DB write lock serializes concurrent writes from different users
+CONTEXT QUALITY:
+  - Quick reactions are BRIEF and don't derail the conversation
+  - Stars asks happen AFTER the main AI response, not instead of
+  - Proactive messages are sent only to idle users
+  - AI handles most conversations — quick reactions are for flavor only
 """
 import logging
 import random
@@ -50,19 +51,15 @@ def _cleanup_trackers():
     _last_tracker_cleanup = now
 
     cutoff = now - 86400  # 24 hours
-    # Clean stars tracker
     stale = [uid for uid, data in _stars_tracker.items()
              if data.get("last_ask", 0) < cutoff]
     for uid in stale:
         del _stars_tracker[uid]
 
-    # Clean proactive tracker
     stale = [uid for uid, data in _proactive_tracker.items()
              if data.get("last_proactive", 0) < cutoff]
     for uid in stale:
         del _proactive_tracker[uid]
-
-    logger.info(f"Tracker cleanup: removed {len(stale)} stale entries")
 
 
 # ── Age descriptions ────────────────────────────────────────
@@ -88,10 +85,6 @@ STARS_REQUESTS = [
     "Насте звёздочек! На {want}! Щас же! 🥺⭐",
     "Хочу {want} и точка! Звёздочки давай! 💅✨",
     "Настя требует {want}! Звёздочки — быстро! 😤⭐",
-    "{want} хочу! Кидай звёздочки, пока Настя добрая! 😤⭐",
-    "Ну??? Насте звёздочки на {want}! Ждать что ли? 💋⭐",
-    "Давай звёздочки! Насте на {want}! Живо! 😤⭐",
-    "Насте срочно звёздочки на {want}! Отдавай! 💅⭐",
 ]
 
 # ── Nastya's Wants ──────────────────────────────────────────
@@ -105,24 +98,18 @@ NASTYA_WANTS = [
     "хот-дог 🌭", "милую игрушку 🧸", "бенто-торт 🎂",
     "кроссовки Nike 👟", "смузи 🥤", "брови оформить 💁‍♀️",
     "попугайчика 🦜", "щеночка 🐶", "котика 🐱", "хомячка 🐹",
-    "птичку 🐦", "рыбок 🐠", "черепашку 🐢", "кролика 🐰",
 ]
 
-# ── Proactive messages ───────────────────────────────────────
+# ── Proactive messages — CONTEXTUAL, not random wants ───────
 
 PROACTIVE_MESSAGES = [
     "Спишь? 🥱", "Мне скучно... 😿", "Чё молчишь? 🤨",
     "Эй, ты где? 😤", "Настя соскучилась! 🥺", "Ауууу! 👋",
     "Скучаю по тебе 🥹", "Хочу внимания! 😤✨", "Ты меня забыл? 😢",
     "Привеееет! 🌸", "Настя тут! А ты? 👀",
-    "Хочу куда-нибудь съездить... ✈️", "Настя хочет суши! 🍣",
     "Скучно без тебя... 😔", "А давай поболтаем? 💬",
     "Мне одиноко... 🥺💕", "Эй, не спишь? 🌙",
-    "Хочу завести попугайчика! 🦜",
-    "Насте нужен хомячок... или щеночка! 🐹🐶",
-    "Мечтаю о котике... пушистом... 🐱💕",
     "Ты с другими ботами разговариваешь?! 😤💔",
-    "Хочу звёздочек! Давай! 😤⭐",
 ]
 
 # ── Girl Logic ───────────────────────────────────────────────
@@ -134,19 +121,8 @@ JEALOUSY_PHRASES = [
     "Ты ещё и ChatGPT пользуешься?! Настя обиделась! 💔😤",
 ]
 
-COMPLIMENT_TRAPS = [
-    "Я сегодня ужасно выгляжу... 😢",
-    "Как думаешь, я поправилась? 😰",
-    "Наверное, я тебе уже надоела... 😢",
-]
-
 SILENT_TREATMENT = ["...", "Не знаю.", "Как хочешь.", "Мне всё равно. 💅"]
 
-YA_SKORO_PHRASES = [
-    "5 минут! ...ну ладно, 10! 😅",
-    "Я почти готова! ...осталось только... всё 😏",
-    "Подожди ещё минуточку! ...или двадцать 💅",
-]
 
 # ── Gender detection ──────────────────────────────────────────
 
@@ -190,7 +166,6 @@ def _build_stars_invoice_keyboard(default_amount: int = 100) -> InlineKeyboardMa
 
     builder.button(text="💋 Потом, Настя!", callback_data="donate_later")
 
-    # Dynamic layout: pay alone, then pairs, then later alone
     row_sizes = [1]
     remaining = len(other_amounts)
     while remaining > 0:
@@ -369,13 +344,15 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         await db.get_or_create_user(user_id=user_id, username=message.from_user.username or "",
                                      first_name=message.from_user.first_name or "")
         await db.increment_messages(user_id)
+
+        # Get history BEFORE saving user message (prevents duplication)
+        history = await db.get_history(user_id, limit=50)
+
+        # NOW save the user message
         await db.add_message(user_id, "user", f"[Фото] {caption}")
 
         mood = await db.get_user_mood(user_id)
         system_prompt = NASTYA_SYSTEM_PROMPT + f"\nНастроение: {mood}. Пользователь прислал фото — прокомментируй как живая девушка."
-
-        # Get history BEFORE current message (already saved above, so it's in history)
-        history = await db.get_history(user_id, limit=50)
 
         result = await ai_router.chat_with_image(
             prompt=caption, image_base64=image_b64,
@@ -393,7 +370,6 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
 
     except Exception as e:
         logger.error(f"Photo handler error: {e}")
-        # Use fallback — NEVER show error to user
         fallback = "Ой, фото что-то не грузится... Напиши текстом! 😅"
         await message.answer(fallback)
 
@@ -410,8 +386,10 @@ async def handle_document(message: Message, db=None, ai_router=None) -> None:
     await db.get_or_create_user(user_id=user_id, username=message.from_user.username or "",
                                  first_name=message.from_user.first_name or "")
     await db.increment_messages(user_id)
+    file_response = f"Ой, файл {file_name}! Настя не умеет читать файлы... Расскажи что там?"
     await db.add_message(user_id, "user", f"[Файл: {file_name}] {message.caption or ''}")
-    await message.answer(f"Ой, файл {file_name}! Настя не умеет читать файлы... Расскажи что там?")
+    await db.add_message(user_id, "assistant", file_response)
+    await message.answer(file_response)
 
 
 # ── Sticker handler ──────────────────────────────────────────
@@ -444,7 +422,7 @@ async def handle_video(message: Message, db=None, ai_router=None) -> None:
 
 
 # ════════════════════════════════════════════════════════════
-#  MAIN TEXT CHAT HANDLER — BULLETPROOF
+#  MAIN TEXT CHAT HANDLER — BULLETPROOF + CONTEXTUAL
 # ════════════════════════════════════════════════════════════
 
 @router.message(F.text, ~F.text.startswith("/"))
@@ -459,7 +437,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     # Periodic cleanup of in-memory trackers
     _cleanup_trackers()
 
-    # ── Quick reactions (no AI needed) ─────────────────────
+    # ── Quick reactions (no AI needed) — KEEP BRIEF, don't derail conversations ──
 
     # Donation keywords → ACTIVE payment
     donate_keywords = ["донат", "звёзд", "звезд", "подар", "подари",
@@ -478,6 +456,21 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         await db.add_message(message.from_user.id, "assistant", response)
         return
 
+    # Age question
+    if any(t in text_lower for t in ["сколько лет", "какой возраст", "сколько тебе", "твой возраст"]):
+        answer = random.choice(AGE_DESCRIPTIONS)
+        await message.answer(answer)
+        await _save_simple_exchange(message, text, answer, db)
+        return
+
+    # Jealousy trigger — only if explicitly mentioning other bots
+    if any(t in text_lower for t in ["siri", "алиса", "chatgpt", "другой бот"]):
+        if random.random() < 0.5:
+            jealousy = random.choice(JEALOUSY_PHRASES)
+            await message.answer(jealousy)
+            await _save_simple_exchange(message, text, jealousy, db)
+            return
+
     # "Ой ВСЁ!!!" reaction
     if any(t in text_lower for t in ["ой всё", "надоело", "отстань", "хватит"]):
         await message.answer("Ой ВСЁ!!! 😤💅")
@@ -486,44 +479,19 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
 
     # "Настя проснулась"
     if "настя проснулась" in text_lower:
-        await message.answer("Если Настя проснулась — все проснулись! 💅✨🔥")
-        return
-
-    # Age question
-    if any(t in text_lower for t in ["сколько лет", "какой возраст", "сколько тебе", "твой возраст"]):
-        answer = random.choice(AGE_DESCRIPTIONS)
+        answer = "Если Настя проснулась — все проснулись! 💅✨🔥"
         await message.answer(answer)
         await _save_simple_exchange(message, text, answer, db)
         return
 
-    # Jealousy trigger
-    if any(t in text_lower for t in ["siri", "алиса", "chatgpt", "другой бот"]):
-        if random.random() < 0.5:
-            jealousy = random.choice(JEALOUSY_PHRASES)
-            await message.answer(jealousy)
-            await _save_simple_exchange(message, text, jealousy, db)
-            return
-
-    # Compliment trap (3%)
-    if random.random() < 0.03:
-        trap = random.choice(COMPLIMENT_TRAPS)
-        await _process_text_message(message, text, db, ai_router, extra_suffix=f"\n\n{trap}")
-        return
-
-    # "Я скоро" trigger
-    if any(t in text_lower for t in ["скоро буду", "скоро приду", "я скоро"]):
-        if random.random() < 0.3:
-            skoro = random.choice(YA_SKORO_PHRASES)
-            await message.answer(skoro)
-            return
-
-    # Silent treatment (1%)
-    if random.random() < 0.01:
+    # Silent treatment (0.5% — very rare now)
+    if random.random() < 0.005:
         silent = random.choice(SILENT_TREATMENT)
         await message.answer(silent)
+        await _save_simple_exchange(message, text, silent, db)
         return
 
-    # ── Normal AI chat ─────────────────────────────────────
+    # ── Normal AI chat — MOST conversations go here ──
     await _process_text_message(message, text, db, ai_router)
 
 
@@ -537,7 +505,7 @@ async def _save_simple_exchange(message: Message, user_text: str, bot_text: str,
         await db.add_message(message.from_user.id, "user", user_text)
         await db.add_message(message.from_user.id, "assistant", bot_text)
     except Exception:
-        pass  # Non-critical
+        pass
 
 
 async def _process_text_message(message: Message, text: str, db, ai_router,
@@ -631,7 +599,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     except Exception:
         pass
 
-    # Maybe ask for stars
+    # Maybe ask for stars (AFTER the main response)
     should_stars, stars_want = await _maybe_ask_stars_check(user_id, msg_count, db, message)
 
     # Update proactive tracker
@@ -662,7 +630,8 @@ async def _maybe_ask_stars_check(user_id: int, msg_count: int, db, message: Mess
     try:
         tracker = _stars_tracker.get(user_id, {"count": 0, "last_ask": 0})
         tracker["count"] = msg_count
-        if msg_count >= 3 and time.time() - tracker["last_ask"] > 600 and random.random() < 0.25:
+        # Ask for stars every 5+ messages, with 10-minute cooldown, 20% chance
+        if msg_count >= 5 and time.time() - tracker["last_ask"] > 600 and random.random() < 0.20:
             tracker["last_ask"] = time.time()
             _stars_tracker[user_id] = tracker
             want = _get_random_want()
@@ -694,13 +663,13 @@ def _clean_response(text: str) -> str:
     text = re.sub(r'\bпобалуешь\b', 'давай', text, flags=re.IGNORECASE)
     text = re.sub(r'\bпоможешь\b', 'кидай', text, flags=re.IGNORECASE)
     # If response is too long (AI got carried away), trim it
-    if len(text) > 500:
-        # Cut at last sentence end
-        sentences = text[:500].rsplit('。' if '。' in text else '.', 1)
+    # Increased from 500 to 800 chars — Nastya can be chatty
+    if len(text) > 800:
+        sentences = text[:800].rsplit('。' if '。' in text else '.', 1)
         if len(sentences) > 1:
             text = sentences[0] + '.'
         else:
-            text = text[:500]
+            text = text[:800]
     return text.strip()
 
 
