@@ -1,15 +1,15 @@
 """Nastya Bot — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture (v5.0):
-  - ErrorHandlingMiddleware — catches ALL exceptions, bot NEVER crashes
-  - AI Router: Pollinations (GPT-4o-mini) → Chutes (DeepSeek V3) → fallback chain
-  - Per-operation DB connections — no stale connections
+Architecture (v6.0):
+  - ErrorHandlingMiddleware — catches ALL exceptions, NEVER shows error to user
+  - AI Router: API-key providers FIRST (reliable), free providers as fallback
+  - Shared persistent DB connection with write lock — concurrent-safe
   - Stars donations with ACTIVE Pay buttons via send_invoice
   - Deep links from GitHub Pages → /start donate_NNN → sends invoice
   - 30-day context memory (50 messages)
   - Proactive messages via asyncio background task
   - Keep-alive chain via GH PAT trigger
-  - No Flask — simplified, runs pure aiogram polling
+  - Memory leak prevention: periodic tracker cleanup
 """
 import asyncio
 import logging
@@ -39,10 +39,12 @@ if not BOT_TOKEN:
 
 # ════════════════════════════════════════════════════════════
 #  ERROR HANDLING MIDDLEWARE — prevents ALL crashes!
+#  NEVER shows error messages to users — just logs and silently recovers
 # ════════════════════════════════════════════════════════════
 
 class ErrorHandlingMiddleware(BaseMiddleware):
-    """Catch and log errors without crashing the bot."""
+    """Catch and log errors without crashing the bot.
+    NEVER sends error messages to users — they should only see Nastya's personality."""
 
     async def __call__(self, handler, event: TelegramObject, data: dict):
         try:
@@ -53,23 +55,10 @@ class ErrorHandlingMiddleware(BaseMiddleware):
             raise
         except Exception as e:
             logger.error(f"Unhandled error: {e}\n{traceback.format_exc()}")
-            # Try to notify user
-            try:
-                chat_id = None
-                if hasattr(event, 'chat') and event.chat:
-                    chat_id = event.chat.id
-                elif hasattr(event, 'from_user') and event.from_user:
-                    chat_id = event.from_user.id
-                elif hasattr(event, 'message') and event.message:
-                    chat_id = event.message.chat.id
-                if chat_id and bot:
-                    await bot.send_message(
-                        chat_id,
-                        "Ой, у Насти голова разболелась... но уже проходит! 😵‍💫💕",
-                    )
-            except Exception:
-                pass
-        return None
+            # DO NOT send error message to user!
+            # The chat handler already has fallback responses.
+            # Only log the error and move on silently.
+            return None
 
 
 # ── Global instances ───────────────────────────────────────
@@ -99,6 +88,21 @@ async def proactive_scheduler(bot_instance: Bot) -> None:
             await asyncio.sleep(60)
 
 
+async def periodic_db_cleanup() -> None:
+    """Background task: periodically clean up old DB records."""
+    while True:
+        try:
+            await asyncio.sleep(86400)  # Once per day
+            if db:
+                deleted = await db.cleanup_old_history(max_age_hours=720)
+                if deleted > 0:
+                    logger.info(f"DB cleanup: removed {deleted} old messages")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"DB cleanup error: {e}")
+
+
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
@@ -124,6 +128,7 @@ async def on_startup(**kwargs) -> None:
 
     if bot:
         asyncio.create_task(proactive_scheduler(bot))
+        asyncio.create_task(periodic_db_cleanup())
         # Fun startup message — NO tech info!
         from bot.nastya import get_random_fact
         thought = get_random_fact()

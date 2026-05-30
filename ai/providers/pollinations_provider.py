@@ -1,5 +1,6 @@
-"""Pollinations.ai — FREE, unlimited, no API key! 🎀
-PRIMARY provider. Tries multiple models for reliability."""
+"""Pollinations.ai — FREE, unlimited, no API key!
+Used as FALLBACK provider (after key-based providers).
+Short timeout + limited model attempts for speed."""
 import logging
 import asyncio
 from typing import Any, Dict, List, Optional
@@ -8,22 +9,22 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
-# Models to try in order — most reliable first
-POLLINATIONS_MODELS = ["openai", "mistral", "openai-large"]
+# Models to try — just 2 for speed (was 3, too slow)
+POLLINATIONS_MODELS = ["openai", "mistral"]
 
 
 class PollinationsProvider(BaseProvider):
     name: str = "pollinations"
 
-    def __init__(self, api_key: str = "", timeout: float = 45.0):
+    def __init__(self, api_key: str = "", timeout: float = 15.0):
         super().__init__(api_key="", timeout=timeout)
 
     async def init(self) -> None:
         self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self.timeout, connect=10.0),
-            limits=httpx.Limits(max_connections=30, max_keepalive_connections=10),
+            timeout=httpx.Timeout(self.timeout, connect=5.0),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=5),
             follow_redirects=True,
-            headers={"User-Agent": "NastyaBot/2.0"},
+            headers={"User-Agent": "NastyaBot/3.0"},
         )
 
     def is_available(self) -> bool:

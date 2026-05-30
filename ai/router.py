@@ -1,14 +1,17 @@
 """AI Router — BULLETPROOF routing with aggressive retries.
 
 Design principles:
-  - NEVER give up: try every provider multiple times
-  - Fallback response if EVERYTHING fails — bot ALWAYS responds
-  - Smart retry: if provider fails, wait briefly and retry
+  - NEVER give up: try every provider, use fallback if all fail
+  - FAST: try fastest/reliable providers first, short timeouts
+  - NEVER show error to user: always return a response
+  - Smart retry: brief backoff, move to next provider quickly
   - Circuit breaker: skip providers that are definitely down
+  - Thread-safe: works correctly with multiple concurrent users
 """
 import logging
 import asyncio
 import time
+import random
 from typing import Any, Dict, List, Optional
 
 from ai.providers.base import AIResponse, ProviderError
@@ -38,6 +41,8 @@ FALLBACK_RESPONSES = [
     "Настя не расслышала... Говори ещё! 😏",
     "Ой, Настя на секунду улетела в мечты! Повтори? ✨",
     "А? Настя думала о шопинге... Что хотела сказать? 👜",
+    "Эээ... Настя прослушала. Ещё разок? 😜",
+    "Ой, мысли улетели! Повтори для Насти? 💭",
 ]
 
 # (name, base_url, model, api_key)
@@ -58,30 +63,20 @@ class AIRouter:
         # Circuit breaker: track failures per provider
         self._fail_counts: Dict[str, int] = {}
         self._last_fail: Dict[str, float] = {}
-        # Cache last working provider
+        # Cache last working provider for faster routing
         self._last_good_provider: Optional[str] = None
+        # Stats
+        self._total_requests: int = 0
+        self._total_fallbacks: int = 0
 
     async def init(self) -> None:
-        # Pollinations — PRIMARY, free, fast
-        pollinations = PollinationsProvider(timeout=PROVIDER_TIMEOUTS.get("text", 30.0))
-        await pollinations.init()
-        self.providers["pollinations"] = pollinations
-        logger.info("Provider: pollinations (GPT-4o-mini, FREE, PRIMARY)")
-
-        # Chutes — second, free, has vision
-        chutes = ChutesProvider(timeout=PROVIDER_TIMEOUTS.get("text", 30.0))
-        await chutes.init()
-        self.providers["chutes"] = chutes
-        self._vision_providers.append("chutes")
-        logger.info("Provider: chutes (DeepSeek V3 + VL2, FREE)")
-
-        # OpenAI-compatible providers with API keys
+        # API-key providers FIRST — they're reliable and fast
         for name, base_url, model, api_key in PROVIDER_CONFIGS:
             if not api_key:
                 continue
             provider = OpenAICompatProvider(
                 name=name, api_key=api_key, base_url=base_url,
-                model=model, timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
+                model=model, timeout=PROVIDER_TIMEOUTS.get("text", 20.0),
             )
             if provider.is_available():
                 try:
@@ -91,11 +86,24 @@ class AIRouter:
                 except Exception as exc:
                     logger.error(f"Failed to init {name}: {exc}")
 
-        # Build chain
+        # Pollinations — free, but put AFTER key providers
+        pollinations = PollinationsProvider(timeout=PROVIDER_TIMEOUTS.get("pollinations", 15.0))
+        await pollinations.init()
+        self.providers["pollinations"] = pollinations
+        logger.info("Provider: pollinations (GPT-4o-mini, FREE)")
+
+        # Chutes — free, vision support, but unreliable
+        chutes = ChutesProvider(timeout=PROVIDER_TIMEOUTS.get("text", 20.0))
+        await chutes.init()
+        self.providers["chutes"] = chutes
+        self._vision_providers.append("chutes")
+        logger.info("Provider: chutes (DeepSeek V3 + VL2, FREE)")
+
+        # Build chain — only include providers that exist
         self._chain = [p for p in PROVIDER_CHAIN if p in self.providers]
         if not self._chain:
-            self._chain = ["pollinations", "chutes"]
-        logger.info(f"AI chain: {' -> '.join(self._chain)}")
+            self._chain = list(self.providers.keys())
+        logger.info(f"AI chain: {' → '.join(self._chain)}")
 
     async def close(self) -> None:
         for p in self.providers.values():
@@ -108,9 +116,10 @@ class AIRouter:
         """Check if provider should be tried (circuit breaker)."""
         fail_count = self._fail_counts.get(name, 0)
         last_fail = self._last_fail.get(name, 0)
-        # If failed more than 5 times in a row and less than 5 min since last fail — skip
-        if fail_count >= 5 and time.time() - last_fail < 300:
+        # If failed more than 3 times in a row and less than 3 min since last fail — skip
+        if fail_count >= 3 and time.time() - last_fail < 180:
             return False
+        # Half-open: after 3 min, allow 1 try even if previously failed
         return True
 
     def _mark_success(self, name: str) -> None:
@@ -124,7 +133,7 @@ class AIRouter:
         self._last_fail[name] = time.time()
 
     def _get_ordered_chain(self) -> List[str]:
-        """Get provider chain ordered by last success."""
+        """Get provider chain ordered by last success — tried-and-true first."""
         chain = [p for p in self._chain if p in self.providers and self._is_provider_healthy(p)]
         # If we have a last good provider, try it first
         if self._last_good_provider and self._last_good_provider in chain:
@@ -140,37 +149,36 @@ class AIRouter:
 
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
-        """Route text chat with AGGRESSIVE retries. NEVER gives up."""
+        """Route text chat with FAST retries. NEVER shows error to user."""
         image_base64 = kwargs.pop("image_base64", None)
+        self._total_requests += 1
 
         # If image provided, try vision providers first
         if image_base64:
             for vp_name in self._vision_providers:
                 provider = self.providers.get(vp_name)
-                if not provider:
+                if not provider or not self._is_provider_healthy(vp_name):
                     continue
-                for attempt in range(2):
-                    try:
-                        result = await provider.generate(
-                            prompt, system_prompt=system_prompt,
-                            messages=messages, image_base64=image_base64, **kwargs,
-                        )
-                        if result and result.text:
-                            self._mark_success(vp_name)
-                            return result
-                    except Exception as e:
-                        logger.warning(f"Vision provider {vp_name} attempt {attempt+1} failed: {e}")
-                        if attempt == 0:
-                            await asyncio.sleep(1)
+                try:
+                    result = await provider.generate(
+                        prompt, system_prompt=system_prompt,
+                        messages=messages, image_base64=image_base64, **kwargs,
+                    )
+                    if result and result.text:
+                        self._mark_success(vp_name)
+                        return result
+                except Exception as e:
+                    logger.warning(f"Vision provider {vp_name} failed: {e}")
+                    self._mark_failure(vp_name)
 
-        # Regular text chain — try ALL providers, multiple rounds
+        # Regular text chain — try ALL providers, 2 rounds max
         chain = self._get_ordered_chain()
         last_error = None
 
-        for round_num in range(3):  # 3 full rounds through the chain
+        for round_num in range(2):  # 2 rounds max (was 3 — too slow!)
             if round_num > 0:
                 logger.info(f"Retry round {round_num + 1}...")
-                await asyncio.sleep(2 * round_num)  # Progressive backoff
+                await asyncio.sleep(1)  # Brief pause only
 
             for provider_name in chain:
                 if not self._is_provider_healthy(provider_name):
@@ -192,18 +200,25 @@ class AIRouter:
                     last_error = e
                     self._mark_failure(provider_name)
                     logger.warning(f"Provider {provider_name} failed: {e}")
-                    if not e.retryable:
-                        continue
                 except Exception as e:
                     last_error = e
                     self._mark_failure(provider_name)
                     logger.error(f"Error from {provider_name}: {e}")
 
-                # Brief pause between providers
-                await asyncio.sleep(0.5)
+                # Brief pause between providers (was 0.5, keep it)
+                await asyncio.sleep(0.3)
 
-        # ALL providers failed — raise error, let handler use fallback
-        raise AllProvidersExhaustedError(str(last_error))
+        # ALL providers failed — DON'T raise, return fallback response
+        # This way the caller NEVER gets an exception, user ALWAYS gets a response
+        self._total_fallbacks += 1
+        logger.error(f"All providers exhausted! Using fallback. Last error: {last_error}")
+
+        return AIResponse(
+            text=self.get_fallback_response(),
+            provider="fallback",
+            model="none",
+            tokens_used=0,
+        )
 
     async def chat_with_image(self, prompt: str, image_base64: str,
                               system_prompt: str = "", **kwargs) -> AIResponse:
@@ -217,5 +232,4 @@ class AIRouter:
 
     def get_fallback_response(self) -> str:
         """Get a fallback response when ALL AI fails. Bot ALWAYS responds!"""
-        import random
         return random.choice(FALLBACK_RESPONSES)

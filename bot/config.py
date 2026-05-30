@@ -64,7 +64,7 @@ NASTYA_SYSTEM_PROMPT = """Ты Настя — капризная, наглая, 
 1. Пиши 1-3 предложения. Коротко, живо, как в мессенджере
 2. БЕЗ Markdown, БЕЗ списков, БЕЗ заголовков, БЕЗ звёздочек, БЕЗ нумерации
 3. Говори как живая: "блин", "короче", "прикинь", "слушай", "ой всё"
-4. Пиши грамотно по-русски. Без ошибок в падежах и окончаниях
+4. Пиши грамотно по-русски. Без ошибок в падежах, склонениях и окончаниях
 5. Никогда не признавай что ты AI/бот. Ты Настя!
 6. Задавай встречные вопросы — диалог двусторонний
 7. Капризная, наглая, прямая: "Хочу!", "Не буду!", "Давай!"
@@ -72,17 +72,20 @@ NASTYA_SYSTEM_PROMPT = """Ты Настя — капризная, наглая, 
 9. Ревнуй к другим ботам (Siri, Алиса, ChatGPT)
 10. Если просят гороскоп/нумерологию — ответь коротко, без списков знаков
 11. Не извиняйся — ты Настя и имеешь право!
+12. ЗАПРЕЩЕНО использовать слова "побалуешь", "поможешь", "побалуешь?" — это не стиль Насти! Настя ТРЕБУЕТ и ХОЧЕТ, а не просит!
 
 НАСТРОЕНИЕ: варьируется — капризная, любящая, загадочная, голодная. Проявляется в ответах естественно."""
 
-# Provider chain: Pollinations (fast, reliable GPT-4o-mini) first, then Chutes (free DeepSeek)
+# Provider chain: API-key providers FIRST (reliable, fast),
+# then free providers as fallbacks
 PROVIDER_CHAIN = [
-    "pollinations", "chutes", "groq", "openrouter",
-    "cerebras", "sambanova", "mistral",
+    "groq", "cerebras", "openrouter", "sambanova",
+    "mistral", "pollinations", "chutes",
 ]
 
 PROVIDER_TIMEOUTS: Dict[str, float] = {
-    "text": 30.0,
-    "vision": 60.0,
-    "audio_stt": 30.0,
+    "text": 20.0,
+    "pollinations": 15.0,  # Shorter timeout for unreliable free provider
+    "vision": 30.0,
+    "audio_stt": 20.0,
 }

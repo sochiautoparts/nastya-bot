@@ -1,11 +1,16 @@
-"""Nastya Bot — Database. SQLite with per-operation connections.
+"""Nastya Bot — Database. SQLite with shared persistent connection + WAL mode.
 
-CRITICAL: Uses a NEW connection for each operation to avoid stale connections
-on GitHub Actions where the runner can sleep between operations.
+MULTI-USER SAFETY:
+  - Single shared connection with asyncio.Lock for write serialization
+  - WAL mode allows concurrent reads + one writer
+  - busy_timeout=10000 for handling lock contention
+  - Auto-reconnect on stale connections
+  - 30-day context memory (720 hours)
 """
 import aiosqlite
 import logging
 import time
+import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -69,19 +74,47 @@ MOODS = [
 
 
 class Database:
-    """Database with per-operation connections — NEVER stale!"""
+    """Database with shared persistent connection — fast & concurrent-safe!
+
+    Architecture:
+    - One aiosqlite connection shared across all operations
+    - asyncio.Lock serializes writes (SQLite WAL allows 1 writer at a time)
+    - Reads can happen concurrently via WAL snapshots
+    - Auto-reconnect on stale/closed connections
+    - busy_timeout=10000 handles lock contention gracefully
+    """
 
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
         self._initialized = False
+        self._conn: Optional[aiosqlite.Connection] = None
+        self._write_lock = asyncio.Lock()
 
     async def _get_conn(self) -> aiosqlite.Connection:
-        """Get a FRESH connection for each operation."""
+        """Get the shared connection, reconnecting if needed."""
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+
+        if self._conn is not None:
+            try:
+                # Quick health check
+                async with self._conn.execute("SELECT 1") as cur:
+                    await cur.fetchone()
+                return self._conn
+            except Exception:
+                logger.warning("DB connection stale, reconnecting...")
+                try:
+                    await self._conn.close()
+                except Exception:
+                    pass
+                self._conn = None
+
+        # Create new connection
         conn = await aiosqlite.connect(self.db_path)
         await conn.execute("PRAGMA journal_mode=WAL")
         await conn.execute("PRAGMA synchronous=NORMAL")
-        await conn.execute("PRAGMA busy_timeout=5000")
+        await conn.execute("PRAGMA busy_timeout=10000")
+        await conn.execute("PRAGMA cache_size=-2000")  # 2MB cache
+        self._conn = conn
         return conn
 
     async def init(self) -> None:
@@ -118,11 +151,18 @@ class Database:
 
             self._initialized = True
             logger.info(f"Database initialized: {self.db_path}")
-        finally:
-            await conn.close()
+        except Exception as e:
+            logger.error(f"DB init error: {e}")
+            raise
 
     async def close(self) -> None:
-        """Nothing to close — per-operation connections."""
+        """Close the shared connection."""
+        if self._conn:
+            try:
+                await self._conn.close()
+            except Exception:
+                pass
+            self._conn = None
         self._initialized = False
 
     # ── Users ────────────────────────────────────────────────
@@ -138,25 +178,29 @@ class Database:
                     return dict(zip(cols, row))
 
             now = time.time()
-            await conn.execute(
-                """INSERT OR IGNORE INTO users
-                (user_id, username, first_name, gender, language_code, created_at, total_messages, last_active, last_mood, last_mood_change)
-                VALUES (?, ?, ?, 'unknown', ?, ?, 0, ?, 'капризная', 0)""",
-                (user_id, username, first_name, language_code, now, now),
-            )
-            await conn.commit()
+            async with self._write_lock:
+                await conn.execute(
+                    """INSERT OR IGNORE INTO users
+                    (user_id, username, first_name, gender, language_code, created_at, total_messages, last_active, last_mood, last_mood_change)
+                    VALUES (?, ?, ?, 'unknown', ?, ?, 0, ?, 'капризная', 0)""",
+                    (user_id, username, first_name, language_code, now, now),
+                )
+                await conn.commit()
             return {"user_id": user_id, "username": username, "first_name": first_name,
                     "gender": "unknown", "total_messages": 0, "last_mood": "капризная"}
-        finally:
-            await conn.close()
+        except Exception as e:
+            logger.error(f"get_or_create_user error: {e}")
+            return {"user_id": user_id, "username": username, "first_name": first_name,
+                    "gender": "unknown", "total_messages": 0, "last_mood": "капризная"}
 
     async def set_gender(self, user_id: int, gender: str) -> None:
         conn = await self._get_conn()
         try:
-            await conn.execute("UPDATE users SET gender = ? WHERE user_id = ?", (gender, user_id))
-            await conn.commit()
-        finally:
-            await conn.close()
+            async with self._write_lock:
+                await conn.execute("UPDATE users SET gender = ? WHERE user_id = ?", (gender, user_id))
+                await conn.commit()
+        except Exception as e:
+            logger.error(f"set_gender error: {e}")
 
     async def get_gender(self, user_id: int) -> str:
         conn = await self._get_conn()
@@ -164,23 +208,25 @@ class Database:
             async with conn.execute("SELECT gender FROM users WHERE user_id = ?", (user_id,)) as cur:
                 row = await cur.fetchone()
                 return row[0] if row else "unknown"
-        finally:
-            await conn.close()
+        except Exception:
+            return "unknown"
 
     async def increment_messages(self, user_id: int) -> int:
         conn = await self._get_conn()
         try:
             now = time.time()
-            await conn.execute(
-                "UPDATE users SET total_messages = total_messages + 1, last_active = ? WHERE user_id = ?",
-                (now, user_id),
-            )
-            await conn.commit()
+            async with self._write_lock:
+                await conn.execute(
+                    "UPDATE users SET total_messages = total_messages + 1, last_active = ? WHERE user_id = ?",
+                    (now, user_id),
+                )
+                await conn.commit()
             async with conn.execute("SELECT total_messages FROM users WHERE user_id = ?", (user_id,)) as cur:
                 row = await cur.fetchone()
                 return row[0] if row else 0
-        finally:
-            await conn.close()
+        except Exception as e:
+            logger.error(f"increment_messages error: {e}")
+            return 0
 
     async def get_user_mood(self, user_id: int) -> str:
         """Get current mood for user, change it periodically."""
@@ -196,24 +242,28 @@ class Database:
                 # Change mood every 15-30 minutes
                 if time.time() - (last_change or 0) > 900:
                     new_mood = await self._pick_random_mood(conn)
-                    await conn.execute(
-                        "UPDATE users SET last_mood = ?, last_mood_change = ? WHERE user_id = ?",
-                        (new_mood, time.time(), user_id),
-                    )
-                    await conn.commit()
+                    async with self._write_lock:
+                        await conn.execute(
+                            "UPDATE users SET last_mood = ?, last_mood_change = ? WHERE user_id = ?",
+                            (new_mood, time.time(), user_id),
+                        )
+                        await conn.commit()
                     return new_mood
                 return mood or "капризная"
-        finally:
-            await conn.close()
+        except Exception:
+            return "капризная"
 
     async def _pick_random_mood(self, conn) -> str:
         import random
         moods = []
         probs = []
-        async with conn.execute("SELECT mood, probability FROM nastya_moods") as cur:
-            async for row in cur:
-                moods.append(row[0])
-                probs.append(row[1])
+        try:
+            async with conn.execute("SELECT mood, probability FROM nastya_moods") as cur:
+                async for row in cur:
+                    moods.append(row[0])
+                    probs.append(row[1])
+        except Exception:
+            return "капризная"
         if not moods:
             return "капризная"
         total = sum(probs)
@@ -223,30 +273,37 @@ class Database:
     async def set_user_mood(self, user_id: int, mood: str) -> None:
         conn = await self._get_conn()
         try:
-            await conn.execute(
-                "UPDATE users SET last_mood = ?, last_mood_change = ? WHERE user_id = ?",
-                (mood, time.time(), user_id),
-            )
-            await conn.commit()
-        finally:
-            await conn.close()
+            async with self._write_lock:
+                await conn.execute(
+                    "UPDATE users SET last_mood = ?, last_mood_change = ? WHERE user_id = ?",
+                    (mood, time.time(), user_id),
+                )
+                await conn.commit()
+        except Exception as e:
+            logger.error(f"set_user_mood error: {e}")
 
     # ── Chat History ─────────────────────────────────────────
 
     async def add_message(self, user_id: int, role: str, content: str) -> None:
+        """Add a message to chat history. Uses write lock for concurrency safety."""
         conn = await self._get_conn()
         try:
             now = time.time()
-            await conn.execute(
-                "INSERT INTO chat_history (user_id, role, content, created_at) VALUES (?,?,?,?)",
-                (user_id, role, content, now),
-            )
-            await conn.commit()
-        finally:
-            await conn.close()
+            async with self._write_lock:
+                await conn.execute(
+                    "INSERT INTO chat_history (user_id, role, content, created_at) VALUES (?,?,?,?)",
+                    (user_id, role, content, now),
+                )
+                await conn.commit()
+        except Exception as e:
+            logger.error(f"add_message error: {e}")
 
     async def get_history(self, user_id: int, limit: int = 50, max_age_hours: int = 720) -> List[Dict[str, str]]:
-        """Get recent chat history. 30 days (720h) by default for context."""
+        """Get recent chat history. 30 days (720h) by default for context.
+
+        IMPORTANT: Returns messages in chronological order (oldest first).
+        Uses the index on (user_id, created_at) for fast lookup.
+        """
         conn = await self._get_conn()
         try:
             cutoff = time.time() - (max_age_hours * 3600)
@@ -259,16 +316,33 @@ class Database:
                     messages.append({"role": row[0], "content": row[1]})
             messages.reverse()
             return messages
-        finally:
-            await conn.close()
+        except Exception as e:
+            logger.error(f"get_history error: {e}")
+            return []
 
     async def clear_history(self, user_id: int) -> None:
         conn = await self._get_conn()
         try:
-            await conn.execute("DELETE FROM chat_history WHERE user_id = ?", (user_id,))
-            await conn.commit()
-        finally:
-            await conn.close()
+            async with self._write_lock:
+                await conn.execute("DELETE FROM chat_history WHERE user_id = ?", (user_id,))
+                await conn.commit()
+        except Exception as e:
+            logger.error(f"clear_history error: {e}")
+
+    async def cleanup_old_history(self, max_age_hours: int = 720) -> int:
+        """Remove chat history older than max_age_hours. Returns deleted count."""
+        conn = await self._get_conn()
+        try:
+            cutoff = time.time() - (max_age_hours * 3600)
+            async with self._write_lock:
+                cursor = await conn.execute(
+                    "DELETE FROM chat_history WHERE created_at < ?", (cutoff,)
+                )
+                await conn.commit()
+                return cursor.rowcount
+        except Exception as e:
+            logger.error(f"cleanup_old_history error: {e}")
+            return 0
 
     # ── Donations ────────────────────────────────────────────
 
@@ -276,14 +350,16 @@ class Database:
         conn = await self._get_conn()
         try:
             now = time.time()
-            cur = await conn.execute(
-                "INSERT INTO donations (user_id, stars_amount, telegram_charge_id, created_at) VALUES (?,?,?,?)",
-                (user_id, stars, charge_id, now),
-            )
-            await conn.commit()
-            return cur.lastrowid
-        finally:
-            await conn.close()
+            async with self._write_lock:
+                cur = await conn.execute(
+                    "INSERT INTO donations (user_id, stars_amount, telegram_charge_id, created_at) VALUES (?,?,?,?)",
+                    (user_id, stars, charge_id, now),
+                )
+                await conn.commit()
+                return cur.lastrowid
+        except Exception as e:
+            logger.error(f"record_donation error: {e}")
+            return 0
 
     async def get_total_donated(self, user_id: int) -> int:
         conn = await self._get_conn()
@@ -292,16 +368,16 @@ class Database:
                 "SELECT COALESCE(SUM(stars_amount),0) FROM donations WHERE user_id = ?", (user_id,)
             ) as cur:
                 return (await cur.fetchone())[0]
-        finally:
-            await conn.close()
+        except Exception:
+            return 0
 
     async def get_donation_count(self, user_id: int) -> int:
         conn = await self._get_conn()
         try:
             async with conn.execute("SELECT COUNT(*) FROM donations WHERE user_id = ?", (user_id,)) as cur:
                 return (await cur.fetchone())[0]
-        finally:
-            await conn.close()
+        except Exception:
+            return 0
 
     # ── Stats ───────────────────────────────────────────────
 
@@ -315,5 +391,5 @@ class Database:
             async with conn.execute("SELECT COUNT(*) FROM donations") as cur:
                 total_donations = (await cur.fetchone())[0]
             return {"total_users": total_users, "total_stars": total_stars, "total_donations": total_donations}
-        finally:
-            await conn.close()
+        except Exception:
+            return {"total_users": 0, "total_stars": 0, "total_donations": 0}

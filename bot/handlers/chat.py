@@ -2,10 +2,15 @@
 
 STABILITY RULES:
   - Bot ALWAYS responds, even if ALL AI providers fail (fallback responses)
-  - NO double error messages — one error per failure
-  - Per-operation DB connections — never stale
+  - NO error messages ever shown to user
+  - Per-operation DB with write lock — safe for concurrent users
   - 30-day context memory
   - Short, effective system prompt
+
+MULTI-USER SAFETY:
+  - All state is per-user (dict keyed by user_id)
+  - Periodic cleanup of in-memory trackers prevents memory leaks
+  - DB write lock serializes concurrent writes from different users
 """
 import logging
 import random
@@ -23,14 +28,41 @@ from bot.config import (
     NASTYA_SYSTEM_PROMPT, DONATION_AMOUNTS, DONATION_LABELS,
     PROACTIVE_COOLDOWN, BOT_USERNAME,
 )
-from ai.router import AllProvidersExhaustedError
 
 logger = logging.getLogger(__name__)
 router = Router()
 
-# Per-user state
+# Per-user state — keyed by user_id, safe for concurrent access in asyncio
 _stars_tracker: dict = {}
 _proactive_tracker: dict = {}
+_last_tracker_cleanup: float = 0.0
+
+# How often to clean up trackers (seconds)
+_TRACKER_CLEANUP_INTERVAL = 3600  # 1 hour
+
+
+def _cleanup_trackers():
+    """Remove entries for users inactive for > 24 hours to prevent memory leaks."""
+    global _last_tracker_cleanup
+    now = time.time()
+    if now - _last_tracker_cleanup < _TRACKER_CLEANUP_INTERVAL:
+        return
+    _last_tracker_cleanup = now
+
+    cutoff = now - 86400  # 24 hours
+    # Clean stars tracker
+    stale = [uid for uid, data in _stars_tracker.items()
+             if data.get("last_ask", 0) < cutoff]
+    for uid in stale:
+        del _stars_tracker[uid]
+
+    # Clean proactive tracker
+    stale = [uid for uid, data in _proactive_tracker.items()
+             if data.get("last_proactive", 0) < cutoff]
+    for uid in stale:
+        del _proactive_tracker[uid]
+
+    logger.info(f"Tracker cleanup: removed {len(stale)} stale entries")
 
 
 # ── Age descriptions ────────────────────────────────────────
@@ -45,7 +77,7 @@ AGE_DESCRIPTIONS = [
     "Возраст — это просто цифра. А Настя — это явление! 💅✨",
 ]
 
-# ── Stars request phrases — BOLD, demanding ──────────────────
+# ── Stars request phrases — BOLD, demanding, NO "побалуешь/поможешь" ──
 
 STARS_REQUESTS = [
     "Хочу {want}! Давай звёздочки! 💅⭐",
@@ -58,6 +90,8 @@ STARS_REQUESTS = [
     "Настя требует {want}! Звёздочки — быстро! 😤⭐",
     "{want} хочу! Кидай звёздочки, пока Настя добрая! 😤⭐",
     "Ну??? Насте звёздочки на {want}! Ждать что ли? 💋⭐",
+    "Давай звёздочки! Насте на {want}! Живо! 😤⭐",
+    "Насте срочно звёздочки на {want}! Отдавай! 💅⭐",
 ]
 
 # ── Nastya's Wants ──────────────────────────────────────────
@@ -339,6 +373,8 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
 
         mood = await db.get_user_mood(user_id)
         system_prompt = NASTYA_SYSTEM_PROMPT + f"\nНастроение: {mood}. Пользователь прислал фото — прокомментируй как живая девушка."
+
+        # Get history BEFORE current message (already saved above, so it's in history)
         history = await db.get_history(user_id, limit=50)
 
         result = await ai_router.chat_with_image(
@@ -355,12 +391,11 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         else:
             await message.answer(response_text)
 
-    except AllProvidersExhaustedError:
-        fallback = ai_router.get_fallback_response()
-        await message.answer(fallback)
     except Exception as e:
         logger.error(f"Photo handler error: {e}")
-        await message.answer("Настя не может разглядеть фото... Попробуй ещё раз!")
+        # Use fallback — NEVER show error to user
+        fallback = "Настя не может разглядеть фото... Попробуй ещё раз! 😅"
+        await message.answer(fallback)
 
 
 # ── Document handler ─────────────────────────────────────────
@@ -420,6 +455,9 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
 
     text = message.text
     text_lower = text.lower()
+
+    # Periodic cleanup of in-memory trackers
+    _cleanup_trackers()
 
     # ── Quick reactions (no AI needed) ─────────────────────
 
@@ -504,7 +542,12 @@ async def _save_simple_exchange(message: Message, user_text: str, bot_text: str,
 
 async def _process_text_message(message: Message, text: str, db, ai_router,
                                  is_voice: bool = False, extra_suffix: str = "") -> None:
-    """Process text with AI. ALWAYS responds — even if all providers fail."""
+    """Process text with AI. ALWAYS responds — even if all providers fail.
+
+    CRITICAL FIX: Get history BEFORE saving the user message to avoid
+    duplication. The user message is saved AFTER getting history, so
+    the AI doesn't see the same message twice.
+    """
     user_id = message.from_user.id
 
     try:
@@ -551,32 +594,30 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     system_prompt = NASTYA_SYSTEM_PROMPT + f"\nНастроение: {mood}. {gender_ctx}"
 
-    # Save user message
-    prefix = "[Голосовое] " if is_voice else ""
-    try:
-        await db.add_message(user_id, "user", f"{prefix}{text}")
-    except Exception:
-        pass
-
-    # Get history — 30 days
+    # CRITICAL FIX: Get history BEFORE saving user message
+    # This prevents the AI from seeing the same message twice
     history = []
     try:
         history = await db.get_history(user_id, limit=50)
     except Exception:
         pass
 
+    # NOW save the user message to DB
+    prefix = "[Голосовое] " if is_voice else ""
+    try:
+        await db.add_message(user_id, "user", f"{prefix}{text}")
+    except Exception:
+        pass
+
+    # Call AI — the router ALWAYS returns a response (never raises to caller)
     try:
         result = await ai_router.chat(
             prompt=text, system_prompt=system_prompt, messages=history,
         )
         response_text = _clean_response(result.text)
 
-    except AllProvidersExhaustedError:
-        # ALL providers failed — use fallback, bot ALWAYS responds
-        logger.error(f"All providers exhausted for user={user_id}")
-        response_text = ai_router.get_fallback_response()
-
     except Exception as e:
+        # This should never happen since router returns fallback, but just in case
         logger.error(f"Chat error for user={user_id}: {e}")
         response_text = ai_router.get_fallback_response()
 
@@ -649,6 +690,9 @@ def _clean_response(text: str) -> str:
     text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # Remove bold
     text = re.sub(r'\*([^*]+)\*', r'\1', text)  # Remove italic
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)  # Remove headers
+    # Remove "побалуешь" / "поможешь" that AI might generate
+    text = re.sub(r'\bпобалуешь\b', 'давай', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bпоможешь\b', 'кидай', text, flags=re.IGNORECASE)
     # If response is too long (AI got carried away), trim it
     if len(text) > 500:
         # Cut at last sentence end
@@ -694,8 +738,15 @@ async def callback_donate(callback: CallbackQuery, db=None, ai_router=None) -> N
 # ════════════════════════════════════════════════════════════
 
 async def check_and_send_proactive(bot, db, ai_router) -> None:
+    """Send proactive messages to users who haven't chatted recently.
+
+    MULTI-USER SAFE: Only sends to 5 users per cycle to avoid spam.
+    Cleans up stale tracker entries.
+    """
     now = time.time()
     sent = 0
+    _cleanup_trackers()
+
     for user_id, pro in list(_proactive_tracker.items()):
         if sent >= 5:
             break
@@ -710,4 +761,5 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
             sent += 1
         except Exception as e:
             logger.error(f"Proactive error for user {user_id}: {e}")
+            # Remove users who blocked the bot
             _proactive_tracker.pop(user_id, None)
