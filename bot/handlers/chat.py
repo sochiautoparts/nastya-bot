@@ -308,7 +308,7 @@ async def cmd_clear(message: Message, db=None, ai_router=None) -> None:
 @router.message(F.voice)
 async def handle_voice(message: Message, db=None, ai_router=None) -> None:
     if not db or not ai_router:
-        await message.answer("Ой, Настя не может сейчас разговаривать... Попробуй позже")
+        await message.answer("Настя сейчас занята... Напиши текстом! 💅")
         return
 
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
@@ -335,7 +335,7 @@ async def handle_voice(message: Message, db=None, ai_router=None) -> None:
 @router.message(F.photo)
 async def handle_photo(message: Message, db=None, ai_router=None) -> None:
     if not db or not ai_router:
-        await message.answer("Ой, Настя не может сейчас смотреть... Попробуй позже")
+        await message.answer("Настя сейчас не видит... Напиши текстом! 💅")
         return
 
     user_id = message.from_user.id
@@ -394,7 +394,7 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
     except Exception as e:
         logger.error(f"Photo handler error: {e}")
         # Use fallback — NEVER show error to user
-        fallback = "Настя не может разглядеть фото... Попробуй ещё раз! 😅"
+        fallback = "Ой, фото что-то не грузится... Напиши текстом! 😅"
         await message.answer(fallback)
 
 
@@ -450,7 +450,7 @@ async def handle_video(message: Message, db=None, ai_router=None) -> None:
 @router.message(F.text, ~F.text.startswith("/"))
 async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     if not db or not ai_router:
-        await message.answer("Ой, Настя не может сейчас говорить... Попробуй позже")
+        await message.answer("Настя пока не готова... Подожди минуточку! 💅")
         return
 
     text = message.text
