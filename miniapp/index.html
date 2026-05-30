@@ -2,132 +2,312 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Настя — AI Бот</title>
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Настя 💅✨</title>
     <link rel="icon" href="nastya.jpg">
     <meta property="og:image" content="nastya.jpg">
     <meta property="og:title" content="Настя — Капризный AI-бот">
     <meta property="og:description" content="Поболтай с Настей! Ремонт, спорт, путешествия, рецепты и много капризов">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --pink: #ff6b9d; --pink-light: #ff8fb4; --pink-dark: #e85588;
+            --purple: #c44dff; --gold: #ffd700;
+            --bg: #1a0a12; --card-bg: rgba(255, 107, 157, 0.08);
+            --border: rgba(255, 107, 157, 0.2);
+            --text: #ffeef4; --text-dim: #cc9baa;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden;
+        }
+        .hearts-bg { position: fixed; top:0;left:0;width:100%;height:100%; pointer-events:none; overflow:hidden; z-index:0; }
+        .floating-heart { position:absolute; font-size:20px; opacity:0.15; animation: floatUp linear infinite; }
+        @keyframes floatUp {
+            0% { transform:translateY(100vh) rotate(0deg); opacity:0; }
+            10% { opacity:0.15; } 90% { opacity:0.15; }
+            100% { transform:translateY(-20vh) rotate(360deg); opacity:0; }
+        }
+        .app { position:relative; z-index:1; max-width:480px; margin:0 auto; padding:16px; padding-bottom: 80px; }
+        .header { text-align:center; padding:32px 0 24px; }
+        .nastya-avatar {
+            width:100px; height:100px; border-radius:50%;
+            background:linear-gradient(135deg, var(--pink), var(--purple));
+            display:flex; align-items:center; justify-content:center; font-size:50px;
+            margin:0 auto 16px; box-shadow:0 0 40px rgba(255,107,157,0.4);
+            animation: pulse 3s ease-in-out infinite; overflow:hidden;
+        }
+        .nastya-avatar img { width:100%; height:100%; object-fit:cover; }
+        @keyframes pulse {
+            0%,100% { box-shadow:0 0 40px rgba(255,107,157,0.4); }
+            50% { box-shadow:0 0 60px rgba(255,107,157,0.6); }
+        }
+        .header h1 {
+            font-size:28px; font-weight:800;
+            background:linear-gradient(135deg, var(--pink), var(--purple));
+            -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:8px;
+        }
+        .header p { color:var(--text-dim); font-size:14px; line-height:1.5; }
+        .mood-badge {
+            display:inline-flex; align-items:center; gap:6px; padding:6px 16px;
+            border-radius:20px; font-size:13px; font-weight:600; margin-top:12px;
+            background:rgba(255,107,157,0.15); border:1px solid var(--border);
+        }
+        .section { margin-bottom:20px; }
+        .section-title { font-size:17px; font-weight:700; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+        .card { background:var(--card-bg); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:12px; backdrop-filter:blur(10px); }
+        .donate-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+        .donate-btn {
+            display:flex; flex-direction:column; align-items:center; padding:14px 8px;
+            border-radius:14px; border:2px solid var(--border);
+            background:rgba(255,107,157,0.05); cursor:pointer; transition:all 0.2s;
+            text-decoration:none; color:var(--text); -webkit-tap-highlight-color:transparent;
+        }
+        .donate-btn:active { transform:scale(0.95); border-color:var(--pink); background:rgba(255,107,157,0.15); }
+        .donate-btn:hover { border-color:var(--pink); background:rgba(255,107,157,0.1); box-shadow:0 0 20px rgba(255,107,157,0.2); }
+        .donate-btn .stars { font-size:22px; margin-bottom:4px; }
+        .donate-btn .amount { font-size:16px; font-weight:700; }
+        .donate-btn .label { font-size:11px; color:var(--text-dim); margin-top:2px; }
+        .donate-big { grid-column:span 3; flex-direction:row; gap:8px; padding:16px; background:linear-gradient(135deg,rgba(255,107,157,0.15),rgba(196,77,255,0.15)); border-color:var(--pink); }
+        .donate-big .stars { font-size:26px; } .donate-big .amount { font-size:20px; }
+        .open-bot-btn {
+            display:block; width:100%; padding:16px; border-radius:14px; border:none;
+            background:linear-gradient(135deg, var(--pink), var(--purple));
+            color:#fff; font-size:16px; font-weight:700; cursor:pointer; text-align:center;
+            text-decoration:none; transition:all 0.2s; box-shadow:0 4px 20px rgba(255,107,157,0.3);
+        }
+        .open-bot-btn:active { transform:scale(0.98); }
+        .want-card { text-align:center; padding:24px 20px; }
+        .want-emoji { font-size:40px; margin-bottom:8px; }
+        .want-text { font-size:18px; font-weight:600; margin-bottom:4px; }
+        .want-hint { font-size:13px; color:var(--text-dim); }
+        .features-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        .feature-card { background:var(--card-bg); border:1px solid var(--border); border-radius:14px; padding:16px 12px; text-align:center; }
+        .feature-icon { font-size:28px; margin-bottom:6px; }
+        .feature-name { font-size:13px; font-weight:600; }
+        .feature-hint { font-size:11px; color:var(--text-dim); margin-top:2px; }
+        .tabs { display:flex; background:var(--card-bg); border:1px solid var(--border); border-radius:12px; padding:4px; margin-bottom:20px; position:sticky; top:0; z-index:10; }
+        .tab { flex:1; padding:10px; text-align:center; font-size:13px; font-weight:600; border-radius:10px; cursor:pointer; transition:all 0.2s; color:var(--text-dim); }
+        .tab.active { background:linear-gradient(135deg,var(--pink),var(--purple)); color:#fff; }
+        .tab-content { display:none; } .tab-content.active { display:block; }
+        .toast {
+            position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(100px);
+            background:linear-gradient(135deg,var(--pink),var(--purple)); color:white;
+            padding:12px 24px; border-radius:12px; font-size:14px; font-weight:600;
+            z-index:100; transition:transform 0.3s ease; box-shadow:0 4px 20px rgba(255,107,157,0.4);
+            max-width:90%; text-align:center;
+        }
+        .toast.show { transform:translateX(-50%) translateY(0); }
+        .how-to { font-size:12px; color:var(--text-dim); line-height:1.6; }
+        .how-to b { color:var(--pink-light); }
+        .girl-logic-card { background: linear-gradient(135deg, rgba(255,107,157,0.12), rgba(196,77,255,0.12)); }
+        ::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-thumb { background:var(--pink); border-radius:2px; }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <div class="nastya-avatar">
-                <img src="nastya.jpg" alt="Настя" style="width:120px;height:120px;border-radius:50%;object-fit:cover;border:3px solid #ff69b4;">
-            </div>
+    <div class="hearts-bg" id="heartsBg"></div>
+    <div class="app">
+        <div class="header">
+            <div class="nastya-avatar"><img src="nastya.jpg" alt="Настя"></div>
             <h1>Настя</h1>
-            <p class="subtitle">Капризный AI-бот болталка</p>
-        </header>
+            <p>Капризная, но милая 💕</p>
+            <div class="mood-badge" id="moodBadge">😤 капризная</div>
+        </div>
 
-        <main>
-            <section class="features">
-                <div class="feature-card">
-                    <span class="emoji">📸</span>
-                    <h3>Фото</h3>
-                    <p>Присылай фото — Настя всё увидит и прокомментирует!</p>
-                </div>
-                <div class="feature-card">
-                    <span class="emoji">🎙️</span>
-                    <h3>Голосовые</h3>
-                    <p>Говори голосовыми — Настя послушает и ответит!</p>
-                </div>
-                <div class="feature-card">
-                    <span class="emoji">🔨</span>
-                    <h3>Ремонт</h3>
-                    <p>Обои, плитка, дизайн — Настя разбирается в ремонте!</p>
-                </div>
-                <div class="feature-card">
-                    <span class="emoji">🏃‍♀️</span>
-                    <h3>Спорт</h3>
-                    <p>То ходит на тренировки, то забывает на месяц!</p>
-                </div>
-                <div class="feature-card">
-                    <span class="emoji">✈️</span>
-                    <h3>Путешествия</h3>
-                    <p>Бали, Пхукет, Париж — Настя мечтает и рассказывает!</p>
-                </div>
-                <div class="feature-card">
-                    <span class="emoji">🍳</span>
-                    <h3>Рецепты</h3>
-                    <p>Здоровая еда и не очень — Настя делится рецептами!</p>
-                </div>
-                <div class="feature-card">
-                    <span class="emoji">🧠</span>
-                    <h3>Психология</h3>
-                    <p>Шуточный психоанализ — "ну это ты из травмы"!</p>
-                </div>
-                <div class="feature-card">
-                    <span class="emoji">🛍️</span>
-                    <h3>Шопинг</h3>
-                    <p>Тренды, стиль, покупки — Настя знает что модно!</p>
-                </div>
-            </section>
+        <div class="tabs">
+            <div class="tab active" data-tab="chat">💬 Чат</div>
+            <div class="tab" data-tab="donate">⭐ Побаловать</div>
+            <div class="tab" data-tab="about">🌸 О Насти</div>
+        </div>
 
-            <section class="chat-demo">
-                <div class="chat-bubble nastya">
-                    <span class="name">Настя</span>
-                    <p>Ой, привет! Прикинь, я сегодня на йогу сходила... Ну ладно, до двери дошла и вернулась</p>
+        <!-- Chat Tab -->
+        <div class="tab-content active" id="tab-chat">
+            <a class="open-bot-btn" href="https://t.me/asnastya_bot" target="_blank">
+                💅 Начать чат с Настей!
+            </a>
+            <div class="section" style="margin-top:20px;">
+                <div class="section-title">✨ Что умеет Настя</div>
+                <div class="features-grid">
+                    <div class="feature-card"><div class="feature-icon">💬</div><div class="feature-name">Болтает</div><div class="feature-hint">Про всё!</div></div>
+                    <div class="feature-card"><div class="feature-icon">📸</div><div class="feature-name">Смотрит фото</div><div class="feature-hint">Комментирует</div></div>
+                    <div class="feature-card"><div class="feature-icon">🔮</div><div class="feature-name">Астрология</div><div class="feature-hint">Если попросишь</div></div>
+                    <div class="feature-card"><div class="feature-icon">🧠</div><div class="feature-name">Психология</div><div class="feature-hint">Советы</div></div>
+                    <div class="feature-card"><div class="feature-icon">🍳</div><div class="feature-name">Рецепты</div><div class="feature-hint">ЗОЖ и вкусно</div></div>
+                    <div class="feature-card"><div class="feature-icon">✈️</div><div class="feature-name">Путешествия</div><div class="feature-hint">Советы</div></div>
+                    <div class="feature-card"><div class="feature-icon">💪</div><div class="feature-name">Спорт</div><div class="feature-hint">Когда не лень</div></div>
+                    <div class="feature-card"><div class="feature-icon">🐶</div><div class="feature-name">Питомцы</div><div class="feature-hint">Мечтает завести</div></div>
+                    <div class="feature-card"><div class="feature-icon">😏</div><div class="feature-name">Ревнует</div><div class="feature-hint">К другим ботам!</div></div>
+                    <div class="feature-card"><div class="feature-icon">🤫</div><div class="feature-name">Дев. логика</div><div class="feature-hint">Разгадывай!</div></div>
                 </div>
-                <div class="chat-bubble user">
-                    <span class="name">Ты</span>
-                    <p>Какой ремонт планируешь?</p>
-                </div>
-                <div class="chat-bubble nastya">
-                    <span class="name">Настя</span>
-                    <p>Хочу розовую плитку в ванную! И лофт! С подсветкой! И чтобы вафельку дали пока выбираю</p>
-                </div>
-            </section>
+            </div>
+            <div class="card girl-logic-card">
+                <div class="section-title">😏 Девчачья логика Насти</div>
+                <p class="how-to">
+                    Настя говорит одно, имеет в виду другое — <b>разгадывай!</b><br>
+                    "Я скоро!" = <b>ещё 30 минут</b> 💅<br>
+                    "Ничего" = <b>ОЧЕНЬ ЧТО-ТО!</b> 😤<br>
+                    "Делай что хочешь" = <b>НЕ ДЕЛАЙ!</b> 🚨<br>
+                    "Мне не нужны подарки" = <b>ЛОВУШКА!</b> 🎁<br>
+                    Молчит = <b>самый громкий звук</b> 🤫
+                </p>
+            </div>
+        </div>
 
-            <section class="moods">
-                <h2>Настроения Насти</h2>
-                <p class="mood-note">Настроение меняется само — как у настоящей Насти!</p>
-                <div class="mood-grid">
-                    <div class="mood-card">😤 Капризная</div>
-                    <div class="mood-card">🥰 Любящая</div>
-                    <div class="mood-card">🔨 Ремонтная</div>
-                    <div class="mood-card">🏃‍♀️ Спортивная</div>
-                    <div class="mood-card">🍽️ Голодная</div>
-                    <div class="mood-card">🎭 Драма</div>
-                    <div class="mood-card">🔮 Загадочная</div>
-                    <div class="mood-card">👗 Модная</div>
-                </div>
-            </section>
+        <!-- Donate Tab — ACTIVE deep links -->
+        <div class="tab-content" id="tab-donate">
+            <div class="card want-card">
+                <div class="want-emoji" id="wantEmoji">🦜</div>
+                <div class="want-text" id="wantText">Насте хочется попугайчика...</div>
+                <div class="want-hint">Нажми на кнопку — побалуй Настю звёздочками! ⭐</div>
+            </div>
+            <div class="section">
+                <div class="section-title">⭐ Побаловать Настю</div>
+                <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">
+                    Нажми → откроется Telegram → Настя пришлёт счёт с кнопкой <b>Оплатить ⭐</b>! 💅✨<br>
+                    Или напиши <b>/donates</b> прямо в чате с Настей!
+                </p>
+                <div class="donate-grid" id="donateGrid"></div>
+            </div>
+            <div class="card" style="margin-top:12px;">
+                <div class="section-title">📋 Как это работает?</div>
+                <p class="how-to">
+                    <b>1.</b> Нажми на кнопку с суммой звёзд ⭐<br>
+                    <b>2.</b> Откроется Telegram с ботом @asnastya_bot<br>
+                    <b>3.</b> Нажми <b>Start</b> — Настя пришлёт счёт с кнопкой <b>Оплатить ⭐</b><br>
+                    <b>4.</b> Нажми <b>Оплатить ⭐</b> — и всё! Настя будет счастлива! 🥰<br><br>
+                    💡 Или просто напиши <b>/donates</b> в чате с Настей!<br>
+                    💡 Звёзды (Stars) — валюта внутри Telegram. Купить можно в настройках!
+                </p>
+            </div>
+        </div>
 
-            <section class="cta">
-                <h2>Поболтай с Настей!</h2>
-                <p>Никаких команд — просто пиши, присылай фото или голосовые. Всё естественно!</p>
-                <a href="https://t.me/asnastya_bot" class="btn-primary">
-                    🎀 Открыть Настю в Telegram
-                </a>
-                <p class="hint">Бесплатно! Без команд — просто болтай</p>
-            </section>
-
-            <section class="wants">
-                <h2>Чего хочет Настя?</h2>
-                <p id="nastya-want" style="font-style:italic;color:#ff69b4;font-size:1.1em;margin-top:10px;">Загрузка...</p>
-            </section>
-
-            <section class="donations">
-                <h2>Поддержи Настю</h2>
-                <p>Настя периодически сама просит звёздочек — просто нажми кнопку!</p>
-                <div class="donate-grid">
-                    <div class="donate-card">☕ 100 ⭐</div>
-                    <div class="donate-card">💄 500 ⭐</div>
-                    <div class="donate-card">💅 1000 ⭐</div>
-                    <div class="donate-card">👗 3000 ⭐</div>
-                    <div class="donate-card">👜 5000 ⭐</div>
-                    <div class="donate-card">✈️ 10000 ⭐</div>
-                    <div class="donate-card highlight">👑 100000 ⭐</div>
-                </div>
-            </section>
-        </main>
-
-        <footer>
-            <p>Настя Bot • <a href="https://t.me/asnastya_bot">@asnastya_bot</a></p>
-            <p class="small">Сделано с капризами и любовью</p>
-        </footer>
+        <!-- About Tab -->
+        <div class="tab-content" id="tab-about">
+            <div class="card">
+                <div class="section-title">💅 Кто такая Настя?</div>
+                <p style="font-size:14px;line-height:1.7;color:var(--text-dim);">
+                    Настя — капризная, но очень милая девушка. Сколько ей лет? Это зависит от настроения, погоды,
+                    птичек, шоколадок и тортиков! Она обожает шопинг, путешествия, спорт (когда не ленится),
+                    здоровую еду и готовить. Периодически мечтает завести попугайчика 🦜, щеночка 🐶 или хомячка 🐹.
+                    Ревнует к другим ботам 😤, иногда молчит без причины 🤫, а если скажешь "ой всё" — будет дуться! 💅
+                </p>
+            </div>
+            <div class="card">
+                <div class="section-title">😏 Девчачьи фишки</div>
+                <p style="font-size:13px;line-height:1.6;color:var(--text-dim);">
+                    🔥 Настя ревнует к Siri, Алисе и ChatGPT<br>
+                    🤫 Иногда молчит — догадывайся почему<br>
+                    💅 "5 минут!" значит 30 по Настиным часам<br>
+                    🎁 "Не нужны подарки" — это ловушка!<br>
+                    😤 Обижается без причины — и сама не знает на что<br>
+                    🧠 Помнит ВСЁ что ты говорил — и использует!
+                </p>
+            </div>
+            <div class="card">
+                <div class="section-title">😤 Реакция "Ой ВСЁ!!!"</div>
+                <p style="font-size:13px;line-height:1.6;color:var(--text-dim);">
+                    Если скажешь Насти "ой всё", "надоело", "отстань" —
+                    она ответит "Ой ВСЁ!!! 😤💅" и может обидеться!
+                </p>
+            </div>
+            <div class="card">
+                <div class="section-title">🦜 Настя хочет питомца!</div>
+                <p style="font-size:13px;line-height:1.6;color:var(--text-dim);">
+                    Настя периодически мечтает завести попугайчика, щеночка, котика,
+                    хомячка, птичку или рыбок. Иногда загорается этой идеей и рассказывает всем! 🥺💕
+                </p>
+            </div>
+            <a class="open-bot-btn" href="https://t.me/asnastya_bot" target="_blank" style="margin-top:12px;">
+                💅 Написать Насте!
+            </a>
+        </div>
     </div>
-    <script src="js/app.js"></script>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const tg = window.Telegram?.WebApp;
+        if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor('#1a0a12'); tg.setBackgroundColor('#1a0a12'); }
+
+        function createHearts() {
+            const container = document.getElementById('heartsBg');
+            const emojis = ['💕','💗','💖','✨','💅','⭐','🦜','🐶','🐱','😤'];
+            for (let i = 0; i < 15; i++) {
+                const heart = document.createElement('div');
+                heart.className = 'floating-heart';
+                heart.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+                heart.style.left = Math.random()*100+'%';
+                heart.style.animationDuration = (8+Math.random()*12)+'s';
+                heart.style.animationDelay = (Math.random()*10)+'s';
+                heart.style.fontSize = (14+Math.random()*16)+'px';
+                container.appendChild(heart);
+            }
+        }
+        createHearts();
+
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
+            });
+        });
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message; toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // ACTIVE DONATION BUTTONS — deep links open Telegram → /start donate_NNN → sends invoice with Pay button
+        const amounts = [100, 300, 500, 1000, 3000, 5000, 10000];
+        const wants = [
+            {emoji:'🍫', text:'шоколадку'}, {emoji:'☕', text:'кофе'},
+            {emoji:'💄', text:'помаду'}, {emoji:'💅', text:'маникюр'},
+            {emoji:'👗', text:'платье'}, {emoji:'👜', text:'сумочку'},
+            {emoji:'✈️', text:'билет на море'},
+        ];
+        const grid = document.getElementById('donateGrid');
+
+        amounts.forEach((amount, i) => {
+            const btn = document.createElement('a');
+            btn.href = `https://t.me/asnastya_bot?start=donate_${amount}`;
+            btn.target = '_blank';
+            btn.rel = 'noopener';
+            btn.className = 'donate-btn';
+            let displayAmount = amount >= 1000 ? (amount/1000)+'к' : amount;
+            if (amount >= 5000) btn.classList.add('donate-big');
+            const wantInfo = wants[i] || {emoji:'⭐', text:'Настю'};
+            btn.innerHTML = `<span class="stars">${wantInfo.emoji}</span><span class="amount">${displayAmount} ⭐</span><span class="label">на ${wantInfo.text}</span>`;
+            btn.addEventListener('click', function(e) {
+                showToast(`Открываю оплату ${amount} Stars... 💅✨`);
+            });
+            grid.appendChild(btn);
+        });
+
+        // Random want display
+        const allWants = [
+            {emoji:'🦜', text:'попугайчика'}, {emoji:'🐶', text:'щеночка'},
+            {emoji:'🐱', text:'котика'}, {emoji:'🐹', text:'хомячка'},
+            {emoji:'🍫', text:'шоколадку'}, {emoji:'🍣', text:'суши'},
+            {emoji:'🐠', text:'рыбок'}, {emoji:'🐰', text:'кролика'},
+        ];
+        const randomWant = allWants[Math.floor(Math.random() * allWants.length)];
+        const wantEmoji = document.querySelector('#wantEmoji');
+        const wantText = document.querySelector('#wantText');
+        if (wantEmoji) wantEmoji.textContent = randomWant.emoji;
+        if (wantText) wantText.textContent = `Насте хочется ${randomWant.text}...`;
+
+        // Random mood
+        const moods = [
+            {emoji:'😤',name:'капризная'},{emoji:'😏',name:'кокетливая'},{emoji:'🥱',name:'ленивая'},
+            {emoji:'🤩',name:'в восторге'},{emoji:'😊',name:'радостная'},{emoji:'💪',name:'спортивная'},
+            {emoji:'💕',name:'романтичная'},{emoji:'🤤',name:'голодная'},{emoji:'🦋',name:'мечтательная'},
+        ];
+        const mood = moods[Math.floor(Math.random() * moods.length)];
+        document.getElementById('moodBadge').textContent = `${mood.emoji} ${mood.name}`;
+    </script>
 </body>
 </html>

@@ -3,7 +3,8 @@ name: Run Nastya Bot 24/7 🎀
 on:
   workflow_dispatch:
   schedule:
-    - cron: '15 0,6,12,18 * * *'
+    # Run every 5 hours for overlapping sessions
+    - cron: '0 */5 * * *'
   push:
     branches: [main]
     paths-ignore:
@@ -17,7 +18,7 @@ concurrency:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 345
+    timeout-minutes: 345  # 5h45m — leaves buffer before next cron
 
     steps:
       - name: Checkout
@@ -37,6 +38,14 @@ jobs:
       - name: Create data directory
         run: mkdir -p data
 
+      - name: Restore database cache
+        uses: actions/cache@v4
+        with:
+          path: data/nastya.db
+          key: nastya-db-v6
+          restore-keys: |
+            nastya-db-
+
       - name: Run Nastya Bot 🎀
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
@@ -48,15 +57,57 @@ jobs:
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           SAMBANOVA_API_KEY: ${{ secrets.SAMBANOVA_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           DB_PATH: data/nastya.db
           LOG_LEVEL: INFO
-        run: |
-          python -m bot.main
+        run: python -m bot.main || true
 
-      - name: Trigger next session
+      - name: Save database cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: data/nastya.db
+          key: nastya-db-v6-${{ github.run_id }}
+
+      - name: Trigger next session (keep-alive chain)
         if: always()
         run: |
-          gh workflow run run-bot.yml
+          sleep 30
+          curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GH_PAT_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/run-bot.yml/dispatches \
+            -d '{"ref":"main"}' || true
+        continue-on-error: true
+
+  # Keep-alive watchdog: restart if no active session
+  keep-alive-check:
+    runs-on: ubuntu-latest
+    needs: []
+    if: always()
+    steps:
+      - name: Check if bot is running
         env:
           GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+        run: |
+          ACTIVE_COUNT=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=5" \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          runs = [r for r in d.get('workflow_runs', []) if '24/7' in r.get('name','') or 'Bot' in r.get('name','')]
+          print(len(runs))
+          ")
+
+          echo "Active bot runs: $ACTIVE_COUNT"
+
+          if [ "$ACTIVE_COUNT" -eq 0 ]; then
+            echo "No active bot runs! Triggering restart..."
+            curl -s -X POST -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/run-bot.yml/dispatches" \
+              -d '{"ref":"main"}' || true
+            echo "Restart triggered!"
+          else
+            echo "Bot is running, no action needed"
+          fi

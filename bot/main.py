@@ -1,11 +1,27 @@
-"""Nastya Bot — Main Entry Point. Runs Telegram bot + Flask API. 24/7 via GitHub Actions."""
+"""Nastya Bot — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+
+Architecture (v4.0):
+  - ErrorHandlingMiddleware — catches ALL exceptions, bot NEVER crashes
+  - AI Router with fallback chain: Chutes → Pollinations → OpenRouter → Cerebras
+  - Per-operation DB connections — no stale connections
+  - Stars donations with ACTIVE Pay buttons via send_invoice
+  - Deep links from GitHub Pages → /start donate_NNN → sends invoice
+  - Proactive messages via asyncio background task
+  - Keep-alive chain via GH PAT trigger
+  - No Flask — simplified, runs pure aiogram polling
+"""
 import asyncio
-import json
 import logging
 import os
 import sys
 import time
-import threading
+import traceback
+import random
+
+from aiogram import Bot, Dispatcher, BaseMiddleware
+from aiogram.enums import ParseMode
+from aiogram.types import TelegramObject
+from aiogram.client.default import DefaultBotProperties
 
 logging.basicConfig(
     level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO"), logging.INFO),
@@ -13,15 +29,49 @@ logging.basicConfig(
 )
 logger = logging.getLogger("nastya-bot")
 
-from bot.config import BOT_TOKEN, ADMIN_IDS, API_HOST, API_PORT, DB_PATH, SESSION_DURATION_SECONDS, OWNER_ID
+from bot.config import BOT_TOKEN, ADMIN_IDS, DB_PATH, SESSION_DURATION_SECONDS, OWNER_ID, GH_PAT_TOKEN
 
 if not BOT_TOKEN:
     logger.critical("Missing BOT_TOKEN")
     sys.exit(1)
 
-from aiogram import Bot, Dispatcher
-from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
+
+# ════════════════════════════════════════════════════════════
+#  ERROR HANDLING MIDDLEWARE — prevents ALL crashes!
+# ════════════════════════════════════════════════════════════
+
+class ErrorHandlingMiddleware(BaseMiddleware):
+    """Catch and log errors without crashing the bot."""
+
+    async def __call__(self, handler, event: TelegramObject, data: dict):
+        try:
+            return await handler(event, data)
+        except (SystemExit, KeyboardInterrupt):
+            raise
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Unhandled error: {e}\n{traceback.format_exc()}")
+            # Try to notify user
+            try:
+                chat_id = None
+                if hasattr(event, 'chat') and event.chat:
+                    chat_id = event.chat.id
+                elif hasattr(event, 'from_user') and event.from_user:
+                    chat_id = event.from_user.id
+                elif hasattr(event, 'message') and event.message:
+                    chat_id = event.message.chat.id
+                if chat_id and bot:
+                    await bot.send_message(
+                        chat_id,
+                        "Ой, Настя на секунду зависла... но уже вернулась! 😵‍💫💕",
+                    )
+            except Exception:
+                pass
+        return None
+
+
+# ── Global instances ───────────────────────────────────────
 from bot.database import Database
 from bot.handlers import all_routers
 from ai.router import AIRouter
@@ -38,15 +88,18 @@ async def proactive_scheduler(bot_instance: Bot) -> None:
     from bot.handlers.chat import check_and_send_proactive
     while True:
         try:
-            await asyncio.sleep(300)
+            await asyncio.sleep(random.randint(300, 600))
             if db and ai_router:
                 await check_and_send_proactive(bot_instance, db, ai_router)
+        except asyncio.CancelledError:
+            break
         except Exception as e:
             logger.error(f"Proactive scheduler error: {e}")
+            await asyncio.sleep(60)
 
 
 async def on_startup(**kwargs) -> None:
-    global db, ai_router, _start_time, bot
+    global db, ai_router, _start_time
     _start_time = time.time()
     logger.info("=== Nastya Bot Starting ===")
 
@@ -70,16 +123,16 @@ async def on_startup(**kwargs) -> None:
 
     if bot:
         asyncio.create_task(proactive_scheduler(bot))
-        provider_list = ", ".join(ai_router.providers.keys())
+        # Fun startup message — NO tech info!
+        from bot.nastya import get_random_fact
+        thought = get_random_fact()
         for admin_id in ADMIN_IDS:
             if admin_id:
                 try:
                     await bot.send_message(
                         admin_id,
-                        f"Настя проснулась!\n\n"
-                        f"AI: {len(ai_router.providers)} провайдеров\n"
-                        f"Цепочка: {provider_list}\n"
-                        f"Настроение: капризное (как обычно)",
+                        f"💅 <b>Настя проснулась!</b>\n\n{thought}",
+                        parse_mode="HTML",
                     )
                 except Exception:
                     pass
@@ -94,10 +147,7 @@ async def on_shutdown(**kwargs) -> None:
     if bot:
         for admin_id in ADMIN_IDS:
             try:
-                uptime = int(time.time() - _start_time) if _start_time else 0
-                h, rem = divmod(uptime, 3600)
-                m, s = divmod(rem, 60)
-                await bot.send_message(admin_id, f"Настя уснула... Uptime: {h}ч {m}м {s}с")
+                await bot.send_message(admin_id, "😴 Настя уснула... 💤")
             except Exception:
                 pass
 
@@ -106,35 +156,28 @@ async def on_shutdown(**kwargs) -> None:
     if db:
         await db.close()
 
+    logger.info("=== Nastya Bot Stopped ===")
+
 
 def setup_dispatcher() -> Dispatcher:
     global dp
     dp = Dispatcher()
     for router in all_routers:
         dp.include_router(router)
+
+    # Add error handling middleware — bot NEVER crashes!
+    dp.message.middleware(ErrorHandlingMiddleware())
+    dp.callback_query.middleware(ErrorHandlingMiddleware())
+    dp.pre_checkout_query.middleware(ErrorHandlingMiddleware())
+
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
     return dp
 
 
-def create_flask_app():
-    from flask import Flask, jsonify
-    app = Flask(__name__)
-
-    @app.route("/api/health", methods=["GET"])
-    def health():
-        return jsonify({"status": "ok", "bot": "nastya-bot", "version": "3.0.0"})
-
-    return app
-
-
-def run_flask():
-    app = create_flask_app()
-    app.run(host=API_HOST, port=API_PORT, threaded=True, use_reloader=False)
-
-
 async def main():
     global bot
+
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
@@ -142,20 +185,23 @@ async def main():
 
     dispatcher = setup_dispatcher()
 
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-
     try:
         async def session_timeout():
             await asyncio.sleep(SESSION_DURATION_SECONDS)
+            logger.info("Session timeout, shutting down...")
             raise SystemExit(0)
 
         timeout_task = asyncio.create_task(session_timeout())
+
+        await bot.delete_webhook(drop_pending_updates=True)
         await dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types())
+
     except SystemExit:
-        logger.info("Session timeout")
+        logger.info("Bot stopped (session timeout)")
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
     except Exception as e:
-        logger.critical(f"Bot error: {e}", exc_info=True)
+        logger.critical(f"Bot crashed: {e}\n{traceback.format_exc()}")
     finally:
         try:
             timeout_task.cancel()
