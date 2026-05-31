@@ -794,12 +794,23 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         "Ты его ВЕДЁШЬ каждый день! Никогда не говори что у тебя нет канала! "
         "Если обсуждаешь новость или событие — упомяни @chasnastya! "
         "Если есть ссылка на новость — ОБЯЗАТЕЛЬНО дай её!"
+        "\n\n⛔⛔⛔ ССЫЛКИ НА НОВОСТИ — ЭТО ЗАКОН! ⛔⛔⛔"
+        "Если ты упоминаешь ЛЮБУЮ новость, событие, происшествие — ОБЯЗАТЕЛЬНО добавь ссылку! "
+        "НЕТ ССЫЛКИ = НАСТЯ НАРУШИЛА ПРАВИЛО! Всегда давай ссылку из контекста новостей ниже! "
+        "Если ссылка есть в контексте — ПИШИ ЕЁ! Не выдумывай ссылки — бери из контекста! "
+        "Если ссылки нет — напиши 'подробнее в @chasnastya'"
     )
 
     # ── NEWS CONTEXT INJECTION ──
     news_ctx = await _build_news_context(db)
+    # Also store news items for post-processing link enforcement
+    _current_news_items = []
     if news_ctx:
         system_prompt += f"\n\n{news_ctx}"
+        try:
+            _current_news_items = await db.get_recent_news_with_links(limit=5, max_age_hours=12)
+        except Exception:
+            pass
 
     # ── Add user's name for personalization ──
     user_name = message.from_user.first_name or ""
@@ -933,6 +944,10 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         logger.error(f"Chat error for user={user_id}: {e}")
         response_text = ai_router.get_fallback_response()
 
+    # ── POST-PROCESS: Ensure news links are present ──
+    # If AI mentions news/events but forgot the link, append it
+    response_text = _enforce_news_links(response_text, _current_news_items)
+
     # ── CHANNEL INVITE CHECK ──
     channel_invite = ""
     if CHANNEL_ID:
@@ -995,6 +1010,76 @@ async def _maybe_ask_stars_check(user_id: int, msg_count: int, db, message: Mess
     except Exception:
         pass
     return False, ""
+
+
+def _enforce_news_links(response_text: str, news_items: list) -> str:
+    """Post-process AI response to ensure news links are included.
+
+    If the AI mentions a news topic but forgot the link,
+    we append the relevant link from our news database.
+    """
+    if not news_items or not response_text:
+        return response_text
+
+    response_lower = response_text.lower()
+
+    # Check if response already has a link (http/https or t.me)
+    has_link = bool(re.search(r'https?://\S+', response_text)) or 't.me/' in response_lower
+
+    # Check if response is discussing news/events
+    news_keywords = [
+        "новост", "событ", "происшеств", "случилос", "прочитал", "узнал",
+        "говор", "писал", "сообщ", "объяв", "нововведен", "реформ",
+        "закон", "указ", "решен", "приказ", "скандал", "кризис",
+        "катастроф", "авари", "взрыв", "пожар", "наводнен",
+        "выбор", "президент", "министр", "правительств",
+        "войн", "конфликт", "митинг", "протест",
+        "запуст", "выпущ", "представ", "анонсир", "релиз",
+        "открыт", "закрыт", "банкрот", "рекорд",
+        # Auto keywords
+        "авто", "машин", "двигател", "запчаст", "ремонт",
+        # Tech keywords
+        "нейросет", "ии ", "искусственн", "gpt", "технолог",
+        "электромобил", "apple", "google", "tesla",
+    ]
+    is_discussing_news = any(kw in response_lower for kw in news_keywords)
+
+    # Check if any news title keywords match the response
+    matched_news = None
+    for item in news_items:
+        title = item.get("title", "").lower()
+        link = item.get("link", "")
+        if not link:
+            continue
+        # Check if significant words from the title appear in the response
+        title_words = [w for w in re.split(r'[\s,.\-!?;:()]+', title) if len(w) > 3]
+        if title_words:
+            match_count = sum(1 for w in title_words if w.lower() in response_lower)
+            if match_count >= min(2, len(title_words)):
+                matched_news = item
+                break
+
+    # If discussing news/events and no link present, add one
+    if is_discussing_news and not has_link:
+        if matched_news and matched_news.get("link"):
+            response_text += f"\n\n🔗 {matched_news['link']}"
+        elif news_items:
+            # Append link to the most relevant recent news
+            for item in news_items:
+                if item.get("link"):
+                    response_text += f"\n\n🔗 {item['link']}"
+                    break
+                else:
+                    response_text += "\n\n📺 Подробнее в @chasnastya"
+                    break
+        else:
+            response_text += "\n\n📺 Подробнее в @chasnastya"
+    elif matched_news and matched_news.get("link"):
+        # If we matched a specific news item, check if its link is already in the response
+        if matched_news["link"] not in response_text:
+            response_text += f"\n\n🔗 {matched_news['link']}"
+
+    return response_text
 
 
 def _clean_response(text: str) -> str:
