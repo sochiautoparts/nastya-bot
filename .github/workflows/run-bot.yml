@@ -46,7 +46,7 @@ jobs:
           restore-keys: |
             nastya-db-
 
-      - name: Run Nastya Bot 6.0 💅
+      - name: Run Nastya Bot 7.0 💅
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           OWNER_ID: ${{ secrets.OWNER_ID }}
