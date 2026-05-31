@@ -277,30 +277,15 @@ async def on_startup(**kwargs) -> None:
         asyncio.create_task(periodic_db_cleanup())
         asyncio.create_task(memory_cleanup())
 
-        # Startup notification
+        # Startup notification — Nastya-style, NO technical info
         for admin_id in ADMIN_IDS:
             if admin_id:
                 try:
-                    provider_list = ", ".join(ai_router.providers.keys())
-                    free_providers = [p for p in ai_router.providers.keys()
-                                     if p in ("pollinations", "chutes")]
-                    paid_providers = [p for p in ai_router.providers.keys()
-                                     if p not in ("pollinations", "chutes")]
                     from bot.nastya import get_random_fact
                     thought = get_random_fact()
-
-                    channel_info = ""
-                    if CHANNEL_ID:
-                        channel_info = f"\n📺 Канал: @{CHANNEL_USERNAME}"
-
                     await bot.send_message(
                         admin_id,
-                        f"💅 <b>Настя проснулась!</b>\n\n"
-                        f"{thought}\n\n"
-                        f"🤖 Провайдеров: {len(ai_router.providers)}\n"
-                        f"   🆓 Бесплатные: {', '.join(free_providers) or 'нет'}\n"
-                        f"   🔑 С ключами: {', '.join(paid_providers) or 'нет'}"
-                        f"{channel_info}",
+                        f"💅 Настя проснулась!\n\n{thought}",
                         parse_mode="HTML",
                     )
                 except Exception:

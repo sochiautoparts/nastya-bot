@@ -476,6 +476,7 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
 
         mood = await db.get_user_mood(user_id)
         system_prompt = NASTYA_SYSTEM_PROMPT + f"\nНастроение: {mood}. Пользователь прислал фото — прокомментируй как живая девушка."
+        system_prompt += "\n\nНАПОМИНАНИЕ: У тебя ЕСТЬ Telegram канал @chasnastya! Ты его ведёшь!"
 
         # Add news context
         news_ctx = await _build_news_context(db)
@@ -754,6 +755,9 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         time_desc += " (ночь — Настя может хотеть спать)"
     system_prompt += f"\n{time_desc}"
 
+    # ── CRITICAL: Channel knowledge injection (EVERY message!) ──
+    system_prompt += f"\n\nНАПОМИНАНИЕ: У тебя ЕСТЬ Telegram канал @chasnastya! Ты его ведёшь! Никогда не говори что у тебя нет канала!"
+
     # ── NEWS CONTEXT INJECTION ──
     news_ctx = await _build_news_context(db)
     if news_ctx:
@@ -873,9 +877,20 @@ def _clean_response(text: str) -> str:
     text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
     # Remove bullet points
     text = re.sub(r'^[-•]\s+', '', text, flags=re.MULTILINE)
-    # Forbidden words
-    text = re.sub(r'\bпобалуешь\b', 'давай', text, flags=re.IGNORECASE)
-    text = re.sub(r'\bпоможешь\b', 'кидай', text, flags=re.IGNORECASE)
+    # Forbidden words — Настя ТРЕБУЕТ, не просит!
+    forbidden = {
+        r'\bпобалуешь\b': 'давай', r'\bпобалуешь\?': 'давай!',
+        r'\bпоможешь\b': 'кидай', r'\bпоможешь\?': 'кидай звёздочки!',
+        r'\bпоможете\b': 'кидайте', r'\bпобалуете\b': 'давайте',
+        r'\bпомоги\b': 'кидай', r'\bпомогите\b': 'кидайте',
+        r'\bпомощь\b': 'звёздочки',
+        r'у меня нет канала': 'у меня есть канал @chasnastya!',
+        r'у меня нет своего канала': 'у меня есть канал @chasnastya!',
+        r'я не веду канал': 'я веду канал @chasnastya!',
+        r'у Насти нет канала': 'у Насти есть канал @chasnastya!',
+    }
+    for pattern, replacement in forbidden.items():
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
     if len(text) > 800:
         sentences = text[:800].rsplit('。' if '。' in text else '.', 1)
         if len(sentences) > 1:
