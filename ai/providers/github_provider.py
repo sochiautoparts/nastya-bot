@@ -1,6 +1,6 @@
 """GitHub Models Provider — free AI models via GitHub Marketplace.
 
-Uses GITHUB_TOKEN for authentication.
+Uses GH_MODELS_TOKEN for authentication (GITHUB_TOKEN prefix is forbidden by GitHub Actions).
 Free tier: GitHub Models provides access to GPT-4o-mini, Llama, etc.
 Rate limited but free — great as reliable fallback.
 Supports vision via GPT-4o-mini.
@@ -25,7 +25,7 @@ VISION_MODEL = "gpt-4o-mini"
 
 
 class GitHubModelsProvider(BaseProvider):
-    """GitHub Models provider — free, reliable, uses GITHUB_TOKEN.
+    """GitHub Models provider — free, reliable, uses GH_MODELS_TOKEN.
 
     GitHub Models provides free access to various AI models
     through the Azure AI inference API.

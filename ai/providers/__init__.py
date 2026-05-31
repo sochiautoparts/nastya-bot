@@ -1,11 +1,11 @@
-"""AI Providers — all available providers for Nastya Bot 2.1.
+"""AI Providers — all available providers for Nastya Bot 2.2.
 
 NO Grok (only 2 requests, useless — REMOVED).
 NO Blackbox (unstable).
 NO HuggingFace text (doesn't support chat format properly).
 
-v2.1 changes:
-- Added GitHub Models provider (free, uses GITHUB_TOKEN)
+v2.2 changes:
+- GH_MODELS_TOKEN instead of GITHUB_TOKEN (GitHub Actions forbids GITHUB_ prefix)
 - Cloudflare promoted with vision support
 - Provider chain reordered: Cloudflare first (free + reliable)
 """

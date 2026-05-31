@@ -1,12 +1,13 @@
-"""Nastya Bot 2.1 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 2.2 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v2.1:
+Architecture v2.2:
   - ErrorHandlingMiddleware as OUTER middleware — catches ALL exceptions
   - LoggingMiddleware — logs all messages for monitoring
   - RateLimitMiddleware — prevents spam/abuse
   - AI Router: 9 providers + caching, NEVER crashes, ALWAYS responds
   - CLOUDFLARE FIRST in provider chain (free + reliable + vision)
-  - GitHub Models as second provider (free GPT-4o-mini)
+  - GitHub Models as second provider (GH_MODELS_TOKEN for GPT-4o-mini)
+  - Pollinations + Chutes moved up — always-free and reliable
   - Shared persistent DB connection with write lock — concurrent-safe
   - Stars donations with ACTIVE Pay buttons via send_invoice
   - NEWS ENGINE: RSS fetching + AI commentary (concurrent fetching)

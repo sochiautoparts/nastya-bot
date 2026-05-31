@@ -1,10 +1,10 @@
 """
-Nastya Bot 2.0 — Configuration
+Nastya Bot 2.2 — Configuration
 All secrets from environment variables only.
 
 NO Grok (only 2 requests, useless — REMOVED)
 Added: News sources, channel settings, AI caching, intelligent conversation
-v2.1: Cloudflare Workers AI promoted, Moscow timezone, better RSS sources
+v2.2: GH_MODELS_TOKEN (GITHUB_ prefix forbidden by GitHub Actions), Cloudflare-first, Moscow timezone, better RSS sources
 """
 import os
 from typing import Dict, List
@@ -44,7 +44,7 @@ GEMINI_API_KEY: str = _env("GEMINI_API_KEY")
 CLOUDFLARE_API_TOKEN: str = _env("CLOUDFLARE_API_TOKEN")
 CLOUDFLARE_ACCOUNT_ID: str = _env("CLOUDFLARE_ACCOUNT_ID")
 HUGGINGFACE_API_KEY: str = _env("HUGGINGFACE_API_KEY")
-GITHUB_TOKEN: str = _env("GITHUB_TOKEN")
+GH_MODELS_TOKEN: str = _env("GH_MODELS_TOKEN")
 
 # ── GitHub Actions ─────────────────────────────────────────
 GH_PAT_TOKEN: str = _env("GH_PAT_TOKEN")

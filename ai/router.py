@@ -1,13 +1,13 @@
 """AI Router — BULLETPROOF routing with multi-phase fallback + caching.
 
-Architecture (v2.1 — Cloudflare-first + GitHub Models):
+Architecture (v2.2 — Cloudflare-first + GH_MODELS_TOKEN):
   - 9 providers with proper fallback chain (NO Grok)
   - CLOUDFLARE FIRST (free, fast, reliable, has vision)
-  - GitHub Models second (free, uses GITHUB_TOKEN, GPT-4o-mini)
-  - Other API-key providers next (sambanova, cerebras, etc.)
-  - FREE providers as fallbacks (Pollinations, Chutes)
+  - GitHub Models second (free, uses GH_MODELS_TOKEN, GPT-4o-mini)
+  - Pollinations + Chutes as always-free fallbacks (moved up!)
+  - Other API-key providers as additional fallbacks
   - NEVER raises exceptions to caller — ALWAYS returns AIResponse
-  - 30s timeouts with 5s connect timeout
+  - 30s timeouts with 10s connect timeout for Cloudflare
   - Circuit breaker: skip providers that failed recently
   - Cache last working provider for faster retry
   - AI Response caching (from ai-mega-bot)
@@ -29,7 +29,7 @@ from bot.config import (
     OPENROUTER_API_KEY, CEREBRAS_API_KEY,
     SAMBANOVA_API_KEY, MISTRAL_API_KEY, GEMINI_API_KEY,
     CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
-    GITHUB_TOKEN, CACHE_TTL_TEXT, CACHE_MAX_MEMORY,
+    GH_MODELS_TOKEN, CACHE_TTL_TEXT, CACHE_MAX_MEMORY,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,18 +48,18 @@ FALLBACK_RESPONSES = [
     "А? Настя считала звёздочки... Что? ⭐",
 ]
 
-# Provider chain v2.1: Cloudflare FIRST (free + reliable + vision),
-# then GitHub Models (free + GPT-4o-mini), then other key providers,
-# then free providers as fallbacks — NO Grok!
+# Provider chain v2.2: Cloudflare FIRST (free + reliable + vision),
+# then GitHub Models (free + GPT-4o-mini), then Pollinations (always free),
+# then Chutes (always free), then other key-based providers — NO Grok!
 PROVIDER_CHAIN = [
-    "cloudflare", "github_models", "sambanova", "cerebras",
-    "mistral", "openrouter", "gemini", "pollinations", "chutes",
+    "cloudflare", "github_models", "pollinations", "chutes",
+    "sambanova", "cerebras", "mistral", "openrouter", "gemini",
 ]
 
 # Map env vars to provider configs — NO Grok!
 PROVIDER_KEYS = {
     "cloudflare": CLOUDFLARE_API_TOKEN,
-    "github_models": GITHUB_TOKEN,
+    "github_models": GH_MODELS_TOKEN,
     "cerebras": CEREBRAS_API_KEY,
     "openrouter": OPENROUTER_API_KEY,
     "sambanova": SAMBANOVA_API_KEY,

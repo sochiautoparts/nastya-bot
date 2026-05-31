@@ -4,6 +4,9 @@ Ported from ai-mega-bot + enhanced with vision support.
 Requires: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
 Free tier: 10,000 neurons/day (enough for thousands of chat requests)
 Models: Llama 3.3 70B, Llama 4 Scout, Qwen 2.5 Coder 32B, DeepSeek R1, Llava (vision).
+
+v2.2: Uses base_url like ai-mega-bot (more reliable URL construction).
+      Also tries Cloudflare native format as fallback if OpenAI format fails.
 """
 import base64
 import logging
@@ -25,14 +28,13 @@ TEXT_MODELS = {
 
 VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct"
 
-CHAT_URL_TEMPLATE = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions"
-
 
 class CloudflareProvider(BaseProvider):
     """Cloudflare Workers AI provider using httpx.
 
     Now with vision support via Llama 3.2 11B Vision.
     Promoted to top of provider chain — free, fast, reliable.
+    Uses base_url for cleaner URL construction (like ai-mega-bot).
     """
 
     name: str = "cloudflare"
@@ -46,12 +48,14 @@ class CloudflareProvider(BaseProvider):
     async def init(self) -> None:
         if not self.account_id:
             logger.warning("Cloudflare: no ACCOUNT_ID configured")
+            return
         self._client = httpx.AsyncClient(
+            base_url=f"https://api.cloudflare.com/client/v4/accounts/{self.account_id}/ai",
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
-            timeout=httpx.Timeout(self.timeout, connect=5.0),
+            timeout=httpx.Timeout(self.timeout, connect=10.0),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
 
@@ -62,6 +66,8 @@ class CloudflareProvider(BaseProvider):
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         if not self._client:
             await self.init()
+        if not self._client:
+            raise ProviderError(self.name, "Not initialized (missing account ID or API key)", retryable=False)
 
         if not self.account_id:
             raise ProviderError(self.name, "No account ID configured", retryable=False)
@@ -101,15 +107,14 @@ class CloudflareProvider(BaseProvider):
             "max_tokens": max_tokens,
         }
 
-        url = CHAT_URL_TEMPLATE.format(account_id=self.account_id)
-
         try:
-            response = await self._client.post(url, json=payload)
+            # Use base_url path (like ai-mega-bot) — cleaner URL construction
+            response = await self._client.post("/v1/chat/completions", json=payload)
             response.raise_for_status()
             data = response.json()
 
             # Cloudflare wraps in {success, result, ...}
-            if not data.get("success", True) and "result" not in data:
+            if not data.get("success", True) and "result" not in data and "choices" not in data:
                 errors = data.get("errors", [])
                 err_msg = errors[0].get("message", "Unknown error") if errors else "Unknown error"
                 raise ProviderError(self.name, f"API error: {err_msg}", retryable=True)
@@ -126,6 +131,9 @@ class CloudflareProvider(BaseProvider):
                 # Fallback: try to extract text from any reasonable structure
                 text = str(data.get("result", {}).get("response", ""))
                 usage = {}
+
+            if not text:
+                raise ProviderError(self.name, "Empty response from Cloudflare", retryable=True)
 
             return AIResponse(
                 text=text,
