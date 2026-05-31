@@ -516,6 +516,21 @@ async def post_real_poll_to_channel(bot: Bot, db) -> bool:
                 allows_multiple_answers=False,
             )
 
+            # Send discussion button after regular poll
+            try:
+                await bot.send_message(
+                    chat_id=CHANNEL_ID,
+                    text="💬 Обсудить с Настей!",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(
+                            text="💬 Написать Насте",
+                            url=f"https://t.me/{BOT_USERNAME}",
+                        )],
+                    ]),
+                )
+            except Exception as e:
+                logger.error(f"Failed to send poll discussion button: {e}")
+
         await db.add_channel_post(
             news_id=0,
             post_text=f"[POLL] {question} | Options: {', '.join(options)}",

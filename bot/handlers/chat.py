@@ -751,46 +751,36 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         await _save_simple_exchange(message, text, silent, db)
         return
 
-    # ── "Дай ссылку" — context-dependent link request ──
-    # If user says "дай ссылку" without mentioning channel, they might be asking
-    # about a news/event link from the conversation context
-    if any(t in text_lower for t in ["дай ссылку", "скинь ссылку", "ссылку дай", "где ссылк", "где прочитать", "где посмотреть", "источник"]):
-        # Try to find a relevant news link from recent context
+    # ── "Дай ссылку" — always offer channel link as fallback ──
+    if any(t in text_lower for t in ["дай ссылку", "скинь ссылку", "ссылку дай", "где ссылк", "где прочитать", "где посмотреть", "источник", "почему не можешь"]):
+        # First try to find a relevant news link from recent context
+        found_link = False
         try:
             recent = await db.get_recent_news_with_links(limit=3, max_age_hours=24)
             if recent:
-                # Check if any recent news title keywords match recent conversation
                 user_history = await db.get_history(message.from_user.id, limit=10)
                 recent_text = " ".join(m.get("content", "") for m in user_history[-5:]).lower()
                 for item in recent:
                     title_words = [w for w in re.split(r'[\s,.\-!?;:()]+', item["title"].lower()) if len(w) > 3]
                     if any(w in recent_text for w in title_words):
                         link = item.get("link", "")
-                        comment = item.get("nastya_comment", "")
                         if link:
-                            answer = f"Вот, держи! 💅\n🔗 {link}"
-                            if comment:
-                                answer += f"\nА я про это писала: {comment}"
-                            answer += f"\n📺 Ещё в @chasnastya!"
+                            answer = f"Вот, держи! 💅\n🔗 {link}\n📺 Ещё в @chasnastya!"
                             await message.answer(answer)
                             await _save_simple_exchange(message, text, answer, db)
-                            return
-                # No matching news — give any recent
-                any_news = recent[0]
-                if any_news.get("link"):
-                    answer = f"Не совсем поняла про что, но вот что есть! 💅\n🔗 {any_news['link']}\n📺 Больше в @chasnastya!"
-                    await message.answer(answer)
-                    await _save_simple_exchange(message, text, answer, db)
-                    return
+                            found_link = True
+                            break
         except Exception:
             pass
-        # Fallback to channel link
-        if CHANNEL_USERNAME:
-            answer = f"Может ты про мой канал? Вот: t.me/{CHANNEL_USERNAME.replace('@', '')} 💅"
-        else:
-            answer = "Настя пока не нашла ссылку... Спроси по-другому! 🔍"
-        await message.answer(answer)
-        await _save_simple_exchange(message, text, answer, db)
+
+        if not found_link:
+            # ALWAYS offer channel link as fallback
+            if CHANNEL_USERNAME:
+                answer = f"Мой канал @chasnastya! Там всё самое интересное! 💅✨\n👉 https://t.me/{CHANNEL_USERNAME.replace('@', '')}"
+            else:
+                answer = "Настя пока не нашла ссылку... Спроси по-другому! 🔍"
+            await message.answer(answer)
+            await _save_simple_exchange(message, text, answer, db)
         return
 
     # ── Normal AI chat — MOST conversations go here ──
@@ -1071,6 +1061,17 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         logger.error(f"Chat error for user={user_id}: {e}")
         response_text = ai_router.get_fallback_response()
 
+    # ── POST-PROCESS: Ensure channel awareness in responses ──
+    # If AI forgot about the channel when it should mention it
+    channel_keywords_in_user = ["канал", "подписк", "ссылк", "насти", "твой"]
+    if any(k in text.lower() for k in channel_keywords_in_user):
+        if not any(k in response_text.lower() for k in ["chasnastya", "t.me/chasnastya"]):
+            # AI forgot to mention the channel — append it
+            response_text += f"\n\nКстати, мой канал: @chasnastya 👉 https://t.me/chasnastya 💅"
+    # Fix: If AI says "I can't share" or "I don't have a channel" — replace with channel info
+    if "не могу поделиться" in response_text.lower() or "не могу дать" in response_text.lower() or "у меня нет канала" in response_text.lower():
+        response_text = f"Конечно! Мой канал @chasnastya 💅✨\n👉 https://t.me/chasnastya"
+
     # ── POST-PROCESS: Ensure news links are present ──
     # If AI mentions news/events but forgot the link, append it
     response_text = _enforce_news_links(response_text, _current_news_items)
@@ -1238,6 +1239,10 @@ def _clean_response(text: str) -> str:
         r'у меня нет своего канала': 'у меня есть канал @chasnastya!',
         r'я не веду канал': 'я веду канал @chasnastya!',
         r'у Насти нет канала': 'у Насти есть канал @chasnastya!',
+        r'я не могу поделиться ссылкой': 'Вот мой канал @chasnastya! 👉 https://t.me/chasnastya',
+        r'я не могу дать ссылку': 'Вот мой канал @chasnastya! 👉 https://t.me/chasnastya',
+        r'извини, но я не могу': 'Настя может всё! Вот что думаю:',
+        r'извините, но я не могу': 'Настя может всё! Вот что думаю:',
     }
     for pattern, replacement in forbidden.items():
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
@@ -1329,7 +1334,13 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
                 msg = random.choice(PROACTIVE_MESSAGES)
 
             chat_id = pro.get("chat_id", user_id)
-            await bot.send_message(chat_id, msg)
+            proactive_text = msg
+
+            # 30% chance to include channel invite in proactive message
+            if CHANNEL_USERNAME and random.random() < 0.30:
+                proactive_text += f"\n\nКстати, заходи на мой канал! 👉 https://t.me/{CHANNEL_USERNAME.replace('@', '')} 💅"
+
+            await bot.send_message(chat_id, proactive_text)
             pro["last_proactive"] = now
             _proactive_tracker[user_id] = pro
             sent += 1
@@ -1364,34 +1375,7 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
 # ════════════════════════════════════════════════════════════
 
 @router.poll_answer()
-async def handle_poll_answer(poll_answer: PollAnswer, bot=None, db=None, ai_router=None) -> None:
-    """React when someone votes in a poll — Nastya-style!
-
-    This makes the channel polls more engaging — Nastya reacts to votes
-    with personality, just like a real Telegram channel owner would.
-    """
-    try:
-        user_id = poll_answer.user.id
-        user_name = poll_answer.user.first_name or "Кто-то"
-        option_ids = poll_answer.option_ids
-
-        # Only react sometimes (30% chance) to not spam
-        if random.random() > 0.30:
-            return
-
-        # Try to send a reaction message to the user who voted
-        reaction = random.choice([
-            f"О, {user_name} проголосовал! Настя оценила! 💅✨",
-            f"Прикинь, {user_name} тоже голосует! Кайф! 🎀",
-            f"Спасибо за голос, {user_name}! Настя рада! 💕",
-            f"{user_name} проголосовал! Точняк, мнение важно! 📊",
-            f"О, новый голос! {user_name}, Настя видит! 👀✨",
-        ])
-
-        try:
-            await bot.send_message(user_id, reaction)
-        except Exception:
-            pass  # User may have blocked the bot, that's fine
-
-    except Exception as e:
-        logger.error(f"Poll answer handler error: {e}")
+async def handle_poll_answer(poll_answer: PollAnswer, db=None, ai_router=None) -> None:
+    """React when someone votes in a channel poll — Nastya is interested!"""
+    # Just log it for now — Nastya notices!
+    logger.info(f"Poll vote: user={poll_answer.user.id}, options={poll_answer.option_ids}")
