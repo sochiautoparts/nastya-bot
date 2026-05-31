@@ -1,4 +1,4 @@
-"""Nastya Chat Handler — INTELLIGENT conversation + news context + channel invites.
+"""Nastya Chat Handler — INTELLIGENT conversation + web search + news context.
 
 STABILITY RULES:
   - Bot ALWAYS responds, even if ALL AI providers fail (fallback responses)
@@ -7,13 +7,17 @@ STABILITY RULES:
   - 30-day context memory + news context injection
   - Short, effective system prompt
 
-INTELLIGENCE FEATURES:
+INTELLIGENCE FEATURES v7.0:
+  - Web search integration — Nastya can find and verify information!
+  - Search triggers: questions, news, factual queries
+  - ALWAYS includes source links when sharing found information
   - News context injected into system prompt for richer conversations
   - Nastya mentions recent events she "discovered"
   - Channel invites for engaged users (natural, not pushy)
   - Cross-referencing channel posts in conversations
-  - Emotional continuity and memory references
+  - Enhanced memory extraction — remembers names, facts, preferences
   - Time-aware greetings and moods
+  - /search command for explicit web searches
 """
 import logging
 import random
@@ -26,7 +30,7 @@ from zoneinfo import ZoneInfo
 from aiogram import Router, F
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
-    LabeledPrice,
+    LabeledPrice, PollAnswer,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import CommandStart, Command
@@ -34,6 +38,10 @@ from bot.config import (
     NASTYA_SYSTEM_PROMPT, DONATION_AMOUNTS, DONATION_LABELS,
     PROACTIVE_COOLDOWN, BOT_USERNAME, CHANNEL_ID, CHANNEL_USERNAME,
     KNOWLEDGE_TOPICS, NASTYA_VOCABULARY,
+)
+from bot.web_search import (
+    search_web, should_search, format_search_results_for_prompt,
+    get_search_link_for_response,
 )
 
 logger = logging.getLogger(__name__)
@@ -421,6 +429,43 @@ async def cmd_clear(message: Message, db=None, ai_router=None) -> None:
     if db:
         await db.clear_history(message.from_user.id)
     await message.answer("Что? Ничего не помню! Начнём сначала!")
+
+
+@router.message(Command("search"))
+async def cmd_search(message: Message, db=None, ai_router=None) -> None:
+    """Search the web and share results with link."""
+    query = message.text.replace("/search", "").strip()
+    if not query:
+        await message.answer("Настя поищет! Напиши что искать! 🔍\nПример: /search погода в Москве")
+        return
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+
+    results = await search_web(query, num_results=3)
+
+    if not results:
+        await message.answer("Ой, Настя ничего не нашла... 😔 Попробуй другой запрос!")
+        return
+
+    lines = [f"🔍 Настя нашла про '{query}':\n"]
+    for i, result in enumerate(results, 1):
+        title = result.get("title", "")
+        snippet = result.get("snippet", "")
+        url = result.get("url", "")
+        lines.append(f"{i}. {title}")
+        if snippet:
+            lines.append(f"   {snippet[:150]}")
+        if url:
+            lines.append(f"   🔗 {url}")
+        lines.append("")
+
+    if CHANNEL_USERNAME:
+        lines.append(f"Больше у Насти: @chasnastya 💅")
+
+    await message.answer("\n".join(lines))
+
+    if db:
+        await _save_simple_exchange(message, f"/search {query}", "\n".join(lines[:5]), db)
 
 
 # ── Voice handler ────────────────────────────────────────────
@@ -818,9 +863,10 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         system_prompt += f"\n\nСобеседника зовут: {user_name}. Обращайся по имени иногда."
 
     # CRITICAL FIX: Get history BEFORE saving user message
+    # Increased limit from 20 to 40 for better context retention
     history = []
     try:
-        history = await db.get_history(user_id, limit=20)
+        history = await db.get_history(user_id, limit=40)
     except Exception:
         pass
 
@@ -882,24 +928,25 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         system_prompt += f"\n\nКСТАТИ, Настя знает: {random_fact} (можешь упомянуть если к месту!)"
 
     # ── MEMORY EXTRACTION — remember key facts about the user ──
-    # Extract important info from recent history (names, zodiac, preferences, city, etc.)
+    # Extract important info from FULL history (names, zodiac, preferences, city, etc.)
+    # v7.0: Increased scan range for better retention
     memory_facts = []
     zodiac_signs = ["овен", "телец", "близнецы", "рак", "лев", "дева",
                     "весы", "скорпион", "стрелец", "козерог", "водолей", "рыбы"]
-    for msg in history[-20:]:
+    for msg in history[-40:]:  # Scan full history range
         content = msg.get("content", "")
         role = msg.get("role", "")
         if role == "user":
             content_lower = content.lower()
             # Detect name mentions
-            name_patterns = ["меня зовут", "я —", "я — это", "моё имя", "я это", "называй меня"]
+            name_patterns = ["меня зовут", "я —", "я — это", "моё имя", "я это", "называй меня", "моё имя"]
             for pattern in name_patterns:
                 if pattern in content_lower:
                     memory_facts.append(f"Собеседник говорил: '{content[:100]}'")
                     break
             # Detect zodiac sign
             for sign in zodiac_signs:
-                if sign in content_lower and "знак" in content_lower or sign in content_lower and ("я " in content_lower or "мой " in content_lower):
+                if sign in content_lower and ("знак" in content_lower or "я " in content_lower or "мой " in content_lower):
                     if not any(sign in f.lower() for f in memory_facts):
                         memory_facts.append(f"Знак собеседника — {sign.capitalize()}")
                     break
@@ -917,10 +964,39 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                     if not any(pattern.strip() in f.lower() for f in memory_facts):
                         memory_facts.append(f"Предпочтение: '{content[:100]}'")
                     break
+            # Detect age/birthday
+            age_patterns = ["мне ", "моего возраста", "мне лет", "мне год"]
+            for pattern in age_patterns:
+                if pattern in content_lower and any(c.isdigit() for c in content):
+                    if not any("лет" in f.lower() or "мне" in f.lower() for f in memory_facts):
+                        memory_facts.append(f"Возраст: '{content[:100]}'")
+                    break
+            # Detect work/profession
+            work_patterns = ["я работаю", "моя работа", "я программист", "я врач", "я учитель", "я студент"]
+            for pattern in work_patterns:
+                if pattern in content_lower:
+                    if not any("работ" in f.lower() or "професс" in f.lower() for f in memory_facts):
+                        memory_facts.append(f"Профессия: '{content[:100]}'")
+                    break
 
     if memory_facts:
-        unique_facts = list(set(memory_facts))[-5:]  # Max 5, deduplicated
-        system_prompt += f"\n\nПАМЯТЬ НАСТИ (НЕ переспрашивай про это!):\n" + "\n".join(f"- {f}" for f in unique_facts)
+        unique_facts = list(set(memory_facts))[-7:]  # Max 7, deduplicated
+        system_prompt += f"\n\nПАМЯТЬ НАСТИ (НЕ переспрашивай про это! Запомни НАВСЕГДА!):\n" + "\n".join(f"- {f}" for f in unique_facts)
+
+    # ── WEB SEARCH INTEGRATION — Nastya can find information! ──
+    # v7.0: Search the web when user asks about events, facts, or news
+    search_query = should_search(text)
+    search_results = []
+    if search_query:
+        try:
+            search_results = await search_web(search_query, num_results=3)
+            if search_results:
+                search_ctx = format_search_results_for_prompt(search_results, search_query)
+                if search_ctx:
+                    system_prompt += f"\n\n{search_ctx}"
+                    logger.info(f"Web search for user {user_id}: '{search_query}' → {len(search_results)} results")
+        except Exception as e:
+            logger.warning(f"Web search error: {e}")
 
     # NOW save the user message to DB
     prefix = "[Голосовое] " if is_voice else ""
@@ -947,6 +1023,13 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     # ── POST-PROCESS: Ensure news links are present ──
     # If AI mentions news/events but forgot the link, append it
     response_text = _enforce_news_links(response_text, _current_news_items)
+
+    # ── POST-PROCESS: Ensure web search links are present ──
+    # v7.0: If we searched the web but AI forgot to include links, add them
+    if search_results and not re.search(r'https?://\S+', response_text):
+        search_link = get_search_link_for_response(search_results)
+        if search_link:
+            response_text += f"\n\n🔗 {search_link}"
 
     # ── CHANNEL INVITE CHECK ──
     channel_invite = ""
@@ -1211,3 +1294,41 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
                         pass
         except Exception as e:
             logger.error(f"DB proactive error: {e}")
+
+
+# ════════════════════════════════════════════════════════════
+#  POLL ANSWER HANDLER — react when someone votes in polls!
+# ════════════════════════════════════════════════════════════
+
+@router.poll_answer()
+async def handle_poll_answer(poll_answer: PollAnswer, bot=None, db=None, ai_router=None) -> None:
+    """React when someone votes in a poll — Nastya-style!
+
+    This makes the channel polls more engaging — Nastya reacts to votes
+    with personality, just like a real Telegram channel owner would.
+    """
+    try:
+        user_id = poll_answer.user.id
+        user_name = poll_answer.user.first_name or "Кто-то"
+        option_ids = poll_answer.option_ids
+
+        # Only react sometimes (30% chance) to not spam
+        if random.random() > 0.30:
+            return
+
+        # Try to send a reaction message to the user who voted
+        reaction = random.choice([
+            f"О, {user_name} проголосовал! Настя оценила! 💅✨",
+            f"Прикинь, {user_name} тоже голосует! Кайф! 🎀",
+            f"Спасибо за голос, {user_name}! Настя рада! 💕",
+            f"{user_name} проголосовал! Точняк, мнение важно! 📊",
+            f"О, новый голос! {user_name}, Настя видит! 👀✨",
+        ])
+
+        try:
+            await bot.send_message(user_id, reaction)
+        except Exception:
+            pass  # User may have blocked the bot, that's fine
+
+    except Exception as e:
+        logger.error(f"Poll answer handler error: {e}")

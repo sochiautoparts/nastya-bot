@@ -1,6 +1,7 @@
-"""Nastya Bot 6.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 7.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v6.0:
+Architecture v7.0:
+  - Web search integration — Nastya can find and verify information!
   - Cloudflare Workers AI as PRIMARY (free, reliable, many models, vision)
   - Groq as SECONDARY (free, ultra-fast LPU, great Russian, 30 RPM)
   - HuggingFace as TERTIARY (free tier with token, many models)
@@ -9,13 +10,17 @@ Architecture v6.0:
   - Pollinations as FALLBACK #1 (always free, always available, ads cleaned)
   - GitHub Models as FALLBACK #2 (needs PAT with 'models' permission)
   - DeepSeek REMOVED ENTIRELY (was returning 402 Insufficient Balance)
+  - Web search: DuckDuckGo-based, auto-triggers on questions/events
+  - Real Telegram polls in channel using send_poll() with vote buttons
+  - Poll answer reactions — Nastya reacts when someone votes!
+  - /search command for explicit web searches
   - Expanded vocabulary: "Точняк!", "Офигеть!", "Кайф!", "Жесть!" etc. 30+ words
   - Knowledge injection by 10 topics: auto, zodiac, psychology, facts, Moscow,
     cinema, cooking, relationships, fashion, travel, tech
   - Context memory: zodiac signs, names, city, preferences — NEVER forgets
   - Channel @chasnastya — ALWAYS remembered, links in news!
   - NEWS ENGINE: RSS + AI commentary + links (15 min cycle)
-  - CHANNEL MANAGER: diverse posts, NOT just shoes! Events, facts, reactions (20 min)
+  - CHANNEL MANAGER: diverse posts, REAL POLLS, events, reactions (20 min)
   - Stars donations with ACTIVE Pay buttons
   - MOSCOW TIMEZONE — Настя из Москвы!
   - Keep-alive chain via GH PAT trigger
@@ -252,7 +257,7 @@ async def memory_cleanup() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 6.0 Starting ===")
+    logger.info("=== Nastya Bot 7.0 Starting ===")
 
     db = Database(DB_PATH)
     await db.init()
@@ -294,7 +299,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 6.0 Ready ===")
+    logger.info("=== Nastya Bot 7.0 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:
@@ -363,7 +368,11 @@ async def main():
         timeout_task = asyncio.create_task(session_timeout())
 
         await bot.delete_webhook(drop_pending_updates=True)
-        await dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types())
+        # Include poll_answer updates so Nastya can react to poll votes
+        allowed_updates = dispatcher.resolve_used_update_types()
+        if "poll_answer" not in allowed_updates:
+            allowed_updates.append("poll_answer")
+        await dispatcher.start_polling(bot, allowed_updates=allowed_updates)
 
     except SystemExit:
         logger.info("Bot stopped (session timeout)")

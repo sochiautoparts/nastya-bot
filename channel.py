@@ -1,4 +1,4 @@
-"""Nastya Channel Manager 5.0 — diverse, substantive posts to @chasnastya.
+"""Nastya Channel Manager 7.0 — diverse, substantive posts to @chasnastya.
 
 Architecture:
   - Posts news with Nastya's commentary to the channel
@@ -6,16 +6,15 @@ Architecture:
   - Mixes news posts with personal posts for variety (50/50)
   - Deduplication: tracks recent posts, avoids repeats
   - Posts more frequently — events are happening all the time!
-  - Knowledge posts: interesting facts, quizzes, polls
+  - Knowledge posts: interesting facts, quizzes, REAL Telegram polls!
   - Time-aware content: morning/day/evening/night moods
   - Invites users to channel from private chats
   - Cross-references channel content in conversations
 
-v5.0: More diverse posts — NOT just about shoes!
-  - Event reactions: world events, tech, sports, politics
-  - Substantive posts with context and opinion
-  - More knowledge and fact posts
-  - Less repetitive fashion/shopping content
+v7.0: Real Telegram polls + web search for channel content!
+  - send_poll() creates real interactive polls with buttons
+  - Web search integration for event reactions
+  - More diverse and substantive posts
 """
 import logging
 import random
@@ -26,6 +25,7 @@ from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from bot.config import CHANNEL_ID, CHANNEL_USERNAME, BOT_USERNAME, KNOWLEDGE_TOPICS
+from bot.web_search import POLL_TOPICS
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +156,7 @@ KNOWLEDGE_POST_TEMPLATES = [
     "Знание дня! {fact} Настя в шоке! 💡🤯",
 ]
 
-# ── Quiz/poll posts ──
+# ── Quiz/poll posts — now using REAL Telegram polls! ──
 
 QUIZ_POSTS = [
     "Котятки, опрос! 📊\n\nНастя или Алиса — кто лучше? 💅🤖\n\nПишите в комменты!",
@@ -409,15 +409,57 @@ async def post_knowledge_to_channel(bot: Bot, db, fact: str) -> bool:
         return False
 
 
+async def post_real_poll_to_channel(bot: Bot, db) -> bool:
+    """Post a REAL Telegram poll to the channel using send_poll().
+
+    Creates an interactive poll with clickable vote buttons,
+    NOT just a text post asking people to vote.
+    """
+    if not CHANNEL_ID:
+        return False
+
+    poll = random.choice(POLL_TOPICS)
+    question = poll["question"]
+    options = poll["options"]
+
+    # Check dedup
+    if _is_recent_post(question):
+        return False
+
+    try:
+        await bot.send_poll(
+            chat_id=CHANNEL_ID,
+            question=question,
+            options=options,
+            is_anonymous=False,  # Show who voted — more engaging!
+            allows_multiple_answers=False,
+        )
+
+        await db.add_channel_post(
+            news_id=0,
+            post_text=f"[POLL] {question} | Options: {', '.join(options)}",
+            post_type="poll",
+        )
+        _track_post(question)
+
+        logger.info(f"Channel REAL poll: {question[:50]}...")
+        return True
+
+    except Exception as e:
+        logger.error(f"Channel real poll error: {e}")
+        return False
+
+
 async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
     """Full channel posting cycle.
 
-    Strategy:
-    - 45% news posts (if available) — MORE news, more events!
+    Strategy v7.0:
+    - 40% news posts (if available) — MORE news, more events!
     - 20% personality posts (AI-generated or template)
-    - 20% knowledge posts (interesting facts)
+    - 15% knowledge posts (interesting facts)
     - 10% event reaction posts
-    - 5% quiz/poll posts
+    - 10% REAL Telegram polls (interactive buttons!)
+    - 5% quiz/text posts
     - Max 3 posts per cycle to keep channel active
     - Deduplication: never repeat same content
     - Time-aware content selection
@@ -540,14 +582,23 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
         except Exception as e:
             logger.error(f"Channel event reaction error: {e}")
 
-    # Quiz posts (5% chance)
-    if posted < max_posts and random.random() < 0.15:
+    # Quiz posts (5% chance) — now text only, real polls are separate
+    if posted < max_posts and random.random() < 0.10:
         try:
             quiz = random.choice(QUIZ_POSTS)
             if await post_personality_to_channel(bot, db, quiz):
                 posted += 1
         except Exception as e:
             logger.error(f"Channel quiz cycle error: {e}")
+
+    # REAL Telegram polls (10% chance) — interactive with vote buttons!
+    if posted < max_posts and random.random() < 0.30:
+        try:
+            if await post_real_poll_to_channel(bot, db):
+                posted += 1
+                logger.info("Posted REAL Telegram poll to channel!")
+        except Exception as e:
+            logger.error(f"Channel real poll cycle error: {e}")
 
     # Promo posts (3% chance — rare, not spammy)
     if posted < max_posts and random.random() < 0.03:
