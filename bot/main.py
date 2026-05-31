@@ -1,8 +1,10 @@
 """Nastya Bot — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture (v6.0):
-  - ErrorHandlingMiddleware — catches ALL exceptions, NEVER shows error to user
-  - AI Router: API-key providers FIRST (reliable), free providers as fallback
+Architecture v9.0 (ported from ai-mega-bot):
+  - ErrorHandlingMiddleware as OUTER middleware — catches ALL exceptions
+  - LoggingMiddleware — logs all messages for monitoring
+  - RateLimitMiddleware — prevents spam/abuse
+  - AI Router: 9+ providers, NEVER crashes, ALWAYS responds
   - Shared persistent DB connection with write lock — concurrent-safe
   - Stars donations with ACTIVE Pay buttons via send_invoice
   - Deep links from GitHub Pages → /start donate_NNN → sends invoice
@@ -10,6 +12,7 @@ Architecture (v6.0):
   - Proactive messages via asyncio background task
   - Keep-alive chain via GH PAT trigger
   - Memory leak prevention: periodic tracker cleanup
+  - NO "голова разболелась" error messages — Nastya ALWAYS responds in character
 """
 import asyncio
 import logging
@@ -21,7 +24,7 @@ import random
 
 from aiogram import Bot, Dispatcher, BaseMiddleware
 from aiogram.enums import ParseMode
-from aiogram.types import TelegramObject
+from aiogram.types import TelegramObject, Message, CallbackQuery
 from aiogram.client.default import DefaultBotProperties
 
 logging.basicConfig(
@@ -38,13 +41,16 @@ if not BOT_TOKEN:
 
 
 # ════════════════════════════════════════════════════════════
-#  ERROR HANDLING MIDDLEWARE — prevents ALL crashes!
-#  NEVER shows error messages to users — just logs and silently recovers
+#  MIDDLEWARE — ported from ai-mega-bot stable patterns
 # ════════════════════════════════════════════════════════════
 
 class ErrorHandlingMiddleware(BaseMiddleware):
     """Catch and log errors without crashing the bot.
-    NEVER sends error messages to users — they should only see Nastya's personality."""
+
+    Ported from ai-mega-bot: used as OUTER middleware.
+    NEVER sends error messages to users — they should only see Nastya's personality.
+    The chat handler already has fallback responses, so we just log and move on.
+    """
 
     async def __call__(self, handler, event: TelegramObject, data: dict):
         try:
@@ -56,9 +62,66 @@ class ErrorHandlingMiddleware(BaseMiddleware):
         except Exception as e:
             logger.error(f"Unhandled error: {e}\n{traceback.format_exc()}")
             # DO NOT send error message to user!
-            # The chat handler already has fallback responses.
+            # The AI router always returns fallback responses.
             # Only log the error and move on silently.
             return None
+
+
+class LoggingMiddleware(BaseMiddleware):
+    """Log all incoming updates for monitoring. Ported from ai-mega-bot."""
+
+    async def __call__(self, handler, event, data: dict):
+        start = time.time()
+        user_info = ""
+
+        if isinstance(event, Message) and event.from_user:
+            user_info = f"user={event.from_user.id} ({event.from_user.username or 'no_username'})"
+            if event.text:
+                logger.info(f"MSG {user_info}: {event.text[:100]}")
+        elif isinstance(event, CallbackQuery) and event.from_user:
+            user_info = f"user={event.from_user.id} cb={event.data}"
+            logger.info(f"CB {user_info}")
+
+        result = await handler(event, data)
+        elapsed = time.time() - start
+        if elapsed > 3.0:
+            logger.warning(f"Slow handler: {elapsed:.2f}s for {user_info}")
+        return result
+
+
+class RateLimitMiddleware(BaseMiddleware):
+    """Per-user rate limiting to prevent abuse. Ported from ai-mega-bot."""
+
+    def __init__(self, max_per_minute: int = 30):
+        self.max_per_minute = max_per_minute
+        self._user_requests: dict = {}
+
+    async def __call__(self, handler, event, data: dict):
+        user_id = None
+        if isinstance(event, (Message, CallbackQuery)) and event.from_user:
+            user_id = event.from_user.id
+
+        if not user_id:
+            return await handler(event, data)
+
+        now = time.time()
+        if user_id not in self._user_requests:
+            self._user_requests[user_id] = []
+
+        # Clean old entries
+        self._user_requests[user_id] = [
+            t for t in self._user_requests[user_id] if now - t < 60
+        ]
+
+        if len(self._user_requests[user_id]) >= self.max_per_minute:
+            if isinstance(event, Message):
+                await event.answer("Настя не успевает отвечать! Подожди минуточку! 💅")
+            elif isinstance(event, CallbackQuery):
+                await event.answer("Слишком быстро!", show_alert=True)
+            return
+
+        self._user_requests[user_id].append(now)
+        return await handler(event, data)
 
 
 # ── Global instances ───────────────────────────────────────
@@ -125,19 +188,32 @@ async def on_startup(**kwargs) -> None:
     if dp_ref:
         dp_ref.workflow_data["db"] = db
         dp_ref.workflow_data["ai_router"] = ai_router
+        logger.info(f"workflow_data set: db={db is not None}, ai_router={ai_router is not None}")
 
     if bot:
         asyncio.create_task(proactive_scheduler(bot))
         asyncio.create_task(periodic_db_cleanup())
-        # Fun startup message — NO tech info!
-        from bot.nastya import get_random_fact
-        thought = get_random_fact()
+
+        # Startup notification — show provider status
         for admin_id in ADMIN_IDS:
             if admin_id:
                 try:
+                    provider_list = ", ".join(ai_router.providers.keys())
+                    free_providers = [p for p in ai_router.providers.keys()
+                                     if p in ("pollinations", "chutes")]
+                    paid_providers = [p for p in ai_router.providers.keys()
+                                     if p not in ("pollinations", "chutes")]
+                    from bot.nastya import get_random_fact
+                    thought = get_random_fact()
                     await bot.send_message(
                         admin_id,
-                        f"💅 <b>Настя проснулась!</b>\n\n{thought}",
+                        f"💅 <b>Настя проснулась!</b>\n\n"
+                        f"{thought}\n\n"
+                        f"🤖 Провайдеров: {len(ai_router.providers)}\n"
+                        f"   🆓 Бесплатные: {', '.join(free_providers) or 'нет'}\n"
+                        f"   🔑 С ключами: {', '.join(paid_providers) or 'нет'}\n"
+                        f"📊 БД: {DB_PATH}\n"
+                        f"⏱ Сессия: {SESSION_DURATION_SECONDS // 60} мин",
                         parse_mode="HTML",
                     )
                 except Exception:
@@ -166,15 +242,29 @@ async def on_shutdown(**kwargs) -> None:
 
 
 def setup_dispatcher() -> Dispatcher:
+    """Configure dispatcher with all routers and middleware.
+
+    CRITICAL: Middleware order matters (from ai-mega-bot):
+    1. RateLimitMiddleware — prevent spam
+    2. LoggingMiddleware — log all messages
+    3. ErrorHandlingMiddleware — as OUTER middleware, catches everything
+    """
     global dp
     dp = Dispatcher()
+
+    # Register middleware (order matters: outer first for error handling)
+    dp.message.middleware(RateLimitMiddleware(max_per_minute=30))
+    dp.callback_query.middleware(RateLimitMiddleware(max_per_minute=30))
+    dp.message.middleware(LoggingMiddleware())
+    dp.callback_query.middleware(LoggingMiddleware())
+    # CRITICAL: ErrorHandling as outer_middleware — catches ALL errors
+    dp.message.outer_middleware(ErrorHandlingMiddleware())
+    dp.callback_query.outer_middleware(ErrorHandlingMiddleware())
+    dp.pre_checkout_query.middleware(ErrorHandlingMiddleware())
+
+    # Register all routers
     for router in all_routers:
         dp.include_router(router)
-
-    # Add error handling middleware — bot NEVER crashes!
-    dp.message.middleware(ErrorHandlingMiddleware())
-    dp.callback_query.middleware(ErrorHandlingMiddleware())
-    dp.pre_checkout_query.middleware(ErrorHandlingMiddleware())
 
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)

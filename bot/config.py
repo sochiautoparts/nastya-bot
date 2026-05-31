@@ -1,6 +1,11 @@
 """
 Nastya Bot — Configuration
 All secrets from environment variables only.
+
+Based on ai-mega-bot config pattern:
+  - All AI providers configurable via env vars
+  - 'not_configured' treated as empty
+  - Provider keys validated at startup
 """
 import os
 from typing import Dict, List
@@ -28,12 +33,16 @@ ADMIN_IDS: List[int] = list(set(
 ))
 BOT_USERNAME: str = _env("BOT_USERNAME", "asnastya_bot")
 
-# AI Provider API keys
+# AI Provider API keys — matching ai-mega-bot provider set
+# NO Grok (only 2 requests, useless)
 GROQ_API_KEY: str = _env("GROQ_API_KEY")
 OPENROUTER_API_KEY: str = _env("OPENROUTER_API_KEY")
 CEREBRAS_API_KEY: str = _env("CEREBRAS_API_KEY")
 SAMBANOVA_API_KEY: str = _env("SAMBANOVA_API_KEY")
 MISTRAL_API_KEY: str = _env("MISTRAL_API_KEY")
+GEMINI_API_KEY: str = _env("GEMINI_API_KEY")
+CLOUDFLARE_API_TOKEN: str = _env("CLOUDFLARE_API_TOKEN")
+CLOUDFLARE_ACCOUNT_ID: str = _env("CLOUDFLARE_ACCOUNT_ID")
 HUGGINGFACE_API_KEY: str = _env("HUGGINGFACE_API_KEY")
 
 GH_PAT_TOKEN: str = _env("GH_PAT_TOKEN")
@@ -88,3 +97,11 @@ NASTYA_SYSTEM_PROMPT = """Ты Настя — капризная, наглая, 
 - Не перескакивай на другие темы — отвечай по делу
 
 НАСТРОЕНИЕ: варьируется — капризная, любящая, загадочная, голодная. Проявляется в ответах естественно."""
+
+
+def validate_config() -> List[str]:
+    """Validate required configuration. Returns list of missing items."""
+    missing = []
+    if not BOT_TOKEN:
+        missing.append("BOT_TOKEN")
+    return missing

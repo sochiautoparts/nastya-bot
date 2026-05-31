@@ -1,7 +1,8 @@
-"""Groq AI Provider — fast inference via OpenAI-compatible API.
+"""Gemini AI Provider — Google's Gemini via OpenAI-compatible API.
 
-Ported from ai-mega-bot with vision support.
-Supports: text generation, vision (image understanding), Whisper transcription.
+Free tier at https://aistudio.google.com
+Models: gemini-2.0-flash, gemini-2.5-flash-preview-05-20
+Supports vision (image understanding).
 """
 import base64
 import logging
@@ -14,19 +15,18 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 logger = logging.getLogger(__name__)
 
 TEXT_MODELS = {
-    "default": "llama-3.3-70b-versatile",
-    "fast": "llama-3.1-8b-instant",
-    "mixtral": "mixtral-8x7b-32768",
-    "gemma": "gemma2-9b-it",
+    "default": "gemini-2.0-flash",
+    "fast": "gemini-2.0-flash-lite",
+    "reasoning": "gemini-2.5-flash-preview-05-20",
 }
 
-VISION_MODEL = "llama-3.2-90b-vision-preview"
+CHAT_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 
 
-class GroqProvider(BaseProvider):
-    """Groq provider using httpx for maximum performance."""
+class GeminiProvider(BaseProvider):
+    """Google Gemini provider using OpenAI-compatible endpoint."""
 
-    name: str = "groq"
+    name: str = "gemini"
     supports_streaming: bool = False
     supports_vision: bool = True
 
@@ -36,7 +36,7 @@ class GroqProvider(BaseProvider):
     async def init(self) -> None:
         """Initialize httpx async client with connection pooling."""
         self._client = httpx.AsyncClient(
-            base_url="https://api.groq.com",
+            base_url="https://generativelanguage.googleapis.com",
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -46,7 +46,7 @@ class GroqProvider(BaseProvider):
         )
 
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
-        """Generate text via Groq chat completions with conversation history."""
+        """Generate text via Gemini chat completions with conversation history."""
         if not self._client:
             await self.init()
 
@@ -57,6 +57,7 @@ class GroqProvider(BaseProvider):
         max_tokens: int = kwargs.get("max_tokens", 4096)
         messages_history: Optional[List[Dict[str, Any]]] = kwargs.get("messages")
 
+        # Build messages with history support
         messages = self._build_messages(prompt, system_prompt, messages_history)
 
         payload: Dict[str, Any] = {
@@ -68,7 +69,7 @@ class GroqProvider(BaseProvider):
 
         try:
             response = await self._client.post(
-                "/openai/v1/chat/completions",
+                "/v1beta/openai/chat/completions",
                 json=payload,
             )
             response.raise_for_status()
@@ -109,14 +110,16 @@ class GroqProvider(BaseProvider):
         image_url: str = "",
         **kwargs,
     ) -> AIResponse:
-        """Generate response with image understanding via llama-3.2-90b-vision."""
+        """Generate response with image understanding via Gemini."""
         if not self._client:
             await self.init()
 
         system_prompt: str = kwargs.get("system_prompt", "")
         temperature: float = kwargs.get("temperature", 0.7)
         max_tokens: int = kwargs.get("max_tokens", 4096)
+        model: str = kwargs.get("model", TEXT_MODELS["default"])
 
+        # Build user message content with image
         content_parts: List[Dict[str, Any]] = []
         if image_data:
             b64 = base64.b64encode(image_data).decode("utf-8")
@@ -139,7 +142,7 @@ class GroqProvider(BaseProvider):
         messages.append({"role": "user", "content": content_parts})
 
         payload: Dict[str, Any] = {
-            "model": VISION_MODEL,
+            "model": model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -147,7 +150,7 @@ class GroqProvider(BaseProvider):
 
         try:
             response = await self._client.post(
-                "/openai/v1/chat/completions",
+                "/v1beta/openai/chat/completions",
                 json=payload,
             )
             response.raise_for_status()
@@ -159,7 +162,7 @@ class GroqProvider(BaseProvider):
             return AIResponse(
                 text=choice["message"]["content"],
                 provider=self.name,
-                model=VISION_MODEL,
+                model=model,
                 tokens_used=usage.get("total_tokens", 0),
                 metadata={"vision": True},
             )

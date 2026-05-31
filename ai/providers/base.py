@@ -1,13 +1,17 @@
-"""Base AI Provider for Nastya Bot.
+"""Base AI Provider — unified interface for all providers.
 
-FIXED: _build_messages now detects if the last user message in history
-matches the current prompt, avoiding DUPLICATE messages in the AI call.
+Ported from ai-mega-bot with fixes:
+  - _build_messages uses 'messages' kwarg (matching how router passes history)
+  - Proper dedup: if last history message matches prompt, don't add again
+  - Consistent interface across all providers
 """
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 
 class ProviderError(Exception):
+    """Provider-specific error with retry info."""
+
     def __init__(self, provider: str, message: str, retryable: bool = True):
         self.provider = provider
         self.retryable = retryable
@@ -16,6 +20,7 @@ class ProviderError(Exception):
 
 @dataclass
 class AIResponse:
+    """Unified AI response."""
     text: str = ""
     image_url: str = ""
     image_bytes: bytes = b""
@@ -27,10 +32,18 @@ class AIResponse:
 
 
 class BaseProvider:
-    """Base class for all AI providers."""
+    """Base class for all AI providers.
+
+    All providers use httpx.AsyncClient for maximum performance.
+    Connection pooling is configured per provider.
+    """
+
     name: str = "base"
     supports_streaming: bool = False
-    NO_KEY_PROVIDERS = {"pollinations", "chutes", "blackbox", "huggingface"}
+    supports_vision: bool = False
+
+    # Providers that work without API keys
+    NO_KEY_PROVIDERS = {"pollinations", "chutes"}
 
     def __init__(self, api_key: str = "", timeout: float = 30.0):
         self.api_key = api_key
@@ -48,7 +61,17 @@ class BaseProvider:
             self._client = None
 
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
-        """Generate text response."""
+        """Generate text response.
+
+        Args:
+            prompt: The user's current message text
+            **kwargs: Additional options including:
+                messages: List[Dict] - conversation history with role/content
+                system_prompt: str - system instructions
+                model: str - model override
+                temperature: float
+                max_tokens: int
+        """
         raise NotImplementedError
 
     def is_available(self) -> bool:
@@ -57,39 +80,44 @@ class BaseProvider:
             return True
         return bool(self.api_key)
 
+    @staticmethod
     def _build_messages(
-        self,
         prompt: str,
         system_prompt: str = "",
-        history: Optional[List[Dict[str, str]]] = None,
-    ) -> List[Dict[str, str]]:
-        """Build messages array with system prompt, history, and current prompt.
+        messages: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Build OpenAI-compatible messages array with history.
 
-        CRITICAL FIX: If the last message in history is the same user message
-        as the current prompt, we DON'T add it again.
+        This matches ai-mega-bot's approach exactly:
+        - System prompt first
+        - Then conversation history (role/content pairs)
+        - Then current user message (dedup check)
+
+        Args:
+            prompt: Current user message
+            system_prompt: System instructions
+            messages: Conversation history (list of {role, content} dicts)
+
+        Returns:
+            Complete messages array for API call
         """
-        messages: List[Dict[str, str]] = []
-
-        # System prompt first
+        result: List[Dict[str, Any]] = []
         if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-
-        # Add conversation history for context memory
-        if history:
-            for msg in history:
+            result.append({"role": "system", "content": system_prompt})
+        # Add conversation history (previous messages)
+        if messages:
+            for msg in messages:
                 role = msg.get("role", "")
                 content = msg.get("content", "")
-                if role in ("user", "assistant") and content:
-                    messages.append({"role": role, "content": content})
-
+                if role in ("user", "assistant", "system") and content:
+                    result.append({"role": role, "content": content})
         # Check if the last message in history is already the current prompt
         last_is_current = (
-            history
-            and len(history) > 0
-            and history[-1].get("role") == "user"
-            and history[-1].get("content") == prompt
+            messages
+            and len(messages) > 0
+            and messages[-1].get("role") == "user"
+            and messages[-1].get("content") == prompt
         )
         if not last_is_current:
-            messages.append({"role": "user", "content": prompt})
-
-        return messages
+            result.append({"role": "user", "content": prompt})
+        return result
