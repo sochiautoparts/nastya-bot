@@ -42,17 +42,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v9
+          key: nastya-db-v10
           restore-keys: |
             nastya-db-
 
-      - name: Run Nastya Bot 🎀
+      - name: Run Nastya Bot 2.0 💅
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           OWNER_ID: ${{ secrets.OWNER_ID }}
           ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
           BOT_USERNAME: asnastya_bot
-          # AI Provider keys — matching ai-mega-bot provider set
+          # AI Provider keys — NO Grok! (only 2 requests, useless)
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
@@ -62,9 +62,16 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
+          # Channel settings (optional — set when you create a channel)
+          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+          CHANNEL_USERNAME: ${{ secrets.CHANNEL_USERNAME }}
+          # GitHub
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           DB_PATH: data/nastya.db
           LOG_LEVEL: INFO
+          # News settings
+          NEWS_FETCH_INTERVAL: 1800
+          CHANNEL_POST_INTERVAL: 3600
         run: python -m bot.main || true
 
       - name: Save database cache
@@ -72,7 +79,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v9-${{ github.run_id }}
+          key: nastya-db-v10-${{ github.run_id }}
 
       - name: Trigger next session (keep-alive chain)
         if: always()
