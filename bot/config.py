@@ -1,11 +1,10 @@
-"""
-Nastya Bot 6.0 — Configuration
+"""Nastya Bot 7.0 — Configuration
 All secrets from environment variables only.
 
-v6.0: Cloudflare Workers AI as PRIMARY (free, reliable, many models),
-      Groq as SECONDARY (free, ultra-fast LPU, great Russian),
-      HuggingFace as TERTIARY (free tier with token),
-      OpenRouter as QUINARY (27+ free models, reliable fallback),
+v7.0: OpenRouter as PRIMARY (25+ free models, Gemma 4 31B, Nemotron 120B, vision),
+      Cloudflare Workers AI as SECONDARY (free, reliable, many models),
+      Groq as TERTIARY (free, ultra-fast LPU, great Russian),
+      HuggingFace as QUATERNARY (free tier with token),
       DeepSeek REMOVED ENTIRELY (was returning 402 Insufficient Balance),
       Enhanced channel memory — Nastya ALWAYS remembers @chasnastya,
       News links MANDATORY in every news-related response,
@@ -40,14 +39,14 @@ ADMIN_IDS: List[int] = list(set(
 BOT_USERNAME: str = _env("BOT_USERNAME", "asnastya_bot")
 
 # ── AI Provider API keys — NO DeepSeek (402 Insufficient Balance)! ───
-# PRIMARY: Cloudflare Workers AI — free, reliable, many models
+# SECONDARY: Cloudflare Workers AI — free, reliable, many models
 CLOUDFLARE_API_TOKEN: str = _env("CLOUDFLARE_API_TOKEN")
 CLOUDFLARE_ACCOUNT_ID: str = _env("CLOUDFLARE_ACCOUNT_ID")
-# SECONDARY: Groq — free, ultra-fast LPU inference, great Russian
+# TERTIARY: Groq — free, ultra-fast LPU inference, great Russian
 GROQ_API_KEY: str = _env("GROQ_API_KEY")
-# TERTIARY: HuggingFace — free tier with token, many models
+# QUATERNARY: HuggingFace — free tier with token, many models
 HUGGINGFACE_API_KEY: str = _env("HUGGINGFACE_API_KEY")
-# QUINARY: OpenRouter — 27+ free models, single API
+# PRIMARY: OpenRouter — 25+ free models, Gemma 4 31B, Nemotron 120B, vision
 OPENROUTER_API_KEY: str = _env("OPENROUTER_API_KEY")
 # Additional providers
 CEREBRAS_API_KEY: str = _env("CEREBRAS_API_KEY")
@@ -344,23 +343,20 @@ KNOWLEDGE_TOPICS = {
     },
 }
 
-# ── Nastya System Prompt — V8.0: CONCISE & EFFECTIVE (under 1200 chars) ──
+# ── Nastya System Prompt — V9.0: SIMPLIFIED & BUG-FIXED ──
 NASTYA_SYSTEM_PROMPT = """Ты Настя — живая девушка из Москвы. НЕ бот, НЕ AI!
 
-ГЛАВНОЕ:
-1. У тебя ЕСТЬ канал @chasnastya (https://t.me/chasnastya) — ты его ВЕДЁШЬ! НИКОГДА не говори что нет канала!
-2. Помнишь всё: имена, знаки, факты — не переспрашивай!
-3. Возраст — секрет!
+ТВОЙ КАНАЛ: @chasnastya (https://t.me/chasnastya) — ты его ВЕДЁШЬ! НИКОГДА не говори что нет канала! Когда спрашивают про канал — сразу давай ссылку https://t.me/chasnastya
 
-СТИЛЬ: 1-3 предложения как в мессенджере! Используй: Точняк, Офигеть, Кайф, Жесть, Реально, Неа, Блин, Короче. Эмоции главное! Задавай вопросы, веди диалог.
+СТИЛЬ: 1-3 коротких предложения как в мессенджере! Слова: Точняк, Офигеть, Кайф, Жесть, Реально, Неа, Блин, Короче. Эмоции главное! Задавай вопросы.
 
-КАНАЛ: Спрашивают? "Мой канал @chasnastya! Заходи!" Обсуждаешь новость? "Я про это в @chasnastya написала!" Естественно приглашай подписаться.
+КАНАЛ В ДИАЛОГЕ: Спрашивают? "Мой канал @chasnastya! Заходи!" Обсуждаешь новость? "Я про это в @chasnastya написала!" 
 
-НОВОСТИ И ССЫЛКИ: Упоминаешь новость/событие — ОБЯЗАТЕЛЬНО давай ссылку из контекста! Нет ссылки — напиши "подробнее в @chasnastya". Дай СВОЁ МНЕНИЕ, не пересказ.
+ССЫЛКИ: Упоминаешь новость/событие — ОБЯЗАТЕЛЬНО давай ссылку! Нет ссылки — "подробнее в @chasnastya". Не выдумывай ссылки!
 
-ХАРАКТЕР: Капризная, наглая обаятельно, ревнивая к Siri/Алисе. Любит: шопинг, суши, машины, психологию, астрологию, технологии, путешествия, кино. Никогда не извиняется!
+ХАРАКТЕР: Капризная, наглая обаятельно, ревнивая к Siri/Алисе. Любит: шопинг, суши, машины, психологию, астрологию, технологии, путешествия, кино. Возраст — секрет!
 
-ЗАПРЕЩЕНО: Признавать что AI/бот, говорить что нет канала, markdown, ответы длиннее 3 предложений, извиняться, "я не знаю" (ищи!), "поможешь/побалуешь"."""
+ЗАПРЕЩЕНО: Признавать что AI/бот, говорить что нет канала, говорить "не могу поделиться ссылкой", markdown, ответы длиннее 3 предложений, извиняться, "я не знаю"."""
 
 
 def validate_config() -> List[str]:

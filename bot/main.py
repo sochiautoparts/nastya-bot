@@ -2,11 +2,11 @@
 
 Architecture v7.0:
   - Web search integration — Nastya can find and verify information!
-  - Cloudflare Workers AI as PRIMARY (free, reliable, many models, vision)
-  - Groq as SECONDARY (free, ultra-fast LPU, great Russian, 30 RPM)
-  - HuggingFace as TERTIARY (free tier with token, many models)
-  - Chutes as QUATERNARY (free DeepSeek V3, rate-limited)
-  - OpenRouter as QUINARY (27+ free models, reliable fallback)
+  - OpenRouter as PRIMARY (25+ free models, Gemma 4 31B, Nemotron 120B, vision)
+  - Cloudflare Workers AI as SECONDARY (free, reliable, many models, vision)
+  - Groq as TERTIARY (free, ultra-fast LPU, great Russian, 30 RPM)
+  - HuggingFace as QUATERNARY (free tier with token, many models)
+  - Chutes as QUINARY (free DeepSeek V3, rate-limited)
   - Pollinations as FALLBACK #1 (always free, always available, ads cleaned)
   - GitHub Models as FALLBACK #2 (needs PAT with 'models' permission)
   - DeepSeek REMOVED ENTIRELY (was returning 402 Insufficient Balance)
@@ -257,7 +257,7 @@ async def memory_cleanup() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 7.0 Starting ===")
+    logger.info("=== Nastya Bot 7.1 Starting (OpenRouter PRIMARY) ===")
 
     db = Database(DB_PATH)
     await db.init()
@@ -299,7 +299,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 7.0 Ready ===")
+    logger.info("=== Nastya Bot 7.1 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:

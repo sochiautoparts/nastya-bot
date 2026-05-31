@@ -1,11 +1,11 @@
 """AI Router — BULLETPROOF routing with multi-phase fallback + caching.
 
-Architecture (v6.0 — Maximum reliability with free providers):
-  - Cloudflare Workers AI FIRST (free, reliable, many models, vision)
-  - Groq SECOND (free, ultra-fast LPU, excellent Russian, 30 RPM)
-  - HuggingFace THIRD (free tier with token, many models)
-  - Chutes FOURTH (free DeepSeek V3, but rate-limited)
-  - OpenRouter FIFTH (27+ free models, single API, reliable)
+Architecture (v7.0 — OpenRouter PRIMARY for maximum quality):
+  - OpenRouter FIRST (25+ free models, Gemma 4 31B, Nemotron 120B, vision)
+  - Cloudflare Workers AI SECOND (free, reliable, many models, vision)
+  - Groq THIRD (free, ultra-fast LPU, excellent Russian, 30 RPM)
+  - HuggingFace FOURTH (free tier with token, many models)
+  - Chutes FIFTH (free DeepSeek V3, but rate-limited)
   - Pollinations SIXTH (always free, always available, leaks ads — cleaned)
   - GitHub Models SEVENTH (free, needs PAT with 'models' permission)
   - Other API-key providers as additional fallbacks
@@ -13,15 +13,10 @@ Architecture (v6.0 — Maximum reliability with free providers):
   - 30s timeouts with proper connect timeouts
   - Circuit breaker: skip providers that failed recently
   - Cache last working provider for faster retry
-  - AI Response caching
+  - AI Response caching (disabled for conversations to prevent context amnesia)
   - Fallback responses as LAST resort — bot ALWAYS responds
   - NO "голова разболелась" error messages EVER
   - Aggressive response cleaning: strips ads, markdown, artifacts
-
-CRITICAL v6.0: DeepSeek REMOVED ENTIRELY (402 Insufficient Balance).
-  Cloudflare is now PRIMARY — free, many models, reliable.
-  Groq added as SECONDARY — fastest free inference, great Russian.
-  OpenRouter added as reliable fallback with 27+ free models.
 """
 import logging
 import asyncio
@@ -56,21 +51,21 @@ FALLBACK_RESPONSES = [
     "Кстати, заходи на мой канал @chasnastya! 💅 А ты что сказал?",
 ]
 
-# Provider chain v6.0: Cloudflare FIRST, Groq SECOND for speed
+# Provider chain v7.0: OpenRouter FIRST for quality, Cloudflare SECOND
 PROVIDER_CHAIN = [
-    # Cloudflare — FREE, reliable, many models, vision support
-    "cloudflare",
-    # Groq — FREE, ultra-fast LPU inference, great Russian, 30 RPM
-    "groq",
-    # HuggingFace — FREE tier with token, many models
-    "huggingface",
-    # DeepSeek V3 via Chutes — FREE, excellent Russian, but rate-limited
-    "chutes",
-    # OpenRouter — 27+ free models, single API, reliable fallback
+    # OpenRouter — PRIMARY, 25+ free models including vision (Gemma 4, Nemotron)
     "openrouter",
-    # Pollinations — ALWAYS free, works reliably, but may leak ads (cleaned)
+    # Cloudflare — SECONDARY, free, reliable, many models, vision support
+    "cloudflare",
+    # Groq — fast LPU inference, great Russian, 30 RPM
+    "groq",
+    # HuggingFace — free tier with token, many models
+    "huggingface",
+    # Chutes — free DeepSeek V3, but rate-limited
+    "chutes",
+    # Pollinations — always free, always available, leaks ads (cleaned)
     "pollinations",
-    # GitHub Models — FREE, needs PAT with 'models' permission
+    # GitHub Models — free, needs PAT with 'models' permission
     "github_models",
     # Other API-key providers as additional fallbacks
     "sambanova", "cerebras", "mistral", "gemini",

@@ -1,10 +1,10 @@
-"""OpenRouter AI Provider — access to 27+ free models via single API.
+"""OpenRouter AI Provider — access to free models via single API.
 
 OpenRouter provides access to hundreds of models through one endpoint.
-Free tier includes 27+ models: Llama, DeepSeek, Qwen, Mistral, Gemma, etc.
+Free tier includes many models: Gemma 4, Nemotron, Llama, Hermes, Qwen, etc.
 OpenAI-compatible API — just change base_url.
 
-v2.0: Updated with latest free models, fallback chain, better error handling.
+v3.0: Updated with latest working free models (June 2026), vision support via Nemotron VL and Gemma 4.
 """
 import logging
 from typing import Any, Dict, List, Optional
@@ -17,34 +17,41 @@ logger = logging.getLogger(__name__)
 
 # Free models on OpenRouter — ordered by quality for Russian conversation
 TEXT_MODELS = {
-    "default": "deepseek/deepseek-chat-v3-0324:free",         # DeepSeek V3 — best free for Russian
-    "fast": "meta-llama/llama-3.1-8b-instruct:free",          # Fast, lightweight
-    "reasoning": "deepseek/deepseek-r1-0528:free",            # DeepSeek R1 reasoning
+    "default": "google/gemma-4-31b-it:free",                    # Gemma 4 31B — best free for Russian
+    "fast": "nvidia/nemotron-nano-9b-v2:free",                   # Fast, lightweight
+    "reasoning": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",  # Reasoning model
 }
 
 # Fallback free models to try if primary fails
 FALLBACK_MODELS = [
-    "deepseek/deepseek-chat-v3-0324:free",
-    "qwen/qwen3-235b-a22b:free",
-    "google/gemma-3-27b-it:free",
-    "mistralai/mistral-small-3.1-24b-instruct:free",
-    "meta-llama/llama-4-scout:free",
-    "nvidia/llama-3.1-nemotron-ultra-253b:free",
-    "microsoft/phi-4-reasoning:free",
+    "google/gemma-4-31b-it:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",
+    "nvidia/nemotron-3-nano-30b-a3b:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "nvidia/nemotron-nano-9b-v2:free",
+]
+
+# Vision-capable free models
+VISION_MODELS = [
+    "nvidia/nemotron-nano-12b-v2-vl:free",
+    "google/gemma-4-31b-it:free",
 ]
 
 
 class OpenRouterProvider(BaseProvider):
     """OpenRouter provider — access to many free models via single API.
 
-    OpenRouter gives us 27+ free models through one endpoint.
+    OpenRouter gives us many free models through one endpoint.
     This is the most reliable fallback because even if some models
-    go down, others are always available.
+    go down, others are always available. Supports vision via
+    Nemotron VL and Gemma 4 models.
     """
 
     name: str = "openrouter"
     supports_streaming: bool = False
-    supports_vision: bool = True  # Some free models support vision
+    supports_vision: bool = True
 
     def __init__(self, api_key: str = "", timeout: float = 30.0):
         super().__init__(api_key=api_key, timeout=timeout)
@@ -62,7 +69,7 @@ class OpenRouterProvider(BaseProvider):
             timeout=httpx.Timeout(self.timeout, connect=5.0),
             limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
         )
-        logger.info("OpenRouter provider initialized (DeepSeek V3 free primary)")
+        logger.info("OpenRouter provider initialized (Gemma 4 31B primary)")
 
     def is_available(self) -> bool:
         return bool(self.api_key)
@@ -79,18 +86,30 @@ class OpenRouterProvider(BaseProvider):
         temperature: float = kwargs.get("temperature", 0.7)
         max_tokens: int = kwargs.get("max_tokens", 4096)
         messages_history: Optional[List[Dict[str, Any]]] = kwargs.get("messages")
+        image_base64: Optional[str] = kwargs.get("image_base64")
 
-        # Use last good model if available
-        if self._last_good_model:
+        # Use last good model if available (but not if we need vision)
+        if self._last_good_model and not image_base64:
             model = self._last_good_model
 
         messages = self._build_messages(prompt, system_prompt, messages_history)
 
-        # Try primary model, then fallbacks
-        models_to_try = [model]
-        for fb in FALLBACK_MODELS:
-            if fb != model:
-                models_to_try.append(fb)
+        # If an image is provided, add it to the last user message
+        # and prioritize vision-capable models
+        if image_base64:
+            self._inject_image_into_messages(messages, image_base64)
+
+        # Build model try list: vision models first if image provided
+        if image_base64:
+            models_to_try = list(VISION_MODELS)
+            for fb in FALLBACK_MODELS:
+                if fb not in models_to_try:
+                    models_to_try.append(fb)
+        else:
+            models_to_try = [model]
+            for fb in FALLBACK_MODELS:
+                if fb != model:
+                    models_to_try.append(fb)
 
         last_error = None
         for try_model in models_to_try:
@@ -153,3 +172,37 @@ class OpenRouterProvider(BaseProvider):
         if last_error:
             raise last_error
         raise ProviderError(self.name, "All OpenRouter models failed", retryable=True)
+
+    @staticmethod
+    def _inject_image_into_messages(
+        messages: List[Dict[str, Any]], image_base64: str
+    ) -> None:
+        """Add a base64 image to the last user message for vision models."""
+        if not messages:
+            return
+        # Find the last user message
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "user":
+                content = messages[i].get("content", "")
+                # Convert string content to multimodal format
+                if isinstance(content, str):
+                    messages[i]["content"] = [
+                        {"type": "text", "text": content},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}"
+                            },
+                        },
+                    ]
+                elif isinstance(content, list):
+                    # Already multimodal, append image
+                    content.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}"
+                            },
+                        }
+                    )
+                return
