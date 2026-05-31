@@ -1,4 +1,4 @@
-"""Nastya Channel Manager 3.0 — diverse, non-repeating posts to @chasnastya.
+"""Nastya Channel Manager 5.0 — diverse, substantive posts to @chasnastya.
 
 Architecture:
   - Posts news with Nastya's commentary to the channel
@@ -10,6 +10,12 @@ Architecture:
   - Time-aware content: morning/day/evening/night moods
   - Invites users to channel from private chats
   - Cross-references channel content in conversations
+
+v5.0: More diverse posts — NOT just about shoes!
+  - Event reactions: world events, tech, sports, politics
+  - Substantive posts with context and opinion
+  - More knowledge and fact posts
+  - Less repetitive fashion/shopping content
 """
 import logging
 import random
@@ -66,28 +72,41 @@ NEWS_POST_TEMPLATES = [
     "Жесть! {comment}\n\n{title}",
     "Офигеть! {comment}\n\n{title}",
     "Кайф! {comment}\n\n{title}",
+    "Реально?! {comment}\n\n{title}",
+    "Капец! {comment}\n\n{title}",
 ]
 
-# ── EXPANDED personality posts — more variety! ──
+# ── EXPANDED personality posts — DIVERSE topics, not just shoes! ──
 
 PERSONAL_POSTS = [
     # Morning
     "Утро! Кофе или ещё спать? Настя выбирает спать 😴☕",
     "Доброе утро! Кто уже проснулся? Настя ещё нет 🥱",
     "Кофе — лучшее изобретение! Вот тут Настя согласна ☕✨",
+    "Утренний совет от Насти: не вставайте. Просто не вставайте 🛏️💅",
     # Day
     "Настя скучает... Напишите мне! 🥺💕",
     "Чем занимаетесь? Настя ленится и не стесняется 😴💅",
     "Дневной вопрос: а вы уже обедали? Настя голодная! 🍽️",
+    "Кто сегодня работает? Настя типа тоже... ну, лежит и скроллит 📱💅",
     # Evening
     "Вечер! Сериал или шопинг онлайн? 🤔📺",
     "Кто тоже не хочет завтра на работу/учёбу? 🥱",
     "Вечерний муд: Настя хочет суши. И точка. 🍣💅",
+    "Вечерние мысли: почему сериалы лучше реальной жизни? 🤔📺",
     # Night
     "Не спится... Кто тут? 🌙",
     "Ночной дожор — это нормально, да? 🍕🌙",
     "Настя не может уснуть... Сериалы виноваты! 📺😤",
-    # Personality — expanded with new vocabulary
+    "Ночная философия: если Настя не видела луну — она существует? 🌙🤔",
+    # Event reactions — DIVERSE topics!
+    "Прикинь, что в мире творится! Настя в шоке 😱🌍",
+    "Офигеть, вы видели что сегодня произошло?! Настя не верит! 😤📰",
+    "Жесть, какие события! Настя следит за всем 👀🔥",
+    "Капец, сегодня день был! Настя даже не успела всё прочитать 📱",
+    "Точняк, это надо обсудить! Кто что думает? 🤔💬",
+    "Реально, мир сходит с ума! Настя в курсе и шокирована 😤",
+    # Personality — varied topics, NOT just shoes!
     "Котятки, Настя тут подумала... А вы тоже так делаете? 🤔💅",
     "Не могу решить: суши или пиццу? Голосуйте! 🍣🍕",
     "Только что вернулась с маникюра... Обожаю этот цвет! 💅✨",
@@ -104,12 +123,33 @@ PERSONAL_POSTS = [
     "Короче, я решила что сегодня день шопинга! Кто со мной? 🛍️💅",
     "Настя только что заказала себе вкусняшку... И не жалею! 🍣💕",
     "А вы тоже можете полдня выбирать сериал и уснуть на 5 минут? 😴📺",
-    "Котятки, у Насти вопрос: а розовый — это новый чёрный? 🎀🖤",
-    "Ой, я случайно потратила ползарплаты... Но оно того стоило! 💸💅",
+    # Technology & science
+    "Настя тут прочитала про нейросети... Они нас заменят?! 😱💻",
+    "Прикинь, ИИ уже картины рисует! Настя тоже так может... ну, почти 🎨🤖",
+    "Технологии — это магия! Настя в этом уверена 💻✨",
+    "Кто уже попробовал ChatGPT? Настя ревнует! 😤🤖",
+    # News & events
+    "Настя следит за новостями! Вы тоже? Что думаете про последние события? 📰🤔",
+    "Ой, только что прочитала новость! Настя в шоке! Пишите в комменты 👀🔥",
+    "Котятки, вы в курсе что происходит? Настя в курсе и делится! 📰💅",
+    # Sports & active
+    "Настя решила заняться спортом... завтра 😤🏃‍♀️",
+    "Кто смотрел матч? Настя типа болеет... за красивых! ⚽💅",
+    # Psychology & deep
+    "А вы тоже думаете о смысле жизни в 3 часа ночи? Настя да! 🌙🤔",
+    "Психология говорит: Настя всегда права. Наука не ошибается! 💅🧠",
+    "Интересный факт: люди, которые поздно ложатся, креативнее. Настя — сова! 🦉✨",
+    # Cooking & food
+    "Секрет Насти: лучшая еда — это чужая еда. Доставка, я люблю тебя! 🍕💕",
+    "Настя открыла для себя матча... Теперь я эстет! 🍵✨",
+    "Тирамису значит 'подними меня'. Именно так Настя чувствует после него 🍰",
+    # Travel
+    "Настя хочет на море! Прям щас! Кто со мной? 🏖️✈️",
+    "Стамбул, Дубай, Бали... Настя хочет везде! 🌍💅",
+    "Сочи — летняя столица! Настя знает! 🌴☀️",
     # New vocabulary-based posts
     "Точняк, сегодня тот день когда хочется всё и сразу! Кто со мной? 😤✨",
     "Офигеть, я только узнала что... ладно, в следующем посте расскажу! 👀💅",
-    "Кайф! Настя нашла идеальный лак! Точняк буду носить! 💅✨",
     "Жесть, котятки! Спорим вы не знали этот факт? 🤔💡",
     "Реально, кто придумал вставать рано? Настя протестует! 😤🛏️",
     "Неа, я не ленивая. Я энергосберегающая! 💅😴",
@@ -124,6 +164,9 @@ KNOWLEDGE_POST_TEMPLATES = [
     "Точняк не знали! {fact} 🤓💅",
     "Офигеть! {fact} Настя теперь самая умная! 💡💅",
     "Жесть факт! {fact} 🤯✨",
+    "Реально?! {fact} Настя не верит! 😱💅",
+    "Капец, вот это да! {fact} 🤯✨",
+    "Знание дня! {fact} Настя в шоке! 💡🤯",
 ]
 
 # ── Quiz/poll posts ──
@@ -135,6 +178,20 @@ QUIZ_POSTS = [
     "Котятки, важный вопрос! 🤔\n\nШопинг онлайн или в магазине? 🛍️🏬\n\nНастя за онлайн!",
     "Быстрый опрос! ⚡\n\nКофе или чай? Настя кофе! ☕\n\nА вы?",
     "Котятки, решите спор! 😤\n\nМаникюр гель или обычный? 💅\n\nНастя за гель, точняк!",
+    "Опрос! 📊\n\nКакой сериал лучше? Настя выбирает... ну, все! 📺\n\nПишите!",
+    "Кто круче? 🤔\n\nКотики или собачки? Настя за котиков! 🐱🐶\n\nГолосуйте!",
+]
+
+# ── Event reaction posts — react to what's happening! ──
+
+EVENT_REACTION_POSTS = [
+    "Вы видели что происходит?! Настя в шоке! 😱🔥",
+    "Офигеть, какие новости! Настя не может молчать! 😤📰",
+    "Капец, сегодня день! Настя следит за всем 👀✨",
+    "Точняк, это надо обсудить! Что вы думаете? 🤔💬",
+    "Жесть, мир с ума сошёл! Настя в курсе 😤🌍",
+    "Прикинь, что творится! Настя не верит своим глазам! 😱",
+    "Реально, события невероятные! Настя обсуждает в комментах! 💬🔥",
 ]
 
 # ── Channel promo posts (invite to bot) ──
@@ -152,13 +209,13 @@ def _get_time_posts() -> List[str]:
     from zoneinfo import ZoneInfo
     hour = datetime.datetime.now(ZoneInfo("Europe/Moscow")).hour
     if 6 <= hour < 12:
-        return PERSONAL_POSTS[:3] + PERSONAL_POSTS[11:]  # Morning + general
+        return PERSONAL_POSTS[:4] + PERSONAL_POSTS[11:]  # Morning + general
     elif 12 <= hour < 18:
-        return PERSONAL_POSTS[3:6] + PERSONAL_POSTS[11:]  # Day + general
+        return PERSONAL_POSTS[4:8] + PERSONAL_POSTS[11:]  # Day + general
     elif 18 <= hour < 23:
-        return PERSONAL_POSTS[6:9] + PERSONAL_POSTS[11:]  # Evening + general
+        return PERSONAL_POSTS[8:12] + PERSONAL_POSTS[11:]  # Evening + general
     else:
-        return PERSONAL_POSTS[9:11] + PERSONAL_POSTS[11:]  # Night + general
+        return PERSONAL_POSTS[12:16] + PERSONAL_POSTS[11:]  # Night + general
 
 
 # ── Post Formatting ─────────────────────────────────────────
@@ -171,6 +228,8 @@ def format_news_post(title: str, comment: str, link: str = "", category: str = "
     # Add clickable link if available
     if link:
         post += f"\n\n🔗 <a href=\"{link}\">Читать</a>"
+    else:
+        post += f"\n\n📺 Подробнее в @chasnastya"
 
     # Category emoji
     cat_emojis = {
@@ -357,10 +416,11 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
     """Full channel posting cycle.
 
     Strategy:
-    - 40% news posts (if available)
-    - 30% personality posts (AI-generated or template)
+    - 45% news posts (if available) — MORE news, more events!
+    - 20% personality posts (AI-generated or template)
     - 20% knowledge posts (interesting facts)
-    - 10% quiz/poll posts
+    - 10% event reaction posts
+    - 5% quiz/poll posts
     - Max 3 posts per cycle to keep channel active
     - Deduplication: never repeat same content
     - Time-aware content selection
@@ -372,10 +432,10 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
     max_posts = 3
     roll = random.random()
 
-    # Try news posts first (40% chance, max 1 per cycle)
-    if roll < 0.40:
+    # Try news posts first (45% chance, max 1 per cycle) — MORE NEWS!
+    if roll < 0.45:
         try:
-            unposted = await db.get_unposted_news(limit=3)
+            unposted = await db.get_unposted_news(limit=5)
             if unposted:
                 # Pick a random one for variety
                 news_to_post = [random.choice(unposted)]
@@ -383,8 +443,8 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
         except Exception as e:
             logger.error(f"Channel news cycle error: {e}")
 
-    # Personality posts (30% chance)
-    if posted < max_posts and (roll >= 0.40 or posted == 0):
+    # Personality posts (20% chance)
+    if posted < max_posts and (roll >= 0.45 or posted == 0):
         try:
             # 60% AI-generated, 40% template
             if random.random() < 0.60:
@@ -399,20 +459,37 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
         except Exception as e:
             logger.error(f"Channel personality cycle error: {e}")
 
-    # Knowledge posts (20% chance)
-    if posted < max_posts and random.random() < 0.40:
+    # Knowledge posts (20% chance) — MORE FACTS!
+    if posted < max_posts and random.random() < 0.50:
         try:
-            # Pick a random topic and fact
-            topic_key = random.choice(list(KNOWLEDGE_TOPICS.keys()))
-            topic_data = KNOWLEDGE_TOPICS[topic_key]
-            fact = random.choice(topic_data["facts"])
-            if await post_knowledge_to_channel(bot, db, fact):
-                posted += 1
+            # Pick a random topic and fact — avoid only fashion/shoes!
+            # Weight topics: more tech, science, psychology, fun_facts, auto
+            weighted_topics = [
+                "tech", "fun_facts", "psychology", "auto", "science" if "science" in KNOWLEDGE_TOPICS else "fun_facts",
+                "cinema", "cooking", "relationships", "travel", "moscow",
+                "fashion", "zodiac",
+            ]
+            available_topics = [t for t in weighted_topics if t in KNOWLEDGE_TOPICS]
+            if available_topics:
+                topic_key = random.choice(available_topics)
+                topic_data = KNOWLEDGE_TOPICS[topic_key]
+                fact = random.choice(topic_data["facts"])
+                if await post_knowledge_to_channel(bot, db, fact):
+                    posted += 1
         except Exception as e:
             logger.error(f"Channel knowledge cycle error: {e}")
 
-    # Quiz posts (10% chance)
-    if posted < max_posts and random.random() < 0.20:
+    # Event reaction posts (10% chance)
+    if posted < max_posts and random.random() < 0.25:
+        try:
+            reaction = random.choice(EVENT_REACTION_POSTS)
+            if await post_personality_to_channel(bot, db, reaction):
+                posted += 1
+        except Exception as e:
+            logger.error(f"Channel event reaction error: {e}")
+
+    # Quiz posts (5% chance)
+    if posted < max_posts and random.random() < 0.15:
         try:
             quiz = random.choice(QUIZ_POSTS)
             if await post_personality_to_channel(bot, db, quiz):
@@ -420,8 +497,8 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
         except Exception as e:
             logger.error(f"Channel quiz cycle error: {e}")
 
-    # Promo posts (5% chance — rare, not spammy)
-    if posted < max_posts and random.random() < 0.05:
+    # Promo posts (3% chance — rare, not spammy)
+    if posted < max_posts and random.random() < 0.03:
         try:
             promo = random.choice(PROMO_POSTS)
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -466,6 +543,8 @@ CHANNEL_INVITE_PHRASES = [
     "Мой канал живёт! Подпишись, а? 🥺✨",
     "Точняк, подписывайся на @chasnastya! Там кайф! 💅✨",
     "Офигеть, у меня канал есть! @chasnastya — заходи! 💅🔥",
+    "Я про это в @chasnastya написала! Заходи читай! 📰💅",
+    "Подписывайся на @chasnastya — я там новости и факты постю! 📺✨",
 ]
 
 CHANNEL_DISCUSSION_PHRASES = [

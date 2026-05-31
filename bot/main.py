@@ -1,22 +1,23 @@
-"""Nastya Bot 4.2 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 5.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v4.2:
-  - DeepSeek API as PRIMARY (when balance is topped up)
-  - Cloudflare Workers AI SECONDARY (free with credentials)
-  - GitHub Models TERTIARY (needs PAT with 'models' permission)
-  - Chutes QUATERNARY (free DeepSeek V3, rate-limited)
-  - Pollinations QUINARY (always free, always available, ads cleaned)
+Architecture v5.0:
+  - Cloudflare Workers AI as PRIMARY (free, reliable, many models, vision)
+  - HuggingFace SECONDARY (free tier with token, many models)
+  - Chutes TERTIARY (free DeepSeek V3, rate-limited)
+  - Pollinations QUATERNARY (always free, always available, ads cleaned)
+  - GitHub Models QUINARY (needs PAT with 'models' permission)
+  - DeepSeek REMOVED (was returning 402 Insufficient Balance)
   - Expanded vocabulary: "Точняк!", "Офигеть!", "Кайф!", "Жесть!" etc. 30+ words
   - Knowledge injection by 10 topics: auto, zodiac, psychology, facts, Moscow,
-    cinema, cooking, relationships, fashion, travel
+    cinema, cooking, relationships, fashion, travel, tech
   - Context memory: zodiac signs, names, city, preferences — NEVER forgets
+  - Channel @chasnastya — ALWAYS remembered, links in news!
   - NEWS ENGINE: RSS + AI commentary + links (15 min cycle)
-  - CHANNEL MANAGER: diverse posts, dedup, knowledge posts, quizzes (20 min)
+  - CHANNEL MANAGER: diverse posts, NOT just shoes! Events, facts, reactions (20 min)
   - Stars donations with ACTIVE Pay buttons
   - MOSCOW TIMEZONE — Настя из Москвы!
   - Keep-alive chain via GH PAT trigger
   - NO "голова разболелась" — Nastya ALWAYS responds in character
-  - DeepSeek 402 (Insufficient Balance) handled as non-retryable — instant fallback
 """
 import asyncio
 import logging
@@ -249,7 +250,7 @@ async def memory_cleanup() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 2.0 Starting ===")
+    logger.info("=== Nastya Bot 5.0 Starting ===")
 
     db = Database(DB_PATH)
     await db.init()
@@ -291,7 +292,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 2.0 Ready ===")
+    logger.info("=== Nastya Bot 5.0 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:

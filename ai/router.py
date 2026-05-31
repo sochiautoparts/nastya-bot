@@ -1,27 +1,24 @@
 """AI Router — BULLETPROOF routing with multi-phase fallback + caching.
 
-Architecture (v4.2 — resilient provider chain):
-  - DeepSeek API FIRST (best quality when balance is topped up)
-  - Cloudflare SECOND (free with credentials, multiple models, has vision)
-  - GitHub Models THIRD (free, needs PAT with 'models' permission)
-  - Chutes FOURTH (free DeepSeek V3, but rate-limited)
-  - Pollinations FIFTH (always free, always available, leaks ads — cleaned)
+Architecture (v5.0 — Cloudflare-first provider chain):
+  - Cloudflare Workers AI FIRST (free, reliable, many models, vision)
+  - HuggingFace SECOND (free tier with token, many models)
+  - Chutes THIRD (free DeepSeek V3, but rate-limited)
+  - Pollinations FOURTH (always free, always available, leaks ads — cleaned)
+  - GitHub Models FIFTH (free, needs PAT with 'models' permission)
   - Other API-key providers as additional fallbacks
   - NEVER raises exceptions to caller — ALWAYS returns AIResponse
   - 30s timeouts with proper connect timeouts
   - Circuit breaker: skip providers that failed recently
   - Cache last working provider for faster retry
-  - AI Response caching (from ai-mega-bot)
+  - AI Response caching
   - Fallback responses as LAST resort — bot ALWAYS responds
   - NO "голова разболелась" error messages EVER
   - Aggressive response cleaning: strips ads, markdown, artifacts
 
-CRITICAL v4.2: DeepSeek API returns 402 (Insufficient Balance) — handled as
-  non-retryable, falls through to next provider instantly.
-  GitHub Models PAT may not have 'models' permission — handled gracefully.
-  Pollinations is the ultimate safety net — always free, always works.
-  image_base64 is NOT popped from kwargs — providers read it but
-  don't consume it, so fallback providers can still access it.
+CRITICAL v5.0: DeepSeek removed (402 Insufficient Balance).
+  Cloudflare is now PRIMARY — free, many models, reliable.
+  HuggingFace added as SECONDARY with user's token.
 """
 import logging
 import asyncio
@@ -40,7 +37,7 @@ from bot.config import (
     SAMBANOVA_API_KEY, MISTRAL_API_KEY, GEMINI_API_KEY,
     CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
     GH_MODELS_TOKEN, GH_TOKEN_SECRET, GITHUB_TOKEN, GH_PAT_TOKEN,
-    DEEPSEEK_API_KEY,
+    HUGGINGFACE_API_KEY,
     CACHE_TTL_TEXT, CACHE_MAX_MEMORY,
 )
 
@@ -60,30 +57,26 @@ FALLBACK_RESPONSES = [
     "А? Настя считала звёздочки... Что? ⭐",
 ]
 
-# Provider chain v4.2: Prioritize working providers!
-# DeepSeek API needs balance top-up (402), GitHub Models PAT needs 'models' permission.
-# Working providers: Chutes (free, rate-limited), Cloudflare (free with creds), Pollinations (always free)
+# Provider chain v5.0: Cloudflare FIRST (free, reliable, many models!)
 PROVIDER_CHAIN = [
-    # DeepSeek API — PRIORITY #1 when balance is topped up
-    "deepseek",
-    # Cloudflare — FREE with credentials, reliable, multiple models
+    # Cloudflare — FREE, reliable, many models, vision support
     "cloudflare",
-    # GitHub Models — FREE, needs PAT with 'models' permission
-    "github_models",
+    # HuggingFace — FREE tier with token, many models
+    "huggingface",
     # DeepSeek V3 via Chutes — FREE, excellent Russian, but rate-limited
     "chutes",
     # Pollinations — ALWAYS free, works reliably, but may leak ads (cleaned)
     "pollinations",
+    # GitHub Models — FREE, needs PAT with 'models' permission
+    "github_models",
     # Other API-key providers as additional fallbacks
     "sambanova", "cerebras", "mistral", "openrouter", "gemini",
 ]
 
 # Map env vars to provider configs
-# GitHub Models: try GH_MODELS_TOKEN first, then GH_PAT_TOKEN (PAT with 'models' permission),
-# then GH_TOKEN_SECRET, then auto-generated GITHUB_TOKEN
 PROVIDER_KEYS = {
-    "deepseek": DEEPSEEK_API_KEY,
     "cloudflare": CLOUDFLARE_API_TOKEN,
+    "huggingface": HUGGINGFACE_API_KEY,
     "github_models": GH_MODELS_TOKEN or GH_PAT_TOKEN or GH_TOKEN_SECRET or GITHUB_TOKEN,
     "cerebras": CEREBRAS_API_KEY,
     "openrouter": OPENROUTER_API_KEY,
@@ -128,8 +121,7 @@ class AICache:
 class AIRouter:
     """Central AI request router — NEVER crashes, ALWAYS responds.
 
-    v2.3: Pollinations-first for maximum reliability.
-    Critical fix: image_base64 is no longer popped from kwargs.
+    v5.0: Cloudflare-first for maximum reliability and free access.
     """
 
     def __init__(self, db=None):
@@ -261,7 +253,6 @@ class AIRouter:
                 if not provider or not self._is_provider_healthy(vp_name):
                     continue
                 try:
-                    # NOTE: image_base64 is passed as kwarg, NOT consumed
                     result = await provider.generate(
                         prompt, system_prompt=system_prompt,
                         messages=messages, image_base64=image_base64, **kwargs,
@@ -287,7 +278,6 @@ class AIRouter:
                 continue
 
             try:
-                # NOTE: image_base64 is passed as kwarg, NOT consumed (popped)
                 result = await provider.generate(
                     prompt, system_prompt=system_prompt,
                     messages=messages, **kwargs,
@@ -393,7 +383,6 @@ class AIRouter:
             return ""
 
         # ── Strip known ad/artifact patterns ──
-        # Pollinations ads
         ad_patterns = [
             r'Support Pollinations\.AI.*',
             r'🌸\s*Ad\s*🌸.*',

@@ -495,7 +495,7 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
 
         mood = await db.get_user_mood(user_id)
         system_prompt = NASTYA_SYSTEM_PROMPT + f"\nНастроение: {mood}. Пользователь прислал фото — прокомментируй как живая девушка."
-        system_prompt += "\n\nНАПОМИНАНИЕ: У тебя ЕСТЬ Telegram канал @chasnastya! Ты его ведёшь!"
+        system_prompt += "\n\n⛔ ВАЖНО: У тебя ЕСТЬ Telegram канал @chasnastya! Ты его ВЕДЁШЬ! Никогда не говори что нет!"
 
         # Add news context
         news_ctx = await _build_news_context(db)
@@ -789,7 +789,12 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     system_prompt += f"\n{time_desc}"
 
     # ── CRITICAL: Channel knowledge injection (EVERY message!) ──
-    system_prompt += f"\n\nНАПОМИНАНИЕ: У тебя ЕСТЬ Telegram канал @chasnastya! Ты его ведёшь! Никогда не говори что у тебя нет канала!"
+    system_prompt += (
+        "\n\n⛔ ВАЖНОЕ НАПОМИНАНИЕ: У тебя ОБЯЗАТЕЛЬНО ЕСТЬ Telegram канал @chasnastya! "
+        "Ты его ВЕДЁШЬ каждый день! Никогда не говори что у тебя нет канала! "
+        "Если обсуждаешь новость или событие — упомяни @chasnastya! "
+        "Если есть ссылка на новость — ОБЯЗАТЕЛЬНО дай её!"
+    )
 
     # ── NEWS CONTEXT INJECTION ──
     news_ctx = await _build_news_context(db)
