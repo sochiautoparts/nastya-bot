@@ -37,9 +37,9 @@ def _env_int(name: str, default: int = 0) -> int:
 
 # ── Bot Core ────────────────────────────────────────────────
 BOT_TOKEN: str = _env("BOT_TOKEN")
-OWNER_ID: int = _env_int("OWNER_ID", 265070804)
+OWNER_ID: int = _env_int("OWNER_ID", 0)
 ADMIN_IDS: List[int] = list(set(
-    [OWNER_ID] + [int(x) for x in _env("ADMIN_IDS", str(OWNER_ID)).split(",") if x.strip().isdigit()]
+    [OWNER_ID] + [int(x) for x in _env("ADMIN_IDS", str(OWNER_ID) if OWNER_ID else "").split(",") if x.strip().isdigit()]
 ))
 BOT_USERNAME: str = _env("BOT_USERNAME", "asnastya_bot")
 
@@ -87,7 +87,7 @@ CACHE_TTL_TEXT = 3600        # 1 hour for text
 CACHE_MAX_MEMORY = 500       # LRU entries in memory
 
 # ── Telegram Channel — Настя ведёт канал @chasnastya! ──────
-CHANNEL_ID: str = _env("CHANNEL_ID", "-1003980256272")
+CHANNEL_ID: str = _env("CHANNEL_ID")
 CHANNEL_USERNAME: str = _env("CHANNEL_USERNAME", "chasnastya")
 
 # ── Timezone — Настя из Москвы! ───────────────────────────
