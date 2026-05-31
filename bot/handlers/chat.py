@@ -948,7 +948,29 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
             chat_id = pro.get("chat_id", user_id)
             await bot.send_message(chat_id, msg)
             pro["last_proactive"] = now
+            _proactive_tracker[user_id] = pro
             sent += 1
         except Exception as e:
             logger.error(f"Proactive error for user {user_id}: {e}")
             _proactive_tracker.pop(user_id, None)
+
+    # Also try active users from DB who aren't in tracker
+    if sent < 2 and db:
+        try:
+            active_users = await db.get_active_users(min_messages=3, limit=10)
+            for user in active_users:
+                if sent >= 3:
+                    break
+                uid = user["user_id"]
+                if uid in _proactive_tracker:
+                    continue
+                last_active = user.get("last_active", 0)
+                if now - last_active > 3600:
+                    try:
+                        msg = random.choice(PROACTIVE_MESSAGES)
+                        await bot.send_message(uid, msg)
+                        sent += 1
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"DB proactive error: {e}")

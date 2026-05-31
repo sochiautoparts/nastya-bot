@@ -109,6 +109,7 @@ def format_news_post(title: str, comment: str, link: str = "", category: str = "
 
     # Category emoji
     cat_emojis = {
+        "auto": "🚗",
         "general": "📰",
         "tech": "💻",
         "gaming": "🎮",

@@ -108,6 +108,7 @@ def _parse_rss(xml_text: str, source_name: str, category: str = "general") -> Li
 
 # Category priority for picking interesting news (higher = more interesting for Nastya)
 CATEGORY_PRIORITY = {
+    "auto": 6,           # Приоритет — автомобильные новости от sochiautoparts.ru
     "entertainment": 5,
     "gaming": 4,
     "internet": 4,
@@ -118,6 +119,12 @@ CATEGORY_PRIORITY = {
 
 # Keywords that make news more interesting for Nastya
 INTERESTING_KEYWORDS = [
+    # Автомобильные (приоритет — sochiautoparts.ru!)
+    "авто", "машин", "автомобил", "запчаст", "ремонт авто", "двигател",
+    "масл", "фильтр", "тормоз", "кузов", "шин", "колёс", "колес",
+    "Toyota", "Honda", "Nissan", "Mitsubishi", "Kia", "Hyundai",
+    "сервис", "СТО", "техобслуж", "диагност",
+    # Общие интересы Насти
     "кот", "собак", "щен", "котик", "котят", "животн",
     "мод", "Zara", "H&M", "шикарн", "платье", "сумочк", "коллекц",
     "суши", "ресторан", "вкусн", "еда", "кафе",

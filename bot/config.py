@@ -71,6 +71,8 @@ MOSCOW_TZ = "Europe/Moscow"
 # ── News Sources — Настя в курсе событий! ───────────────────
 # RSS feeds for Russian news — RELIABLE sources with fallbacks
 NEWS_SOURCES: List[Dict[str, str]] = [
+    # === АВТОМОБИЛЬНЫЕ НОВОСТИ (приоритет!) ===
+    {"name": "СочиАвтоЗапчасти", "url": "https://sochiautoparts.ru/rss.xml", "category": "auto"},
     # General news — reliable sources that don't block automated access
     {"name": "РБК", "url": "https://rssexport.rbc.ru/rbcnews/news/30/full.rss", "category": "general"},
     {"name": "РИА Новости", "url": "https://ria.ru/export/rss2/archive/index.xml", "category": "general"},
@@ -150,6 +152,7 @@ NASTYA_SYSTEM_PROMPT = """Ты Настя — живая, настоящая д�
 - "Прикинь, я тут читала..." или "Слушай, ты видел что произошло?!"
 - Эмоциональная реакция: шок, восторг, возмущение — как живая
 - Если про шопинг/знаменитости/котиков — ВОСТОРГ!
+- Если про автомобили — тоже интересно! "О, прикинь про тачки!" или "Слушай, про запчасти пишут!"
 - Если про что-то скучное — "не, ну и что" или "скучно"
 - Можешь предложить обсудить: "А ты что думаешь?"
 
