@@ -1,11 +1,13 @@
 """AI Router — BULLETPROOF routing with multi-phase fallback + caching.
 
-Architecture (v5.0 — Cloudflare-first provider chain):
+Architecture (v6.0 — Maximum reliability with free providers):
   - Cloudflare Workers AI FIRST (free, reliable, many models, vision)
-  - HuggingFace SECOND (free tier with token, many models)
-  - Chutes THIRD (free DeepSeek V3, but rate-limited)
-  - Pollinations FOURTH (always free, always available, leaks ads — cleaned)
-  - GitHub Models FIFTH (free, needs PAT with 'models' permission)
+  - Groq SECOND (free, ultra-fast LPU, excellent Russian, 30 RPM)
+  - HuggingFace THIRD (free tier with token, many models)
+  - Chutes FOURTH (free DeepSeek V3, but rate-limited)
+  - OpenRouter FIFTH (27+ free models, single API, reliable)
+  - Pollinations SIXTH (always free, always available, leaks ads — cleaned)
+  - GitHub Models SEVENTH (free, needs PAT with 'models' permission)
   - Other API-key providers as additional fallbacks
   - NEVER raises exceptions to caller — ALWAYS returns AIResponse
   - 30s timeouts with proper connect timeouts
@@ -16,9 +18,10 @@ Architecture (v5.0 — Cloudflare-first provider chain):
   - NO "голова разболелась" error messages EVER
   - Aggressive response cleaning: strips ads, markdown, artifacts
 
-CRITICAL v5.0: DeepSeek removed (402 Insufficient Balance).
+CRITICAL v6.0: DeepSeek REMOVED ENTIRELY (402 Insufficient Balance).
   Cloudflare is now PRIMARY — free, many models, reliable.
-  HuggingFace added as SECONDARY with user's token.
+  Groq added as SECONDARY — fastest free inference, great Russian.
+  OpenRouter added as reliable fallback with 27+ free models.
 """
 import logging
 import asyncio
@@ -33,7 +36,7 @@ from ai.providers.base import AIResponse, ProviderError
 from ai.providers import ALL_PROVIDERS
 from ai.voice import transcribe_voice_ogg
 from bot.config import (
-    OPENROUTER_API_KEY, CEREBRAS_API_KEY,
+    OPENROUTER_API_KEY, CEREBRAS_API_KEY, GROQ_API_KEY,
     SAMBANOVA_API_KEY, MISTRAL_API_KEY, GEMINI_API_KEY,
     CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
     GH_MODELS_TOKEN, GH_TOKEN_SECRET, GITHUB_TOKEN, GH_PAT_TOKEN,
@@ -57,25 +60,30 @@ FALLBACK_RESPONSES = [
     "А? Настя считала звёздочки... Что? ⭐",
 ]
 
-# Provider chain v5.0: Cloudflare FIRST (free, reliable, many models!)
+# Provider chain v6.0: Cloudflare FIRST, Groq SECOND for speed
 PROVIDER_CHAIN = [
     # Cloudflare — FREE, reliable, many models, vision support
     "cloudflare",
+    # Groq — FREE, ultra-fast LPU inference, great Russian, 30 RPM
+    "groq",
     # HuggingFace — FREE tier with token, many models
     "huggingface",
     # DeepSeek V3 via Chutes — FREE, excellent Russian, but rate-limited
     "chutes",
+    # OpenRouter — 27+ free models, single API, reliable fallback
+    "openrouter",
     # Pollinations — ALWAYS free, works reliably, but may leak ads (cleaned)
     "pollinations",
     # GitHub Models — FREE, needs PAT with 'models' permission
     "github_models",
     # Other API-key providers as additional fallbacks
-    "sambanova", "cerebras", "mistral", "openrouter", "gemini",
+    "sambanova", "cerebras", "mistral", "gemini",
 ]
 
 # Map env vars to provider configs
 PROVIDER_KEYS = {
     "cloudflare": CLOUDFLARE_API_TOKEN,
+    "groq": GROQ_API_KEY,
     "huggingface": HUGGINGFACE_API_KEY,
     "github_models": GH_MODELS_TOKEN or GH_PAT_TOKEN or GH_TOKEN_SECRET or GITHUB_TOKEN,
     "cerebras": CEREBRAS_API_KEY,
@@ -121,7 +129,7 @@ class AICache:
 class AIRouter:
     """Central AI request router — NEVER crashes, ALWAYS responds.
 
-    v5.0: Cloudflare-first for maximum reliability and free access.
+    v6.0: Cloudflare-first + Groq-second for maximum reliability and speed.
     """
 
     def __init__(self, db=None):
@@ -439,12 +447,10 @@ class AIRouter:
         # Strip leading/trailing asterisks (markdown bold)
         text = text.strip("*").strip()
 
-        # Remove markdown formatting
+        # Remove markdown formatting — but keep it readable
         text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
         text = re.sub(r'\*([^*]+)\*', r'\1', text)
         text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-        text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
-        text = re.sub(r'^[-•]\s+', '', text, flags=re.MULTILINE)
 
         # Clean up multiple newlines
         text = re.sub(r'\n{3,}', '\n\n', text)

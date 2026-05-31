@@ -1,12 +1,14 @@
-"""Nastya Bot 5.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 6.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v5.0:
+Architecture v6.0:
   - Cloudflare Workers AI as PRIMARY (free, reliable, many models, vision)
-  - HuggingFace SECONDARY (free tier with token, many models)
-  - Chutes TERTIARY (free DeepSeek V3, rate-limited)
-  - Pollinations QUATERNARY (always free, always available, ads cleaned)
-  - GitHub Models QUINARY (needs PAT with 'models' permission)
-  - DeepSeek REMOVED (was returning 402 Insufficient Balance)
+  - Groq as SECONDARY (free, ultra-fast LPU, great Russian, 30 RPM)
+  - HuggingFace as TERTIARY (free tier with token, many models)
+  - Chutes as QUATERNARY (free DeepSeek V3, rate-limited)
+  - OpenRouter as QUINARY (27+ free models, reliable fallback)
+  - Pollinations as FALLBACK #1 (always free, always available, ads cleaned)
+  - GitHub Models as FALLBACK #2 (needs PAT with 'models' permission)
+  - DeepSeek REMOVED ENTIRELY (was returning 402 Insufficient Balance)
   - Expanded vocabulary: "Точняк!", "Офигеть!", "Кайф!", "Жесть!" etc. 30+ words
   - Knowledge injection by 10 topics: auto, zodiac, psychology, facts, Moscow,
     cinema, cooking, relationships, fashion, travel, tech
@@ -250,7 +252,7 @@ async def memory_cleanup() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 5.0 Starting ===")
+    logger.info("=== Nastya Bot 6.0 Starting ===")
 
     db = Database(DB_PATH)
     await db.init()
@@ -292,7 +294,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 5.0 Ready ===")
+    logger.info("=== Nastya Bot 6.0 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:

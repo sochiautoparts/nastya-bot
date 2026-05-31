@@ -1,10 +1,9 @@
-"""OpenRouter AI Provider — access to 27+ free models via single API.
+"""Groq Provider — FREE, ultra-fast inference via LPU hardware.
 
-OpenRouter provides access to hundreds of models through one endpoint.
-Free tier includes 27+ models: Llama, DeepSeek, Qwen, Mistral, Gemma, etc.
+Groq provides the fastest AI inference available — perfect for real-time chat.
+Free tier: ~30 RPM, generous daily limits.
+Models: Llama 3.3 70B, Llama 4 Scout, Mixtral, Gemma 2, Qwen 3.
 OpenAI-compatible API — just change base_url.
-
-v2.0: Updated with latest free models, fallback chain, better error handling.
 """
 import logging
 from typing import Any, Dict, List, Optional
@@ -15,36 +14,32 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
-# Free models on OpenRouter — ordered by quality for Russian conversation
+# Models — free tier, ordered by quality for Russian conversation
 TEXT_MODELS = {
-    "default": "deepseek/deepseek-chat-v3-0324:free",         # DeepSeek V3 — best free for Russian
-    "fast": "meta-llama/llama-3.1-8b-instruct:free",          # Fast, lightweight
-    "reasoning": "deepseek/deepseek-r1-0528:free",            # DeepSeek R1 reasoning
+    "default": "llama-3.3-70b-versatile",       # Best free model, great Russian
+    "fast": "llama-3.1-8b-instant",              # Ultra-fast for simple responses
+    "reasoning": "deepseek-r1-distill-llama-70b", # Reasoning tasks
 }
 
-# Fallback free models to try if primary fails
 FALLBACK_MODELS = [
-    "deepseek/deepseek-chat-v3-0324:free",
-    "qwen/qwen3-235b-a22b:free",
-    "google/gemma-3-27b-it:free",
-    "mistralai/mistral-small-3.1-24b-instruct:free",
-    "meta-llama/llama-4-scout:free",
-    "nvidia/llama-3.1-nemotron-ultra-253b:free",
-    "microsoft/phi-4-reasoning:free",
+    "llama-3.3-70b-versatile",
+    "llama3-70b-8192",
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it",
 ]
 
 
-class OpenRouterProvider(BaseProvider):
-    """OpenRouter provider — access to many free models via single API.
+class GroqProvider(BaseProvider):
+    """Groq provider — fastest free inference, OpenAI-compatible.
 
-    OpenRouter gives us 27+ free models through one endpoint.
-    This is the most reliable fallback because even if some models
-    go down, others are always available.
+    Groq's LPU hardware delivers ~100ms response times.
+    Excellent for real-time chat — users get instant responses.
+    Free tier is generous enough for a Telegram bot.
     """
 
-    name: str = "openrouter"
+    name: str = "groq"
     supports_streaming: bool = False
-    supports_vision: bool = True  # Some free models support vision
+    supports_vision: bool = False
 
     def __init__(self, api_key: str = "", timeout: float = 30.0):
         super().__init__(api_key=api_key, timeout=timeout)
@@ -52,17 +47,15 @@ class OpenRouterProvider(BaseProvider):
 
     async def init(self) -> None:
         self._client = httpx.AsyncClient(
-            base_url="https://openrouter.ai/api/v1",
+            base_url="https://api.groq.com/openai/v1",
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "https://github.com/sochiautoparts/nastya-bot",
-                "X-Title": "Nastya Bot",
             },
             timeout=httpx.Timeout(self.timeout, connect=5.0),
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            limits=httpx.Limits(max_connections=15, max_keepalive_connections=5),
         )
-        logger.info("OpenRouter provider initialized (DeepSeek V3 free primary)")
+        logger.info("Groq provider initialized (Llama 3.3 70B primary)")
 
     def is_available(self) -> bool:
         return bool(self.api_key)
@@ -77,7 +70,7 @@ class OpenRouterProvider(BaseProvider):
         model: str = kwargs.get("model", TEXT_MODELS.get(model_key, TEXT_MODELS["default"]))
         system_prompt: str = kwargs.get("system_prompt", "")
         temperature: float = kwargs.get("temperature", 0.7)
-        max_tokens: int = kwargs.get("max_tokens", 4096)
+        max_tokens: int = kwargs.get("max_tokens", 2048)
         messages_history: Optional[List[Dict[str, Any]]] = kwargs.get("messages")
 
         # Use last good model if available
@@ -119,7 +112,7 @@ class OpenRouterProvider(BaseProvider):
                 return AIResponse(
                     text=text,
                     provider=self.name,
-                    model=f"openrouter:{try_model}",
+                    model=f"groq:{try_model}",
                     tokens_used=usage.get("total_tokens", 0),
                     finish_reason=choice.get("finish_reason", ""),
                     metadata={
@@ -136,7 +129,7 @@ class OpenRouterProvider(BaseProvider):
                 if status in (401, 403):
                     raise ProviderError(self.name, f"Auth failed (HTTP {status})", retryable=False)
                 if status == 404:
-                    logger.warning(f"OpenRouter model {try_model} not found, trying fallback")
+                    logger.warning(f"Groq model {try_model} not found, trying fallback")
                     last_error = ProviderError(self.name, f"Model {try_model} not found", retryable=True)
                     continue
                 if status in (429, 503):
@@ -152,4 +145,4 @@ class OpenRouterProvider(BaseProvider):
 
         if last_error:
             raise last_error
-        raise ProviderError(self.name, "All OpenRouter models failed", retryable=True)
+        raise ProviderError(self.name, "All Groq models failed", retryable=True)

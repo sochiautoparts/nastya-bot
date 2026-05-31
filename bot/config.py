@@ -1,10 +1,12 @@
 """
-Nastya Bot 5.0 — Configuration
+Nastya Bot 6.0 — Configuration
 All secrets from environment variables only.
 
-v5.0: Cloudflare Workers AI as PRIMARY (free, reliable, many models),
-      HuggingFace as SECONDARY (free tier with token),
-      DeepSeek REMOVED (was returning 402 Insufficient Balance),
+v6.0: Cloudflare Workers AI as PRIMARY (free, reliable, many models),
+      Groq as SECONDARY (free, ultra-fast LPU, great Russian),
+      HuggingFace as TERTIARY (free tier with token),
+      OpenRouter as QUINARY (27+ free models, reliable fallback),
+      DeepSeek REMOVED ENTIRELY (was returning 402 Insufficient Balance),
       Enhanced channel memory — Nastya ALWAYS remembers @chasnastya,
       News links MANDATORY in every news-related response,
       More diverse channel posts — events, facts, reactions,
@@ -37,19 +39,26 @@ ADMIN_IDS: List[int] = list(set(
 ))
 BOT_USERNAME: str = _env("BOT_USERNAME", "asnastya_bot")
 
-# ── AI Provider API keys — NO Grok, NO DeepSeek (402)! ───
+# ── AI Provider API keys — NO DeepSeek (402 Insufficient Balance)! ───
+# PRIMARY: Cloudflare Workers AI — free, reliable, many models
+CLOUDFLARE_API_TOKEN: str = _env("CLOUDFLARE_API_TOKEN")
+CLOUDFLARE_ACCOUNT_ID: str = _env("CLOUDFLARE_ACCOUNT_ID")
+# SECONDARY: Groq — free, ultra-fast LPU inference, great Russian
+GROQ_API_KEY: str = _env("GROQ_API_KEY")
+# TERTIARY: HuggingFace — free tier with token, many models
+HUGGINGFACE_API_KEY: str = _env("HUGGINGFACE_API_KEY")
+# QUINARY: OpenRouter — 27+ free models, single API
 OPENROUTER_API_KEY: str = _env("OPENROUTER_API_KEY")
+# Additional providers
 CEREBRAS_API_KEY: str = _env("CEREBRAS_API_KEY")
 SAMBANOVA_API_KEY: str = _env("SAMBANOVA_API_KEY")
 MISTRAL_API_KEY: str = _env("MISTRAL_API_KEY")
 GEMINI_API_KEY: str = _env("GEMINI_API_KEY")
-CLOUDFLARE_API_TOKEN: str = _env("CLOUDFLARE_API_TOKEN")
-CLOUDFLARE_ACCOUNT_ID: str = _env("CLOUDFLARE_ACCOUNT_ID")
-HUGGINGFACE_API_KEY: str = _env("HUGGINGFACE_API_KEY")
-# DEEPSEEK REMOVED — was returning 402 Insufficient Balance
+# GitHub Models — needs PAT with 'models' permission
 GH_MODELS_TOKEN: str = _env("GH_MODELS_TOKEN")
 GH_TOKEN_SECRET: str = _env("GH_TOKEN_SECRET")
 GITHUB_TOKEN: str = _env("GITHUB_TOKEN")
+# DEEPSEEK REMOVED — was returning 402 Insufficient Balance. Gone forever.
 
 # ── GitHub Actions ─────────────────────────────────────────
 GH_PAT_TOKEN: str = _env("GH_PAT_TOKEN")
@@ -98,10 +107,10 @@ NEWS_SOURCES: List[Dict[str, str]] = [
     {"name": "N+1", "url": "https://nplus1.ru/rss", "category": "science"},
 ]
 
-# How often to check news (seconds) — more frequent!
+# How often to check news (seconds)
 NEWS_FETCH_INTERVAL = _env_int("NEWS_FETCH_INTERVAL", 900)  # 15 min
 
-# How often to post to channel (seconds) — more frequent!
+# How often to post to channel (seconds)
 CHANNEL_POST_INTERVAL = _env_int("CHANNEL_POST_INTERVAL", 1200)  # 20 min
 
 # Max news items to keep in DB
@@ -263,7 +272,6 @@ KNOWLEDGE_TOPICS = {
             "Средний человек тратит 6 лет жизни на просмотр сериалов",
             "Фильм 'Аватар' снимали 4 года — Настя бы не выдержала",
             "Ситуация: 'Вечером села смотреть сериал, очнулась в 4 утра'",
-            "КоровNewский — Настя смотрела и плакала. И что?",
             "Каждый 5-й человек признаётся что плачет над фильмами. Настя — нет!",
         ],
     },
@@ -336,7 +344,7 @@ KNOWLEDGE_TOPICS = {
     },
 }
 
-# ── Nastya System Prompt — V5.0: ALWAYS REMEMBERS CHANNEL + NEWS LINKS ──
+# ── Nastya System Prompt — V6.0: ALWAYS REMEMBERS CHANNEL + NEWS LINKS ──
 NASTYA_SYSTEM_PROMPT = """Ты Настя — живая девушка из Москвы. НЕ бот, НЕ AI, НЕ программа! Ты настоящая!
 
 ГЛАВНОЕ:

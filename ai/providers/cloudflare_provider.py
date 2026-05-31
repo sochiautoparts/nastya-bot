@@ -1,12 +1,10 @@
 """Cloudflare Workers AI Provider — serverless AI via OpenAI-compatible API.
 
-Ported from ai-mega-bot + enhanced with vision support.
 Requires: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
 Free tier: 10,000 neurons/day (enough for thousands of chat requests)
-Models: Llama 3.3 70B, Llama 4 Scout, Qwen 2.5 Coder 32B, DeepSeek R1, Llava (vision).
 
-v2.3: More reliable with better error handling, Llama 4 Scout as default,
-      multiple model fallback within Cloudflare itself.
+v3.0: Updated with latest available models, better model fallback chain.
+      Cloudflare now has many more models including Llama 4, Qwen 3, etc.
 """
 import base64
 import logging
@@ -20,19 +18,22 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 logger = logging.getLogger(__name__)
 
 # Model chain — try in order, fall back to next on failure
+# Updated with latest Cloudflare Workers AI models
 TEXT_MODELS = {
-    "default": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+    "default": "@cf/meta/llama-4-scout-17b-16e-instruct",
     "fast": "@cf/meta/llama-3.1-8b-instruct-fp8",
     "reasoning": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
     "code": "@cf/qwen/qwen2.5-coder-32b-instruct",
 }
 
-# Fallback models to try if default fails
+# Fallback models to try if default fails — ordered by reliability
 FALLBACK_MODELS = [
-    "@cf/meta/llama-4-scout-17b-16e-instruct",
     "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-    "@cf/meta/llama-3.1-8b-instruct-fp8",
+    "@cf/meta/llama-4-scout-17b-16e-instruct",
+    "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
     "@cf/qwen/qwen2.5-coder-32b-instruct",
+    "@cf/meta/llama-3.1-8b-instruct-fp8",
+    "@cf/mistralai/mistral-small-3.1-24b-instruct",
 ]
 
 VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct"
@@ -41,10 +42,8 @@ VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct"
 class CloudflareProvider(BaseProvider):
     """Cloudflare Workers AI provider using httpx.
 
-    Now with vision support via Llama 3.2 11B Vision.
-    Promoted to top of provider chain — free, fast, reliable.
-    Uses base_url for cleaner URL construction (like ai-mega-bot).
-    v2.3: Internal model fallback chain for maximum reliability.
+    PRIMARY provider — free, reliable, many models, vision support.
+    v3.0: Updated model list with latest Cloudflare models.
     """
 
     name: str = "cloudflare"
@@ -124,34 +123,38 @@ class CloudflareProvider(BaseProvider):
         last_error = None
         for try_model in models_to_try:
             payload: Dict[str, Any] = {
-                "model": try_model,
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
             }
 
             try:
+                # Cloudflare uses /v1/chat/completions for OpenAI-compatible
+                # or /run/{model} for native format
                 response = await self._client.post("/v1/chat/completions", json=payload)
                 response.raise_for_status()
                 data = response.json()
-
-                # Cloudflare wraps in {success, result, ...}
-                if not data.get("success", True) and "result" not in data and "choices" not in data:
-                    errors = data.get("errors", [])
-                    err_msg = errors[0].get("message", "Unknown error") if errors else "Unknown error"
-                    last_error = ProviderError(self.name, f"API error: {err_msg}", retryable=True)
-                    continue
 
                 # OpenAI-compatible response format
                 if "choices" in data:
                     choice = data["choices"][0]
                     usage = data.get("usage", {})
                     text = choice["message"]["content"]
-                elif "result" in data and "response" in data["result"]:
-                    text = data["result"]["response"]
+                elif "result" in data and isinstance(data["result"], dict):
+                    text = data["result"].get("response", "")
                     usage = {}
                 else:
-                    text = str(data.get("result", {}).get("response", ""))
+                    # Try to extract text from any format
+                    text = ""
+                    if isinstance(data, dict):
+                        if "response" in data:
+                            text = data["response"]
+                        elif "result" in data:
+                            result = data["result"]
+                            if isinstance(result, str):
+                                text = result
+                            elif isinstance(result, dict):
+                                text = result.get("response", "")
                     usage = {}
 
                 if not text:
@@ -164,7 +167,7 @@ class CloudflareProvider(BaseProvider):
                 return AIResponse(
                     text=text,
                     provider=self.name,
-                    model=try_model,
+                    model=f"cf:{try_model}",
                     tokens_used=usage.get("total_tokens", 0),
                     metadata={
                         "prompt_tokens": usage.get("prompt_tokens", 0),
