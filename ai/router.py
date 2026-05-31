@@ -1,18 +1,23 @@
 """AI Router — BULLETPROOF routing with multi-phase fallback + caching.
 
-Architecture (v2.2 — Cloudflare-first + GH_MODELS_TOKEN):
-  - 9 providers with proper fallback chain (NO Grok)
-  - CLOUDFLARE FIRST (free, fast, reliable, has vision)
-  - GitHub Models second (free, uses GH_MODELS_TOKEN, GPT-4o-mini)
-  - Pollinations + Chutes as always-free fallbacks (moved up!)
+Architecture (v2.3 — Pollinations-first for reliability):
+  - Pollinations FIRST (free, always available, reliable, has vision)
+  - Chutes second (free, always available, DeepSeek V3)
+  - Cloudflare third (free with credentials, has vision)
+  - GitHub Models fourth (free with PAT + 'models' permission)
   - Other API-key providers as additional fallbacks
   - NEVER raises exceptions to caller — ALWAYS returns AIResponse
-  - 30s timeouts with 10s connect timeout for Cloudflare
+  - 30s timeouts with proper connect timeouts
   - Circuit breaker: skip providers that failed recently
   - Cache last working provider for faster retry
   - AI Response caching (from ai-mega-bot)
   - Fallback responses as LAST resort — bot ALWAYS responds
   - NO "голова разболелась" error messages EVER
+
+CRITICAL FIX v2.3: image_base64 is NOT popped from kwargs —
+  providers read it but don't consume it, so fallback providers
+  can still access it. This fixes vision requests failing when
+  the first vision provider is down.
 """
 import logging
 import asyncio
@@ -49,15 +54,15 @@ FALLBACK_RESPONSES = [
     "А? Настя считала звёздочки... Что? ⭐",
 ]
 
-# Provider chain v2.2: Cloudflare FIRST (free + reliable + vision),
-# then GitHub Models (free + GPT-4o-mini), then Pollinations (always free),
-# then Chutes (always free), then other key-based providers — NO Grok!
+# Provider chain v2.3: Pollinations FIRST (always free + reliable),
+# then Chutes (always free), then Cloudflare (free with creds),
+# then GitHub Models (free with PAT), then other key-based providers
 PROVIDER_CHAIN = [
-    "cloudflare", "github_models", "pollinations", "chutes",
+    "pollinations", "chutes", "cloudflare", "github_models",
     "sambanova", "cerebras", "mistral", "openrouter", "gemini",
 ]
 
-# Map env vars to provider configs — NO Grok!
+# Map env vars to provider configs
 PROVIDER_KEYS = {
     "cloudflare": CLOUDFLARE_API_TOKEN,
     "github_models": GH_MODELS_TOKEN or GH_TOKEN_SECRET or GITHUB_TOKEN,
@@ -70,7 +75,7 @@ PROVIDER_KEYS = {
 
 
 class AICache:
-    """Simple in-memory LRU cache for AI responses (from ai-mega-bot)."""
+    """Simple in-memory LRU cache for AI responses."""
 
     def __init__(self, max_size: int = CACHE_MAX_MEMORY, ttl: int = CACHE_TTL_TEXT):
         self._cache: Dict[str, Dict] = {}
@@ -93,7 +98,6 @@ class AICache:
     def put(self, prompt: str, system_prompt: str, text: str) -> None:
         key = self._make_key(prompt, system_prompt)
         self._cache[key] = {"text": text, "ts": time.time()}
-        # Evict oldest if over limit
         while len(self._cache) > self._max_size:
             oldest_key = next(iter(self._cache))
             del self._cache[oldest_key]
@@ -105,33 +109,25 @@ class AICache:
 class AIRouter:
     """Central AI request router — NEVER crashes, ALWAYS responds.
 
-    Based on ai-mega-bot's proven AIRouter pattern with Nastya-specific
-    enhancements: circuit breaker, provider caching, response caching,
-    and in-character fallback responses.
-
-    v2.1: Cloudflare-first chain + GitHub Models.
+    v2.3: Pollinations-first for maximum reliability.
+    Critical fix: image_base64 is no longer popped from kwargs.
     """
 
     def __init__(self, db=None):
         self.providers: Dict[str, Any] = {}
         self._chain: List[str] = []
         self._vision_providers: List[str] = []
-        # Circuit breaker
         self._fail_counts: Dict[str, int] = {}
         self._last_fail: Dict[str, float] = {}
-        # Cache last working provider
         self._last_good_provider: Optional[str] = None
-        # Response cache (in-memory LRU)
         self._cache = AICache()
-        # DB for persistent cache
         self._db = db
-        # Stats
         self._total_requests: int = 0
         self._total_fallbacks: int = 0
         self._cache_hits: int = 0
 
     async def init(self) -> None:
-        """Initialize all available providers from ALL_PROVIDERS registry."""
+        """Initialize all available providers."""
         for name, provider_cls in ALL_PROVIDERS.items():
             try:
                 api_key = PROVIDER_KEYS.get(name, "")
@@ -155,17 +151,15 @@ class AIRouter:
                     vision = " (vision)" if getattr(provider, 'supports_vision', False) else ""
                     logger.info(f"Provider: {name} ✓{vision}")
                 else:
-                    logger.warning(f"Provider: {name} — not available (no key)")
+                    logger.warning(f"Provider: {name} — not available")
 
             except Exception as exc:
                 logger.error(f"Failed to init provider {name}: {exc}")
 
-        # Build chain with only available providers
         self._chain = [p for p in PROVIDER_CHAIN if p in self.providers]
         if not self._chain:
             self._chain = list(self.providers.keys())
 
-        # Vision providers
         for name, provider in self.providers.items():
             if getattr(provider, 'supports_vision', False):
                 self._vision_providers.append(name)
@@ -175,7 +169,6 @@ class AIRouter:
             logger.info(f"Vision providers: {', '.join(self._vision_providers)}")
 
     async def close(self) -> None:
-        """Shutdown all providers."""
         for p in self.providers.values():
             try:
                 await p.close()
@@ -183,7 +176,6 @@ class AIRouter:
                 pass
 
     def _is_provider_healthy(self, name: str) -> bool:
-        """Check if provider should be tried (circuit breaker)."""
         fail_count = self._fail_counts.get(name, 0)
         last_fail = self._last_fail.get(name, 0)
         if fail_count >= 3 and time.time() - last_fail < 120:
@@ -199,7 +191,6 @@ class AIRouter:
         self._last_fail[name] = time.time()
 
     def _get_ordered_chain(self) -> List[str]:
-        """Get provider chain, prioritizing last working provider."""
         chain = [p for p in self._chain if p in self.providers and self._is_provider_healthy(p)]
         if self._last_good_provider and self._last_good_provider in chain:
             chain.remove(self._last_good_provider)
@@ -213,17 +204,8 @@ class AIRouter:
 
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
-        """Route text chat. NEVER raises exceptions. ALWAYS returns a response.
-
-        Multi-phase routing with caching:
-        1. Check memory cache (fast)
-        2. Check DB cache (if available)
-        3. Try providers with circuit breaker
-        4. Retry top providers
-        5. Try Pollinations with simpler prompt
-        6. Fallback response (in-character)
-        """
-        image_base64 = kwargs.pop("image_base64", None)
+        """Route text chat. NEVER raises exceptions. ALWAYS returns a response."""
+        image_base64 = kwargs.get("image_base64")
         self._total_requests += 1
 
         # ── PHASE 0: Check memory cache (only for no-history requests) ──
@@ -231,32 +213,24 @@ class AIRouter:
             cached = self._cache.get(prompt, system_prompt)
             if cached:
                 self._cache_hits += 1
-                logger.debug(f"Cache hit for: {prompt[:50]}...")
                 return AIResponse(
-                    text=cached,
-                    provider="cache",
-                    model="none",
-                    tokens_used=0,
-                    metadata={"from_cache": True},
+                    text=cached, provider="cache", model="none",
+                    tokens_used=0, metadata={"from_cache": True},
                 )
 
-        # ── PHASE 0.5: Check DB cache (if available) ──
+        # ── PHASE 0.5: Check DB cache ──
         if not messages and not image_base64 and self._db:
             try:
                 cache_key = hashlib.sha256(f"{system_prompt}:{prompt}".encode()).hexdigest()[:32]
                 cached_db = await self._db.cache_get(cache_key, max_age=CACHE_TTL_TEXT)
                 if cached_db:
-                    self._cache_hits += 1
                     text = cached_db.get("text", "")
                     if text:
-                        # Promote to memory cache
+                        self._cache_hits += 1
                         self._cache.put(prompt, system_prompt, text)
                         return AIResponse(
-                            text=text,
-                            provider="db_cache",
-                            model="none",
-                            tokens_used=0,
-                            metadata={"from_cache": True},
+                            text=text, provider="db_cache", model="none",
+                            tokens_used=0, metadata={"from_cache": True},
                         )
             except Exception:
                 pass
@@ -268,6 +242,7 @@ class AIRouter:
                 if not provider or not self._is_provider_healthy(vp_name):
                     continue
                 try:
+                    # NOTE: image_base64 is passed as kwarg, NOT consumed
                     result = await provider.generate(
                         prompt, system_prompt=system_prompt,
                         messages=messages, image_base64=image_base64, **kwargs,
@@ -275,9 +250,14 @@ class AIRouter:
                     if result and result.text:
                         self._mark_success(vp_name)
                         return result
-                except Exception as e:
-                    logger.warning(f"Vision provider {vp_name} failed: {e}")
+                except ProviderError as e:
                     self._mark_failure(vp_name)
+                    logger.warning(f"Vision provider {vp_name} failed: {e}")
+                    if not e.retryable:
+                        continue
+                except Exception as e:
+                    self._mark_failure(vp_name)
+                    logger.warning(f"Vision provider {vp_name} error: {e}")
 
         # ── PHASE 1: Try configured providers ──
         chain = self._get_ordered_chain()
@@ -288,6 +268,7 @@ class AIRouter:
                 continue
 
             try:
+                # NOTE: image_base64 is passed as kwarg, NOT consumed (popped)
                 result = await provider.generate(
                     prompt, system_prompt=system_prompt,
                     messages=messages, **kwargs,
@@ -295,7 +276,6 @@ class AIRouter:
                 if result and result.text:
                     self._mark_success(provider_name)
 
-                    # Cache the response (only for no-history requests)
                     if not messages and not image_base64:
                         self._cache.put(prompt, system_prompt, result.text)
                         if self._db:
@@ -335,13 +315,13 @@ class AIRouter:
             except Exception:
                 pass
 
-        # ── PHASE 3: Try Pollinations with simpler prompt ──
+        # ── PHASE 3: Try Pollinations with simplified prompt ──
         if "pollinations" in self.providers:
             try:
                 provider = self.providers["pollinations"]
                 result = await provider.generate(
                     prompt, system_prompt=system_prompt,
-                    messages=None,  # Simplified
+                    messages=None,
                 )
                 if result and result.text:
                     self._mark_success("pollinations")
@@ -386,7 +366,6 @@ class AIRouter:
         return random.choice(FALLBACK_RESPONSES)
 
     def get_status(self) -> Dict[str, Any]:
-        """Get status of all providers for admin commands."""
         status = {}
         for name in self._chain:
             provider = self.providers.get(name)

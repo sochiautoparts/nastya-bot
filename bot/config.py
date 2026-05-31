@@ -1,10 +1,10 @@
 """
-Nastya Bot 2.2 — Configuration
+Nastya Bot 2.3 — Configuration
 All secrets from environment variables only.
 
 NO Grok (only 2 requests, useless — REMOVED)
 Added: News sources, channel settings, AI caching, intelligent conversation
-v2.2: GH_MODELS_TOKEN (GITHUB_ prefix forbidden by GitHub Actions), Cloudflare-first, Moscow timezone, better RSS sources
+v2.3: Pollinations-first chain, image_base64 fix, GitHub Models auth handling
 """
 import os
 from typing import Dict, List

@@ -1,11 +1,15 @@
 """GitHub Models Provider — free AI models via GitHub Marketplace.
 
-Uses GH_MODELS_TOKEN for authentication (GITHUB_TOKEN prefix is forbidden by GitHub Actions).
+Uses GH_MODELS_TOKEN for authentication.
 Free tier: GitHub Models provides access to GPT-4o-mini, Llama, etc.
 Rate limited but free — great as reliable fallback.
 Supports vision via GPT-4o-mini.
+
+IMPORTANT: The PAT needs the 'models' permission to access this API.
+If the token doesn't have 'models' scope, this provider will be skipped
+with a clear warning. The user must create a fine-grained PAT with
+'GitHub Models' permission enabled.
 """
-import base64
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -18,10 +22,16 @@ logger = logging.getLogger(__name__)
 TEXT_MODELS = {
     "default": "gpt-4o-mini",
     "fast": "gpt-4o-mini",
-    "reasoning": "meta-llama-3.1-70b-instruct",
+    "reasoning": "Meta-Llama-3.1-405B-Instruct",
 }
 
 VISION_MODEL = "gpt-4o-mini"
+
+# Alternative model names to try if default fails
+FALLBACK_MODELS = [
+    "Meta-Llama-3.1-8B-Instruct",
+    "Mistral-large",
+]
 
 
 class GitHubModelsProvider(BaseProvider):
@@ -29,6 +39,11 @@ class GitHubModelsProvider(BaseProvider):
 
     GitHub Models provides free access to various AI models
     through the Azure AI inference API.
+
+    NOTE: Requires PAT with 'models' permission.
+    If you get 'unauthorized' errors, create a new fine-grained PAT
+    with the 'GitHub Models' permission enabled at:
+    https://github.com/settings/tokens?type=beta
     """
 
     name: str = "github_models"
@@ -36,6 +51,7 @@ class GitHubModelsProvider(BaseProvider):
 
     def __init__(self, api_key: str = "", timeout: float = 30.0):
         super().__init__(api_key=api_key, timeout=timeout)
+        self._auth_failed: bool = False
 
     async def init(self) -> None:
         self._client = httpx.AsyncClient(
@@ -52,7 +68,11 @@ class GitHubModelsProvider(BaseProvider):
         if not self._client:
             await self.init()
 
-        image_base64 = kwargs.pop("image_base64", None)
+        # If auth previously failed, don't keep retrying
+        if self._auth_failed:
+            raise ProviderError(self.name, "Auth previously failed (PAT needs 'models' permission)", retryable=False)
+
+        image_base64 = kwargs.get("image_base64")
         model_key: str = kwargs.get("model_key", "default")
         model: str = kwargs.get("model", TEXT_MODELS.get(model_key, TEXT_MODELS["default"]))
         system_prompt: str = kwargs.get("system_prompt", "")
@@ -79,39 +99,67 @@ class GitHubModelsProvider(BaseProvider):
                     }
                     break
 
-        payload: Dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
+        # Try primary model, then fallbacks
+        models_to_try = [model]
+        if not image_base64:
+            for fb in FALLBACK_MODELS:
+                if fb != model:
+                    models_to_try.append(fb)
 
-        try:
-            response = await self._client.post("/chat/completions", json=payload)
-            response.raise_for_status()
-            data = response.json()
+        last_error = None
+        for try_model in models_to_try:
+            payload: Dict[str, Any] = {
+                "model": try_model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
 
-            choice = data["choices"][0]
-            usage = data.get("usage", {})
+            try:
+                response = await self._client.post("/chat/completions", json=payload)
+                response.raise_for_status()
+                data = response.json()
 
-            return AIResponse(
-                text=choice["message"]["content"],
-                provider=self.name,
-                model=f"github:{model}",
-                tokens_used=usage.get("total_tokens", 0),
-                finish_reason=choice.get("finish_reason", ""),
-                metadata={
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "vision": bool(image_base64),
-                },
-            )
+                choice = data["choices"][0]
+                usage = data.get("usage", {})
 
-        except httpx.TimeoutException as exc:
-            raise ProviderError(self.name, f"Request timed out: {exc}", retryable=True)
-        except httpx.HTTPStatusError as exc:
-            status = exc.response.status_code
-            retryable = status in (429, 500, 502, 503, 504)
-            raise ProviderError(self.name, f"HTTP {status}: {exc.response.text[:200]}", retryable=retryable)
-        except Exception as exc:
-            raise ProviderError(self.name, f"Unexpected error: {exc}", retryable=True)
+                return AIResponse(
+                    text=choice["message"]["content"],
+                    provider=self.name,
+                    model=f"github:{try_model}",
+                    tokens_used=usage.get("total_tokens", 0),
+                    finish_reason=choice.get("finish_reason", ""),
+                    metadata={
+                        "prompt_tokens": usage.get("prompt_tokens", 0),
+                        "completion_tokens": usage.get("completion_tokens", 0),
+                        "vision": bool(image_base64),
+                    },
+                )
+
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if status == 401 or status == 403:
+                    # Auth failure — PAT doesn't have 'models' permission
+                    self._auth_failed = True
+                    logger.error(
+                        f"GitHub Models auth failed (HTTP {status}). "
+                        f"PAT needs 'models' permission! Create a fine-grained PAT at "
+                        f"https://github.com/settings/tokens?type=beta with 'GitHub Models' enabled."
+                    )
+                    raise ProviderError(self.name, f"Auth failed (HTTP {status}) — PAT needs 'models' permission", retryable=False)
+                if status == 404:
+                    logger.warning(f"GitHub model {try_model} not found, trying fallback")
+                    last_error = ProviderError(self.name, f"Model {try_model} not found", retryable=True)
+                    continue
+                last_error = ProviderError(self.name, f"HTTP {status}: {exc.response.text[:200]}", retryable=status in (429, 500, 502, 503, 504))
+                continue
+            except httpx.TimeoutException as exc:
+                last_error = ProviderError(self.name, f"Request timed out for {try_model}: {exc}", retryable=True)
+                continue
+            except Exception as exc:
+                last_error = ProviderError(self.name, f"Unexpected error with {try_model}: {exc}", retryable=True)
+                continue
+
+        if last_error:
+            raise last_error
+        raise ProviderError(self.name, "All GitHub models failed", retryable=True)

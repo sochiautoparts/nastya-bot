@@ -1,13 +1,15 @@
-"""Nastya Bot 2.2 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 2.3 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v2.2:
+Architecture v2.3:
   - ErrorHandlingMiddleware as OUTER middleware — catches ALL exceptions
   - LoggingMiddleware — logs all messages for monitoring
   - RateLimitMiddleware — prevents spam/abuse
   - AI Router: 9 providers + caching, NEVER crashes, ALWAYS responds
-  - CLOUDFLARE FIRST in provider chain (free + reliable + vision)
-  - GitHub Models as second provider (GH_MODELS_TOKEN for GPT-4o-mini)
-  - Pollinations + Chutes moved up — always-free and reliable
+  - Pollinations FIRST in provider chain (always free + reliable + vision)
+  - Chutes second (always free + reliable)
+  - Cloudflare third (free with credentials, has vision)
+  - GitHub Models fourth (free with PAT + 'models' permission)
+  - Other key-based providers as additional fallbacks
   - Shared persistent DB connection with write lock — concurrent-safe
   - Stars donations with ACTIVE Pay buttons via send_invoice
   - NEWS ENGINE: RSS fetching + AI commentary (concurrent fetching)
@@ -17,6 +19,7 @@ Architecture v2.2:
   - Keep-alive chain via GH PAT trigger
   - Memory leak prevention: periodic tracker cleanup
   - NO "голова разболелась" error messages — Nastya ALWAYS responds in character
+  - CRITICAL FIX: image_base64 no longer popped from kwargs (fixes vision fallback)
 """
 import asyncio
 import logging

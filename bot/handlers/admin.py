@@ -98,7 +98,8 @@ async def cmd_fetch_news(message: Message, db=None, ai_router=None) -> None:
         commented = await run_news_cycle(db, ai_router)
         await message.answer(f"📰 Готово! Новых с комментариями: {commented}")
     except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
+        logger.error(f"Fetch news error: {e}")
+        await message.answer("❌ Настя не смогла загрузить новости... Попробуй позже!")
 
 
 @router.message(Command("postchannel"))
@@ -121,7 +122,8 @@ async def cmd_post_channel(message: Message, db=None, ai_router=None) -> None:
         posted = await run_channel_cycle(message.bot, db, ai_router)
         await message.answer(f"📺 Готово! Постов: {posted}")
     except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
+        logger.error(f"Channel post error: {e}")
+        await message.answer("❌ Настя не смогла запостить... Попробуй позже!")
 
 
 @router.message(Command("testnews"))
@@ -141,4 +143,5 @@ async def cmd_test_news(message: Message, db=None, ai_router=None) -> None:
         comment = await generate_nastya_comment(ai_router, test_title)
         await message.answer(f"💬 Реакция Насти: {comment}")
     except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
+        logger.error(f"Test news error: {e}")
+        await message.answer("❌ Настя пока не может реагировать на новости... AI провайдеры спят!")

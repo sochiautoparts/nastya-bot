@@ -52,7 +52,7 @@ class ChutesProvider(BaseProvider):
         temperature = kwargs.get("temperature", 0.7)
         max_tokens = kwargs.get("max_tokens", 2048)
         messages_history = kwargs.get("messages")
-        image_base64 = kwargs.get("image_base64")
+        image_base64 = kwargs.get("image_base64")  # Read, don't pop — allow fallback
 
         messages = self._build_messages(prompt, system_prompt, messages_history)
 

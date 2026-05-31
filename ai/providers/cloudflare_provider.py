@@ -83,7 +83,7 @@ class CloudflareProvider(BaseProvider):
         if not self.account_id:
             raise ProviderError(self.name, "No account ID configured", retryable=False)
 
-        image_base64 = kwargs.pop("image_base64", None)
+        image_base64 = kwargs.get("image_base64")  # Read, don't pop — allow fallback
         model_key: str = kwargs.get("model_key", "default")
         model: str = kwargs.get("model", TEXT_MODELS.get(model_key, TEXT_MODELS["default"]))
         system_prompt: str = kwargs.get("system_prompt", "")

@@ -34,7 +34,7 @@ class PollinationsProvider(BaseProvider):
     supports_streaming: bool = False
     supports_vision: bool = True  # via openai model
 
-    def __init__(self, api_key: str = "", timeout: float = 60.0):
+    def __init__(self, api_key: str = "", timeout: float = 30.0):
         super().__init__(api_key="", timeout=timeout)
 
     async def init(self) -> None:
@@ -60,8 +60,23 @@ class PollinationsProvider(BaseProvider):
         system_prompt: str = kwargs.get("system_prompt", "")
         temperature: float = kwargs.get("temperature", 0.7)
         messages_history: Optional[List[Dict[str, Any]]] = kwargs.get("messages")
+        image_base64 = kwargs.get("image_base64")
 
         messages = self._build_messages(prompt, system_prompt, messages_history)
+
+        # Handle vision via multimodal content
+        if image_base64 and messages:
+            model = TEXT_MODELS["vision"]
+            for i in range(len(messages) - 1, -1, -1):
+                if messages[i].get("role") == "user":
+                    messages[i] = {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
+                            {"type": "text", "text": messages[i]["content"] if isinstance(messages[i]["content"], str) else prompt},
+                        ]
+                    }
+                    break
 
         payload: Dict[str, Any] = {
             "model": model,
@@ -91,7 +106,7 @@ class PollinationsProvider(BaseProvider):
                 provider=self.name,
                 model=f"pollinations:{model}",
                 tokens_used=0,
-                metadata={"endpoint": "text_post"},
+                metadata={"endpoint": "text_post", "vision": bool(image_base64)},
             )
 
         except httpx.TimeoutException as exc:
