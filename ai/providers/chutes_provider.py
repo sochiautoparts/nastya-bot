@@ -1,6 +1,7 @@
 """Chutes.ai — FREE, unlimited, no API key. DeepSeek V3 + DeepSeek VL2 vision.
 
-Ported from ai-mega-bot pattern with vision support.
+v4.0: DeepSeek V3 as primary — excellent for Russian language conversation.
+      DeepSeek R1 for reasoning tasks.
 """
 import logging
 from typing import Any, Dict, List, Optional
@@ -21,7 +22,10 @@ VISION_MODEL = "deepseek-ai/deepseek-vl2"
 
 
 class ChutesProvider(BaseProvider):
-    """Chutes.ai provider — free, no API key required, supports vision."""
+    """Chutes.ai provider — free, no API key required, supports vision.
+
+    v4.0: DeepSeek V3 primary — best free model for Russian conversation.
+    """
 
     name: str = "chutes"
     supports_vision: bool = True
@@ -35,9 +39,9 @@ class ChutesProvider(BaseProvider):
             timeout=httpx.Timeout(self.timeout, connect=5.0),
             limits=httpx.Limits(max_connections=15, max_keepalive_connections=5),
             follow_redirects=True,
-            headers={"Content-Type": "application/json", "User-Agent": "NastyaBot/9.0"},
+            headers={"Content-Type": "application/json", "User-Agent": "NastyaBot/10.0"},
         )
-        logger.info("Chutes provider initialized (vision supported)")
+        logger.info("Chutes provider initialized (DeepSeek V3 primary, vision supported)")
 
     def is_available(self) -> bool:
         return True

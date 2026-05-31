@@ -1,9 +1,9 @@
 """AI Router — BULLETPROOF routing with multi-phase fallback + caching.
 
-Architecture (v3.0 — GitHub Models first for reliability + quality):
-  - GitHub Models FIRST (free with PAT, GPT-4o-mini, reliable, has vision)
-  - Cloudflare second (free with credentials, Llama models, has vision)
-  - Chutes third (free, always available, DeepSeek V3)
+Architecture (v4.0 — DeepSeek FIRST for best Russian conversation quality):
+  - Chutes FIRST (DeepSeek V3 — free, always available, excellent Russian)
+  - GitHub Models SECOND (DeepSeek V3/R1 via GitHub, reliable, has vision)
+  - Cloudflare THIRD (DeepSeek R1 distill, Llama models, has vision)
   - Pollinations fourth (free, always available, BUT leaks ads — cleaned)
   - Other API-key providers as additional fallbacks
   - NEVER raises exceptions to caller — ALWAYS returns AIResponse
@@ -15,8 +15,9 @@ Architecture (v3.0 — GitHub Models first for reliability + quality):
   - NO "голова разболелась" error messages EVER
   - Aggressive response cleaning: strips ads, markdown, artifacts
 
-CRITICAL FIX v3.0: GitHub Models as PRIMARY provider — reliable, fast,
-  free with PAT. Pollinations moved down — it leaks ads into responses.
+CRITICAL v4.0: DeepSeek V3 as PRIMARY across all providers — best quality
+  for Russian conversation, excellent context memory, natural style.
+  Chutes provides free DeepSeek V3 access, GitHub Models also supports it.
   Aggressive response cleaning strips all AI artifacts/ads.
   image_base64 is NOT popped from kwargs — providers read it but
   don't consume it, so fallback providers can still access it.
@@ -61,7 +62,15 @@ FALLBACK_RESPONSES = [
 # then Cloudflare (reliable, free with creds), then free providers,
 # then other API-key providers as additional fallbacks
 PROVIDER_CHAIN = [
-    "github_models", "cloudflare", "chutes", "pollinations",
+    # DeepSeek V3 via Chutes — FREE, excellent Russian, always available
+    "chutes",
+    # GitHub Models — DeepSeek V3 / R1 via GitHub, reliable
+    "github_models",
+    # Cloudflare — DeepSeek R1 distill, Llama models, free with creds
+    "cloudflare",
+    # Pollinations — always free but leaks ads (cleaned)
+    "pollinations",
+    # Other API-key providers as additional fallbacks
     "sambanova", "cerebras", "mistral", "openrouter", "gemini",
 ]
 

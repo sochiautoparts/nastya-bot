@@ -33,6 +33,7 @@ from aiogram.filters import CommandStart, Command
 from bot.config import (
     NASTYA_SYSTEM_PROMPT, DONATION_AMOUNTS, DONATION_LABELS,
     PROACTIVE_COOLDOWN, BOT_USERNAME, CHANNEL_ID, CHANNEL_USERNAME,
+    KNOWLEDGE_TOPICS, NASTYA_VOCABULARY,
 )
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,10 @@ PROACTIVE_MESSAGES = [
     "Ау! Настя требует общения! 📣",
     "Привет, давно не болтали... 💬",
     "Скучаю! Напиши что-нибудь! 🥺",
+    "Точняк, скучаю! Напиши уже! 🥺💅",
+    "Ой, Настя тут кое-что узнала... Хочешь расскажу? 👀✨",
+    "Кстати, я ща новость прочитала — офигеть! Спроси! 📰",
+    "Эй! Настя хочет обсудить кое-что! 💅🔥",
 ]
 
 # ── Girl Logic ──────────────────────────────────────────────
@@ -168,6 +173,8 @@ SILENT_TREATMENT = ["...", "Не знаю.", "Как хочешь.", "Мне в�
 EXCITED_REACTIONS = [
     "Вау!", "Оооо!", "Прикинь!", "Жесть!", "Серьёзно?!",
     "Ничего себе!", "Ой!", "Блин!", "Круто!", "Норм!",
+    "Офигеть!", "Кайф!", "Отпад!", "Чётко!", "Фига!",
+    "Точняк!", "Реально?!", "Капец!", "Бомба!",
 ]
 
 # ── Gender detection ────────────────────────────────────────
@@ -810,6 +817,55 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
             if sign in content_lower and msg.get("role") == "user":
                 system_prompt += f"\n\nВАЖНО: Собеседник говорил что его знак — {sign.capitalize()}. Запомни это и используй! Не переспрашивай!"
                 break
+
+    # ── KNOWLEDGE INJECTION — expand Nastya's intelligence! ──
+    # Detect topics in user message and inject relevant knowledge
+    text_lower_for_knowledge = text.lower()
+    knowledge_injected = False
+    for topic_key, topic_data in KNOWLEDGE_TOPICS.items():
+        topic_name = topic_data["name"].lower()
+        topic_facts = topic_data.get("facts", [])
+        # Check if user message relates to this topic
+        topic_keywords = {
+            "auto": ["авто", "машин", "запчаст", "ремонт", "двигател", "масл", "фильтр", "тормоз",
+                      "шин", "колёс", "toyota", "honda", "nissan", "сервис", "сто", "тачк"],
+            "zodiac": ["гороскоп", "зодиак", "знак", "овен", "телец", "близнецы", "рак", "лев",
+                       "дева", "весы", "скорпион", "стрелец", "козерог", "водолей", "рыбы", "астролог"],
+            "psychology": ["психолог", "мозг", "эмоци", "стресс", "тревог", "депресс", "характер", "личност"],
+            "fun_facts": ["факт", "интересн", "знаешь ли", "прикинь", "удив", "не знал"],
+            "moscow": ["москва", "москв", "метро", "пробк", "москве"],
+        }
+        keywords = topic_keywords.get(topic_key, [topic_name])
+        if any(kw in text_lower_for_knowledge for kw in keywords) and topic_facts and not knowledge_injected:
+            # Inject 2-3 relevant facts
+            facts_to_inject = random.sample(topic_facts, min(3, len(topic_facts)))
+            knowledge_str = "\n".join(f"- {f}" for f in facts_to_inject)
+            system_prompt += f"\n\nЗНАНИЯ ПО ТЕМЕ '{topic_data['name']}' (используй естественно, как будто ты это знала!):\n{knowledge_str}"
+            knowledge_injected = True
+
+    # Also inject a random knowledge fact 20% of the time for variety
+    if not knowledge_injected and random.random() < 0.20:
+        random_topic = random.choice(list(KNOWLEDGE_TOPICS.keys()))
+        topic_data = KNOWLEDGE_TOPICS[random_topic]
+        random_fact = random.choice(topic_data["facts"])
+        system_prompt += f"\n\nКСТАТИ, Настя знает: {random_fact} (можешь упомянуть если к месту!)"
+
+    # ── MEMORY EXTRACTION — remember key facts from conversation ──
+    # Extract important info from recent history (names, zodiac, preferences)
+    memory_facts = []
+    for msg in history[-15:]:
+        content = msg.get("content", "")
+        role = msg.get("role", "")
+        if role == "user":
+            # Detect name mentions
+            name_patterns = ["меня зовут", "я —", "я — это", "моё имя", "я это"]
+            for pattern in name_patterns:
+                if pattern in content.lower():
+                    memory_facts.append(f"Собеседник говорил: '{content[:100]}'")
+                    break
+    if memory_facts:
+        unique_facts = list(set(memory_facts))[-3:]  # Max 3, deduplicated
+        system_prompt += f"\n\nПАМЯТЬ НАСТИ (НЕ переспрашивай про это!):\n" + "\n".join(f"- {f}" for f in unique_facts)
 
     # NOW save the user message to DB
     prefix = "[Голосовое] " if is_voice else ""

@@ -72,9 +72,9 @@ jobs:
           CHANNEL_USERNAME: ${{ secrets.CHANNEL_USERNAME }}
           DB_PATH: data/nastya.db
           LOG_LEVEL: INFO
-          # News settings
-          NEWS_FETCH_INTERVAL: 1800
-          CHANNEL_POST_INTERVAL: 3600
+          # News settings — more frequent for active channel!
+          NEWS_FETCH_INTERVAL: 900
+          CHANNEL_POST_INTERVAL: 1200
         run: python -m bot.main || true
 
       - name: Save database cache

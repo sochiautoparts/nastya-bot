@@ -1,27 +1,19 @@
-"""Nastya Bot 3.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 4.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v3.0:
-  - ErrorHandlingMiddleware as OUTER middleware — catches ALL exceptions
-  - LoggingMiddleware — logs all messages for monitoring
-  - RateLimitMiddleware — prevents spam/abuse
-  - AI Router: 9 providers + caching, NEVER crashes, ALWAYS responds
-  - GitHub Models FIRST (free with PAT, GPT-4o-mini, reliable, has vision)
-  - Cloudflare second (free with credentials, Llama models, has vision)
-  - Chutes third (free, always available, DeepSeek V3)
-  - Pollinations fourth (free, always available, BUT leaks ads — cleaned)
-  - Aggressive response cleaning: strips ads, markdown, AI artifacts
-  - Shared persistent DB connection with write lock — concurrent-safe
-  - Stars donations with ACTIVE Pay buttons via send_invoice
-  - NEWS ENGINE: RSS fetching + AI commentary (concurrent fetching)
-  - CHANNEL MANAGER: auto-posting to @chasnastya with personality posts
-  - Cross-linking: channel content ↔ user conversations
-  - NEWS WITH LINKS: news context includes links for references
-  - CONTEXT MEMORY: Nastya remembers zodiac signs, names, details
+Architecture v4.0:
+  - DeepSeek V3 as PRIMARY AI — best Russian quality, via Chutes (free)
+  - GitHub Models SECONDARY — DeepSeek V3/R1 via GitHub API (free with PAT)
+  - Cloudflare TERTIARY — DeepSeek R1 distill, Llama models
+  - Pollinations QUATERNARY — free but leaks ads (aggressively cleaned)
+  - Expanded vocabulary: "Точняк!", "Офигеть!", "Кайф!", "Жесть!" etc.
+  - Knowledge injection by topics: auto, zodiac, psychology, facts, Moscow
+  - Context memory: zodiac signs, names, preferences — NEVER forgets
+  - NEWS ENGINE: RSS + AI commentary + links (15 min cycle)
+  - CHANNEL MANAGER: diverse posts, dedup, knowledge posts, quizzes (20 min)
+  - Stars donations with ACTIVE Pay buttons
   - MOSCOW TIMEZONE — Настя из Москвы!
   - Keep-alive chain via GH PAT trigger
-  - Memory leak prevention: periodic tracker cleanup
-  - NO "голова разболелась" error messages — Nastya ALWAYS responds in character
-  - COMPACT system prompt for better context utilization
+  - NO "голова разболелась" — Nastya ALWAYS responds in character
 """
 import asyncio
 import logging

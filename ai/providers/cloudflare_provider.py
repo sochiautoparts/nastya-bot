@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Model chain — try in order, fall back to next on failure
 TEXT_MODELS = {
-    "default": "@cf/meta/llama-4-scout-17b-16e-instruct",
+    "default": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
     "fast": "@cf/meta/llama-3.1-8b-instruct-fp8",
     "reasoning": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
     "code": "@cf/qwen/qwen2.5-coder-32b-instruct",
@@ -29,9 +29,9 @@ TEXT_MODELS = {
 
 # Fallback models to try if default fails
 FALLBACK_MODELS = [
+    "@cf/meta/llama-4-scout-17b-16e-instruct",
     "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "@cf/meta/llama-3.1-8b-instruct-fp8",
-    "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
     "@cf/qwen/qwen2.5-coder-32b-instruct",
 ]
 

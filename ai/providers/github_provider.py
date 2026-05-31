@@ -1,9 +1,13 @@
 """GitHub Models Provider — free AI models via GitHub Marketplace.
 
 Uses GH_MODELS_TOKEN for authentication.
-Free tier: GitHub Models provides access to GPT-4o-mini, Llama, etc.
+Free tier: GitHub Models provides access to GPT-4o-mini, DeepSeek, Llama, etc.
 Rate limited but free — great as reliable fallback.
 Supports vision via GPT-4o-mini.
+
+v4.0: DeepSeek as PRIMARY model! DeepSeek-V3 first for best quality,
+      then DeepSeek-R1 for reasoning, then GPT-4o-mini fallback.
+      DeepSeek models are free on GitHub Models and excellent for Russian.
 
 IMPORTANT: The PAT needs the 'models' permission to access this API.
 If the token doesn't have 'models' scope, this provider will be skipped
@@ -20,17 +24,18 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 logger = logging.getLogger(__name__)
 
 TEXT_MODELS = {
-    "default": "gpt-4o-mini",
-    "fast": "gpt-4o-mini",
-    "reasoning": "Meta-Llama-3.1-405B-Instruct",
+    "default": "DeepSeek-V3-0324",           # DeepSeek V3 — best for Russian, primary!
+    "fast": "DeepSeek-V3-0324",               # Same DeepSeek for fast
+    "reasoning": "DeepSeek-R1-0528",          # DeepSeek R1 for complex reasoning
 }
 
 VISION_MODEL = "gpt-4o-mini"
 
 # Alternative model names to try if default fails
 FALLBACK_MODELS = [
-    "Meta-Llama-3.1-8B-Instruct",
+    "Meta-Llama-3.1-405B-Instruct",
     "Mistral-large",
+    "gpt-4o-mini",
 ]
 
 
@@ -39,6 +44,9 @@ class GitHubModelsProvider(BaseProvider):
 
     GitHub Models provides free access to various AI models
     through the Azure AI inference API.
+
+    v4.0: DeepSeek as primary model — best quality for Russian language,
+          excellent conversation skills, free on GitHub Models.
 
     NOTE: Requires PAT with 'models' permission.
     If you get 'unauthorized' errors, create a new fine-grained PAT
