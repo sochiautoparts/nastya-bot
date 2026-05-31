@@ -277,8 +277,7 @@ def format_news_post(title: str, comment: str, link: str = "", category: str = "
     # Add clickable link if available — ALWAYS INCLUDE LINK!
     if link:
         post += f"\n\n🔗 <a href=\"{link}\">Читать полностью</a>"
-    else:
-        post += f"\n\n📺 Подробнее в @chasnastya"
+    # NOTE: Do NOT add "Подробнее в @chasnastya" here — post is already IN that channel!
 
     # Category emoji
     cat_emojis = {
@@ -294,31 +293,28 @@ def format_news_post(title: str, comment: str, link: str = "", category: str = "
     cat_emoji = cat_emojis.get(category, "📰")
     post += f"\n{cat_emoji} #{category.capitalize()}"
 
-    # Always add channel signature
-    if CHANNEL_USERNAME:
-        post += f" | @{CHANNEL_USERNAME}"
+    # Category emoji
+    # NOTE: Do NOT add @chasnastya signature here — this post is already IN the channel!
+    # Adding @chasnastya to a post that's already in @chasnastya is redundant.
 
     return post
 
 
 def format_personality_post(text: str) -> str:
-    """Format a personality post for the channel."""
-    post = text
+    """Format a personality post for the channel.
 
-    # Add signature
-    if CHANNEL_USERNAME:
-        post += f"\n\n💅 @{CHANNEL_USERNAME}"
-
-    return post
+    NOTE: Do NOT add @chasnastya signature — this post is already IN the channel!
+    """
+    return text
 
 
 def format_knowledge_post(fact: str) -> str:
-    """Format a knowledge fact as a channel post."""
+    """Format a knowledge fact as a channel post.
+
+    NOTE: Do NOT add @chasnastya signature — this post is already IN the channel!
+    """
     template = random.choice(KNOWLEDGE_POST_TEMPLATES)
     post = template.format(fact=fact)
-
-    if CHANNEL_USERNAME:
-        post += f"\n\n💅 @{CHANNEL_USERNAME}"
 
     return post
 
@@ -642,8 +638,7 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
                     post_text += f"\n💬 {comment}"
                 post_text += f"\n\n🔗 <a href=\"{link}\">Читать</a>"
 
-                if CHANNEL_USERNAME:
-                    post_text += f"\n\n💅 @{CHANNEL_USERNAME}"
+                # NOTE: No @chasnastya signature — post is already IN the channel!
 
                 if not _is_recent_post(post_text):
                     try:

@@ -143,19 +143,20 @@ NASTYA_WANTS = [
     "попугайчика 🦜", "щеночка 🐶", "котика 🐱", "хомячка 🐹",
 ]
 
-# ── Proactive messages — more natural, news-aware ────────────
+# ── Proactive messages — natural, fun, less frequent ────────────
 
-# REDUCED proactive messages — less spammy, more natural
-# Removed: "Ты меня забыл?", "Настя хочет внимания!", "Спишь?" etc (too needy)
+# Mix of fun messages (including the classic ones user likes) + natural conversation starters
 PROACTIVE_MESSAGES = [
-    "Ой, Настя тут кое-что узнала... Хочешь расскажу? 👀✨",
-    "Кстати, я ща новость прочитала — офигеть! Спроси! 📰",
-    "Эй! Настя хочет обсудить кое-что! 💅🔥",
+    # Classic fun ones (user likes these)
+    "Ты меня забыл? 😢",
+    "Настя хочет внимания! 😤💅",
+    "Спишь? 🥱",
+    # Natural conversation starters
+    "Ой, тут кое-что узнала... Хочешь расскажу? 👀✨",
+    "Кстати, я новость прочитала — ничего себе! Спроси! 📰",
     "Привет, давно не болтали... 💬",
     "А давай поболтаем? 💬",
     "Скучаю... Напиши что-нибудь! 🥺",
-    "Настя тут! А ты? 👀",
-    "Эй, не спишь? 🌙",
     "Привеееет! 🌸",
     "Ты с другими ботами разговариваешь?! 😤💔",
 ]
@@ -176,10 +177,9 @@ SILENT_TREATMENT = ["...", "Не знаю.", "Как хочешь.", "Мне в�
 # ── Emotional reactions (for variety) ───────────────────────
 
 EXCITED_REACTIONS = [
-    "Вау!", "Оооо!", "Прикинь!", "Жесть!", "Серьёзно?!",
-    "Ничего себе!", "Ой!", "Блин!", "Круто!", "Норм!",
-    "Офигеть!", "Кайф!", "Отпад!", "Чётко!", "Фига!",
-    "Точняк!", "Реально?!", "Капец!", "Бомба!",
+    "Вау!", "Прикинь!", "Серьёзно?!", "Ничего себе!", "Ой!",
+    "Блин!", "Круто!", "Класс!", "Кайф!", "Норм!",
+    "Вот это да!", "Супер!",
 ]
 
 # ── Gender detection ────────────────────────────────────────
@@ -1266,6 +1266,63 @@ def _clean_response(text: str) -> str:
                 break
         else:
             text = text[:800]
+
+    # ── FAKE LINK FILTER — remove non-existent URLs that AI invents ──
+    # Only allow REAL links: t.me/chasnastya, news links from RSS, etc.
+    # The AI sometimes invents URLs like t.me/some_fake_channel, https://fake.url
+    _real_channel_url = f"t.me/{CHANNEL_USERNAME.replace('@', '')}" if CHANNEL_USERNAME else "t.me/chasnastya"
+    _real_patterns = [
+        r'https?://t\.me/' + re.escape(CHANNEL_USERNAME.replace('@', '')) if CHANNEL_USERNAME else r'',
+        r'https?://sochiautoparts\.ru',
+        r'https?://rbc\.ru',
+        r'https?://ria\.ru',
+        r'https?://interfax\.ru',
+        r'https?://habr\.com',
+        r'https?://bbc\.com',
+        r'https?://dw\.com',
+        r'https?://meduza\.io',
+        r'https?://ixbt\.com',
+        r'https?://3dnews\.ru',
+        r'https?://dtf\.ru',
+        r'https?://pikabu\.ru',
+        r'https?://nplus1\.ru',
+    ]
+    # Find all URLs in text
+    url_pattern = r'https?://[^\s<>\)\]"\']+|t\.me/[^\s<>\)\]"\']+'
+    found_urls = re.findall(url_pattern, text)
+    for url in found_urls:
+        is_real = False
+        for real_pattern in _real_patterns:
+            if real_pattern and re.search(real_pattern, url, re.IGNORECASE):
+                is_real = True
+                break
+        if not is_real:
+            # Check if it's a well-known domain (not invented by AI)
+            known_domains = ['.ru/', '.com/', '.org/', '.net/', '.io/', '.dev/', '.gov/', '.edu/',
+                           'youtube.com', 'github.com', 'wikipedia.org', 't.me/']
+            try:
+                from urllib.parse import urlparse
+                if url.startswith('t.me/'):
+                    parsed_netloc = 't.me'
+                    parsed_path = url[6:]
+                else:
+                    parsed = urlparse(url)
+                    parsed_netloc = parsed.netloc
+                    parsed_path = parsed.path
+                # Allow if domain is a known one AND path is substantial (not made up)
+                if any(d in parsed_netloc for d in known_domains):
+                    # Still check t.me/ links carefully — only allow chasnastya
+                    if 't.me/' in url:
+                        if _real_channel_url in url:
+                            is_real = True
+                        # AI often invents fake t.me/ links — remove them
+                    else:
+                        is_real = True  # Allow non-t.me URLs from known domains
+            except Exception:
+                pass
+        if not is_real:
+            # Replace fake URL with channel reference
+            text = text.replace(url, f"@chasnastya")
 
     return text.strip()
 

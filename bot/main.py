@@ -200,7 +200,7 @@ async def proactive_scheduler(bot_instance: Bot) -> None:
 
     while True:
         try:
-            wait_time = random.randint(300, 600)
+            wait_time = random.randint(900, 1800)  # 15-30 min — less spammy
             await asyncio.sleep(wait_time)
             if db and ai_router:
                 await check_and_send_proactive(bot_instance, db, ai_router)
