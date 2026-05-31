@@ -1,14 +1,16 @@
 """Pollinations.ai Provider — FREE, no API key needed! ALWAYS available.
 
-Ported from ai-mega-bot.
-Supports:
-  - Text generation via OpenAI-compatible POST API with history
-  - Vision (image understanding) via openai model
-
-Pollinations is the ultimate fallback — always available, no key, no limits.
+FIXED v5.0: 
+  - Properly handles SSE/streaming responses from Pollinations
+  - Strips data: prefixes and [DONE] markers  
+  - Vision via OpenAI-compatible multimodal messages
+  - Robust JSON parsing for chat completion responses
+  - Never leaks raw SSE artifacts to users
 """
 import base64
+import json
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -28,8 +30,123 @@ TEXT_MODELS = {
 }
 
 
+def _strip_sse_artifacts(text: str) -> str:
+    """Remove SSE/streaming artifacts from Pollinations response.
+    
+    Pollinations sometimes returns Server-Sent Events format:
+      data: {"type":"start"}
+      data: {"type":"content","content":"Hello"}
+      data: {"type":"error","errorText":"..."}
+      data: [DONE]
+    
+    This function extracts the actual content and removes all SSE framing.
+    """
+    if not text:
+        return ""
+    
+    text = text.strip()
+    
+    # If it's NOT SSE format, return as-is
+    if not text.startswith("data:"):
+        return text
+    
+    # Parse SSE format - extract content from data: lines
+    content_parts = []
+    has_error = False
+    error_msg = ""
+    
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line or not line.startswith("data:"):
+            continue
+        
+        data_str = line[5:].strip()  # Remove "data:" prefix
+        
+        if data_str == "[DONE]":
+            break
+        
+        # Try to parse as JSON
+        try:
+            data = json.loads(data_str)
+            
+            # Handle different SSE message types
+            if isinstance(data, dict):
+                msg_type = data.get("type", "")
+                
+                if msg_type == "error":
+                    has_error = True
+                    error_msg = data.get("errorText", data.get("error", "Unknown error"))
+                    logger.warning(f"Pollinations SSE error: {error_msg}")
+                    continue
+                
+                if msg_type == "content":
+                    content = data.get("content", data.get("text", ""))
+                    if content:
+                        content_parts.append(content)
+                    continue
+                
+                # Chat completion format within SSE
+                if "choices" in data:
+                    for choice in data.get("choices", []):
+                        delta = choice.get("delta", {})
+                        msg = choice.get("message", {})
+                        content = delta.get("content", "") or msg.get("content", "")
+                        if content:
+                            content_parts.append(content)
+                    continue
+                
+                # Direct content field
+                content = data.get("content", data.get("text", data.get("response", "")))
+                if content and isinstance(content, str):
+                    content_parts.append(content)
+        except json.JSONDecodeError:
+            # Not JSON - might be plain text content after data:
+            if data_str and not data_str.startswith("{"):
+                content_parts.append(data_str)
+    
+    result = "".join(content_parts).strip()
+    
+    # If we got an error and no content, raise
+    if has_error and not result:
+        raise ProviderError("pollinations", f"SSE error: {error_msg}", retryable=True)
+    
+    return result
+
+
+def _parse_json_response(text: str) -> str:
+    """Try to parse response as OpenAI-compatible JSON chat completion."""
+    if not text:
+        return ""
+    
+    # Try direct JSON parse
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            # OpenAI chat completion format
+            if "choices" in data:
+                for choice in data["choices"]:
+                    msg = choice.get("message", {})
+                    content = msg.get("content", "")
+                    if content:
+                        return content
+            # Simple format
+            if "content" in data:
+                return data["content"]
+            if "text" in data:
+                return data["text"]
+            if "response" in data:
+                return data["response"]
+    except (json.JSONDecodeError, TypeError):
+        pass
+    
+    return ""
+
+
 class PollinationsProvider(BaseProvider):
-    """Pollinations.ai provider — free, no API key required, always available."""
+    """Pollinations.ai provider — free, no API key required, always available.
+    
+    FIXED: Properly handles SSE/streaming responses and never leaks artifacts.
+    """
 
     name: str = "pollinations"
     supports_streaming: bool = False
@@ -44,7 +161,10 @@ class PollinationsProvider(BaseProvider):
             timeout=httpx.Timeout(self.timeout, connect=15.0),
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
             follow_redirects=True,
-            headers={"User-Agent": "NastyaBot/9.0"},
+            headers={
+                "User-Agent": "NastyaBot/14.0",
+                "Accept": "text/plain, application/json",
+            },
         )
 
     def is_available(self) -> bool:
@@ -52,7 +172,10 @@ class PollinationsProvider(BaseProvider):
         return True
 
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
-        """Generate text via Pollinations OpenAI-compatible POST API with history."""
+        """Generate text via Pollinations OpenAI-compatible POST API.
+        
+        FIXED: Properly handles both plain text and SSE streaming responses.
+        """
         if not self._client:
             await self.init()
 
@@ -68,21 +191,30 @@ class PollinationsProvider(BaseProvider):
         # Handle vision via multimodal content
         if image_base64 and messages:
             model = TEXT_MODELS["vision"]
+            # Only modify the LAST user message for vision
             for i in range(len(messages) - 1, -1, -1):
                 if messages[i].get("role") == "user":
-                    messages[i] = {
-                        "role": "user",
-                        "content": [
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
-                            {"type": "text", "text": messages[i]["content"] if isinstance(messages[i]["content"], str) else prompt},
-                        ]
-                    }
+                    existing_content = messages[i].get("content", "")
+                    if isinstance(existing_content, str):
+                        messages[i] = {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{image_base64}"
+                                    },
+                                },
+                                {"type": "text", "text": existing_content},
+                            ],
+                        }
                     break
 
         payload: Dict[str, Any] = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
+            "stream": False,  # IMPORTANT: request non-streaming response
         }
 
         try:
@@ -93,21 +225,54 @@ class PollinationsProvider(BaseProvider):
             )
             response.raise_for_status()
 
-            text = response.text
+            raw_text = response.text
 
-            if not text:
+            if not raw_text:
                 raise ProviderError(
                     self.name,
-                    "Empty text response from Pollinations",
+                    "Empty response from Pollinations",
+                    retryable=True,
+                )
+
+            # STEP 1: Try to parse as JSON chat completion
+            parsed = _parse_json_response(raw_text)
+            if parsed:
+                return AIResponse(
+                    text=parsed,
+                    provider=self.name,
+                    model=f"pollinations:{model}",
+                    tokens_used=0,
+                    metadata={"endpoint": "text_post", "parsed": "json"},
+                )
+
+            # STEP 2: Check for SSE format and strip artifacts
+            cleaned = _strip_sse_artifacts(raw_text)
+            if cleaned:
+                return AIResponse(
+                    text=cleaned,
+                    provider=self.name,
+                    model=f"pollinations:{model}",
+                    tokens_used=0,
+                    metadata={"endpoint": "text_post", "parsed": "sse_stripped"},
+                )
+
+            # STEP 3: Use raw text as last resort (it might be plain text)
+            # But filter out any remaining SSE patterns
+            final_text = raw_text
+            if "data:" in final_text or "[DONE]" in final_text:
+                # Still has SSE artifacts — don't use this
+                raise ProviderError(
+                    self.name,
+                    "Response contains unparsable SSE artifacts",
                     retryable=True,
                 )
 
             return AIResponse(
-                text=text,
+                text=final_text,
                 provider=self.name,
                 model=f"pollinations:{model}",
                 tokens_used=0,
-                metadata={"endpoint": "text_post", "vision": bool(image_base64)},
+                metadata={"endpoint": "text_post", "parsed": "raw"},
             )
 
         except httpx.TimeoutException as exc:
@@ -164,6 +329,7 @@ class PollinationsProvider(BaseProvider):
             "model": TEXT_MODELS["vision"],
             "messages": messages,
             "temperature": temperature,
+            "stream": False,  # IMPORTANT: request non-streaming
         }
 
         try:
@@ -173,12 +339,26 @@ class PollinationsProvider(BaseProvider):
                 headers={"Content-Type": "application/json"},
             )
             response.raise_for_status()
-            text = response.text
+            raw_text = response.text
+
+            if not raw_text:
+                raise ProviderError(
+                    self.name,
+                    "Empty vision response from Pollinations",
+                    retryable=True,
+                )
+
+            # Parse response — same logic as generate()
+            parsed = _parse_json_response(raw_text)
+            if parsed:
+                text = parsed
+            else:
+                text = _strip_sse_artifacts(raw_text)
 
             if not text:
                 raise ProviderError(
                     self.name,
-                    "Empty vision response from Pollinations",
+                    "Could not parse vision response",
                     retryable=True,
                 )
 

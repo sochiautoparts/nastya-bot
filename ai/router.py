@@ -381,14 +381,75 @@ class AIRouter:
     def clean_ai_response(text: str) -> str:
         """Aggressively strip AI artifacts, ads, and garbage from responses.
 
-        Pollinations leaks ads like 'Support Pollinations.AI', '🌸 Ad 🌸', etc.
-        Other providers may add markdown, self-references, or other junk.
-        This is the LAST line of defense before text reaches the user.
+        CRITICAL: This is the LAST line of defense before text reaches the user.
+        Handles: SSE artifacts, Pollinations ads, DeepSeek think tags, markdown,
+        API error leaks, and any other garbage that should NEVER be shown to users.
         """
         if not text:
             return ""
 
-        # ── Strip known ad/artifact patterns ──
+        # ── PHASE 1: Strip SSE/streaming artifacts (CRITICAL FIX!) ──
+        # These patterns come from providers returning streaming responses:
+        #   data: {"type":"start"}
+        #   data: {"type":"error","errorText":"..."}
+        #   data: [DONE]
+        sse_patterns = [
+            r'data:\s*\{"type"\s*:\s*"start"\s*\}\s*',
+            r'data:\s*\{"type"\s*:\s*"error"[^}]*\}\s*',
+            r'data:\s*\[DONE\]\s*',
+            r'data:\s*\{[^}]*"errorText"[^}]*\}\s*',
+            r'data:\s*\{"type"\s*:\s*"content"[^}]*\}\s*',
+        ]
+        for pattern in sse_patterns:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+
+        # If the ENTIRE text is SSE format, try to extract content
+        if text.strip().startswith('data:'):
+            # Try to extract useful content from SSE lines
+            content_parts = []
+            for line in text.split('\n'):
+                line = line.strip()
+                if not line.startswith('data:'):
+                    continue
+                data_str = line[5:].strip()
+                if data_str == '[DONE]':
+                    break
+                if '"type":"error"' in data_str or '"errorText"' in data_str:
+                    continue
+                if '"type":"start"' in data_str:
+                    continue
+                # Try to extract content
+                try:
+                    import json
+                    d = json.loads(data_str)
+                    if isinstance(d, dict):
+                        c = d.get('content', d.get('text', ''))
+                        if c:
+                            content_parts.append(c)
+                except Exception:
+                    pass
+            if content_parts:
+                text = ''.join(content_parts)
+            else:
+                # Entire response is SSE garbage — return empty
+                return ""
+
+        # ── PHASE 2: Strip API error messages that leaked through ──
+        error_patterns = [
+            r'Invalid prompt:.*',
+            r'Authentication Error.*',
+            r'No api key passed in.*',
+            r'Model not found.*',
+            r'Rate limit exceeded.*',
+            r'Server Error.*',
+            r'Internal Server Error.*',
+            r'Bad Request.*',
+            r'HTTP \d{3}.*',
+        ]
+        for pattern in error_patterns:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+
+        # ── PHASE 3: Strip known ad/artifact patterns ──
         ad_patterns = [
             r'Support Pollinations\.AI.*',
             r'🌸\s*Ad\s*🌸.*',
@@ -425,7 +486,7 @@ class AIRouter:
         text = re.sub(r'\n---\s*$', '', text)
         text = re.sub(r'^---\s*$', '', text, flags=re.MULTILINE)
 
-        # Strip "As an AI" type disclaimers
+        # ── PHASE 4: Strip AI disclaimers ──
         text = re.sub(r'(?:As an AI|Как AI|Как искусственный интеллект|I am an AI|Я искусственный интеллект)[^.]*\.', '', text, flags=re.IGNORECASE)
 
         # Strip model self-references
@@ -455,6 +516,11 @@ class AIRouter:
 
         # Remove trailing/leading whitespace
         text = text.strip()
+
+        # ── FINAL CHECK: If text is empty or only garbage, return empty ──
+        # This prevents sending "data:" or similar garbage to users
+        if text and all(c in ' \t\n\r' or c in 'data:[DONE]{}"\'`' for c in text):
+            return ""
 
         return text
 

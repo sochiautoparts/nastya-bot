@@ -1,7 +1,9 @@
-"""Chutes.ai — FREE, unlimited, no API key. DeepSeek V3 + DeepSeek VL2 vision.
+"""Chutes.ai — FREE, unlimited, no API key. DeepSeek V3 + vision.
 
-v4.0: DeepSeek V3 as primary — excellent for Russian language conversation.
-      DeepSeek R1 for reasoning tasks.
+v5.0 FIXED:
+  - Proper vision message format
+  - Better error handling
+  - Correct multimodal content structure
 """
 import logging
 from typing import Any, Dict, List, Optional
@@ -22,10 +24,7 @@ VISION_MODEL = "deepseek-ai/deepseek-vl2"
 
 
 class ChutesProvider(BaseProvider):
-    """Chutes.ai provider — free, no API key required, supports vision.
-
-    v4.0: DeepSeek V3 primary — best free model for Russian conversation.
-    """
+    """Chutes.ai provider — free, no API key required, supports vision."""
 
     name: str = "chutes"
     supports_vision: bool = True
@@ -39,7 +38,7 @@ class ChutesProvider(BaseProvider):
             timeout=httpx.Timeout(self.timeout, connect=5.0),
             limits=httpx.Limits(max_connections=15, max_keepalive_connections=5),
             follow_redirects=True,
-            headers={"Content-Type": "application/json", "User-Agent": "NastyaBot/10.0"},
+            headers={"Content-Type": "application/json", "User-Agent": "NastyaBot/14.0"},
         )
         logger.info("Chutes provider initialized (DeepSeek V3 primary, vision supported)")
 
@@ -56,20 +55,31 @@ class ChutesProvider(BaseProvider):
         temperature = kwargs.get("temperature", 0.7)
         max_tokens = kwargs.get("max_tokens", 2048)
         messages_history = kwargs.get("messages")
-        image_base64 = kwargs.get("image_base64")  # Read, don't pop — allow fallback
+        image_base64 = kwargs.get("image_base64")
 
         messages = self._build_messages(prompt, system_prompt, messages_history)
 
         # If image, use vision model with multimodal content
         if image_base64:
             model = VISION_MODEL
-            messages[-1] = {
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
-                    {"type": "text", "text": prompt},
-                ]
-            }
+            # Modify last user message for vision
+            for i in range(len(messages) - 1, -1, -1):
+                if messages[i].get("role") == "user":
+                    existing_content = messages[i].get("content", "")
+                    if isinstance(existing_content, str):
+                        messages[i] = {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{image_base64}"
+                                    },
+                                },
+                                {"type": "text", "text": existing_content},
+                            ],
+                        }
+                    break
 
         payload = {
             "model": model,

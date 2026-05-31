@@ -1,11 +1,11 @@
 """HuggingFace Inference API Provider — free tier models, API token optional.
 
-Uses HF inference API (serverless) for text generation.
-Free tier: works WITHOUT API key (rate limited) or WITH key (higher limits).
-
-v3.0: API key is now OPTIONAL. Free inference works without authentication.
-      Updated to work as one of the 4 free unlimited providers.
-      Added vision support via Qwen2.5-VL models.
+v4.0 FIXED:
+  - Proper API key handling (works with or without key)
+  - Vision support via Qwen2.5-VL models
+  - Correct message format for chat completions
+  - Better model selection and fallback
+  - Robust error handling
 """
 import logging
 from typing import Any, Dict, List, Optional
@@ -31,6 +31,9 @@ FALLBACK_MODELS = [
     "HuggingFaceH4/zephyr-7b-beta",
 ]
 
+# Vision model
+VISION_MODEL = "Qwen/Qwen2.5-VL-72B-Instruct"
+
 
 class HuggingFaceProvider(BaseProvider):
     """HuggingFace Inference API provider — free tier, many models.
@@ -42,7 +45,7 @@ class HuggingFaceProvider(BaseProvider):
 
     name: str = "huggingface"
     supports_streaming: bool = False
-    supports_vision: bool = True  # Via Qwen2.5-VL and similar models
+    supports_vision: bool = True  # Via Qwen2.5-VL
 
     def __init__(self, api_key: str = "", timeout: float = 30.0):
         super().__init__(api_key=api_key, timeout=timeout)
@@ -59,7 +62,7 @@ class HuggingFaceProvider(BaseProvider):
             timeout=httpx.Timeout(self.timeout, connect=10.0),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
-        key_status = "with API key" if self.api_key else "without API key (free)"
+        key_status = "with API key" if self.api_key else "without API key (free tier)"
         logger.info(f"HuggingFace provider initialized ({key_status})")
 
     def is_available(self) -> bool:
@@ -69,8 +72,6 @@ class HuggingFaceProvider(BaseProvider):
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         if not self._client:
             await self.init()
-        if not self._client:
-            raise ProviderError(self.name, "Not initialized", retryable=False)
 
         model_key: str = kwargs.get("model_key", "default")
         model: str = kwargs.get("model", TEXT_MODELS.get(model_key, TEXT_MODELS["default"]))
@@ -78,17 +79,41 @@ class HuggingFaceProvider(BaseProvider):
         temperature: float = kwargs.get("temperature", 0.7)
         max_tokens: int = kwargs.get("max_tokens", 2048)
         messages_history: Optional[List[Dict[str, Any]]] = kwargs.get("messages")
+        image_base64 = kwargs.get("image_base64")
 
-        # Use last good model if available
-        if self._last_good_model:
-            model = self._last_good_model
-
+        # Build messages
         messages = self._build_messages(prompt, system_prompt, messages_history)
 
-        # Try primary model, then fallbacks
-        models_to_try = [model]
+        # Handle vision via multimodal content
+        if image_base64:
+            model = VISION_MODEL
+            # Modify last user message for vision
+            for i in range(len(messages) - 1, -1, -1):
+                if messages[i].get("role") == "user":
+                    existing_content = messages[i].get("content", "")
+                    if isinstance(existing_content, str):
+                        messages[i] = {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{image_base64}"
+                                    },
+                                },
+                                {"type": "text", "text": existing_content},
+                            ],
+                        }
+                    break
+
+        # Use last good model if available (but not for vision)
+        models_to_try = []
+        if not image_base64 and self._last_good_model:
+            models_to_try.append(self._last_good_model)
+        if model not in models_to_try:
+            models_to_try.append(model)
         for fb in FALLBACK_MODELS:
-            if fb != model:
+            if fb not in models_to_try:
                 models_to_try.append(fb)
 
         last_error = None
@@ -112,7 +137,7 @@ class HuggingFaceProvider(BaseProvider):
                 if "choices" in data:
                     choice = data["choices"][0]
                     usage = data.get("usage", {})
-                    text = choice["message"]["content"]
+                    text = choice.get("message", {}).get("content", "")
                 else:
                     text = ""
                     usage = {}
@@ -127,14 +152,16 @@ class HuggingFaceProvider(BaseProvider):
                         metadata={
                             "prompt_tokens": usage.get("prompt_tokens", 0),
                             "completion_tokens": usage.get("completion_tokens", 0),
+                            "method": "openai_compat",
                         },
                     )
 
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
                 if status == 401:
-                    raise ProviderError(self.name, f"Auth failed (HTTP 401)", retryable=False)
-                if status == 404:
+                    # Auth error — skip to native API
+                    logger.warning(f"HF OpenAI-compat auth error for {try_model}, trying native API")
+                elif status == 404:
                     # Model not found on OpenAI-compat, try native API
                     pass
                 elif status in (429, 503):
@@ -142,14 +169,12 @@ class HuggingFaceProvider(BaseProvider):
                     continue
                 else:
                     last_error = ProviderError(self.name, f"HTTP {status}: {exc.response.text[:200]}", retryable=status in (500, 502, 504))
-                    # Don't continue to native API for non-404 errors
                     continue
-            except httpx.TimeoutException as exc:
-                last_error = ProviderError(self.name, f"Timeout for {try_model}: {exc}", retryable=True)
+            except httpx.TimeoutException:
+                last_error = ProviderError(self.name, f"Timeout for {try_model}", retryable=True)
                 continue
             except Exception as exc:
                 last_error = ProviderError(self.name, f"OpenAI-compat error for {try_model}: {exc}", retryable=True)
-                # Fall through to native API
 
             # METHOD 2: Native Inference API (text-generation)
             try:
@@ -161,8 +186,6 @@ class HuggingFaceProvider(BaseProvider):
                         "return_full_text": False,
                     },
                 }
-                if system_prompt:
-                    native_payload["parameters"]["prefix"] = system_prompt
 
                 response = await self._client.post(
                     f"/models/{try_model}",
@@ -196,7 +219,7 @@ class HuggingFaceProvider(BaseProvider):
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
                 if status == 404:
-                    logger.warning(f"HF model {try_model} not found, trying fallback")
+                    logger.warning(f"HF model {try_model} not found")
                     last_error = ProviderError(self.name, f"Model {try_model} not found", retryable=True)
                     continue
                 if status in (429, 503):
@@ -204,8 +227,8 @@ class HuggingFaceProvider(BaseProvider):
                     continue
                 last_error = ProviderError(self.name, f"HTTP {status}: {exc.response.text[:200]}", retryable=status in (500, 502, 504))
                 continue
-            except httpx.TimeoutException as exc:
-                last_error = ProviderError(self.name, f"Timeout for {try_model}: {exc}", retryable=True)
+            except httpx.TimeoutException:
+                last_error = ProviderError(self.name, f"Timeout for {try_model}", retryable=True)
                 continue
             except Exception as exc:
                 last_error = ProviderError(self.name, f"Native API error for {try_model}: {exc}", retryable=True)
