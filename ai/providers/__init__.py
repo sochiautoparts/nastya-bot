@@ -1,9 +1,9 @@
-"""AI Providers — all available providers for Nastya Bot.
+"""AI Providers — all available providers for Nastya Bot 2.0.
 
 Based on ai-mega-bot stable architecture:
   - API-key providers FIRST (reliable, fast)
   - Free providers as fallback (Pollinations, Chutes)
-  - NO Grok (only 2 requests, useless)
+  - NO Grok (only 2 requests, useless — REMOVED)
   - NO Blackbox (unstable)
   - NO HuggingFace text (doesn't support chat format properly)
 """

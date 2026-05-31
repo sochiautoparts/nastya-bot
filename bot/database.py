@@ -1,16 +1,19 @@
-"""Nastya Bot — Database. SQLite with shared persistent connection + WAL mode.
+"""Nastya Bot 2.0 — Database. SQLite with WAL mode.
 
-MULTI-USER SAFETY:
-  - Single shared connection with asyncio.Lock for write serialization
-  - WAL mode allows concurrent reads + one writer
-  - busy_timeout=10000 for handling lock contention
-  - Auto-reconnect on stale connections
-  - 30-day context memory (720 hours)
+Tables:
+  - users: user profiles with gender, mood, message count
+  - chat_history: conversation context (30 days)
+  - donations: Stars payment records
+  - nastya_moods: mood probability distribution
+  - news_items: fetched news articles for context
+  - channel_posts: auto-posted channel content
+  - ai_cache: response caching (from ai-mega-bot)
 """
 import aiosqlite
 import logging
 import time
 import asyncio
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -29,7 +32,8 @@ CREATE TABLE IF NOT EXISTS users (
     total_messages INTEGER DEFAULT 0,
     last_active REAL,
     last_mood TEXT DEFAULT 'капризная',
-    last_mood_change REAL DEFAULT 0
+    last_mood_change REAL DEFAULT 0,
+    subscribed_channel INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS chat_history (
@@ -55,8 +59,40 @@ CREATE TABLE IF NOT EXISTS nastya_moods (
     probability REAL DEFAULT 0.1
 );
 
+CREATE TABLE IF NOT EXISTS news_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT,
+    title TEXT,
+    link TEXT UNIQUE,
+    summary TEXT,
+    nastya_comment TEXT,
+    category TEXT DEFAULT 'general',
+    posted_to_channel INTEGER DEFAULT 0,
+    created_at REAL
+);
+
+CREATE TABLE IF NOT EXISTS channel_posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    news_id INTEGER,
+    post_text TEXT,
+    post_type TEXT DEFAULT 'news',
+    created_at REAL
+);
+
+CREATE TABLE IF NOT EXISTS ai_cache (
+    cache_key TEXT PRIMARY KEY,
+    task_type TEXT,
+    response_data TEXT,
+    created_at REAL
+);
+
 CREATE INDEX IF NOT EXISTS idx_chat_history_user ON chat_history(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_donations_user ON donations(user_id);
+CREATE INDEX IF NOT EXISTS idx_news_link ON news_items(link);
+CREATE INDEX IF NOT EXISTS idx_news_category ON news_items(category, created_at);
+CREATE INDEX IF NOT EXISTS idx_news_unposted ON news_items(posted_to_channel, created_at);
+CREATE INDEX IF NOT EXISTS idx_channel_posts_type ON channel_posts(post_type, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_cache_key ON ai_cache(cache_key);
 """
 
 MOODS = [
@@ -81,7 +117,6 @@ class Database:
     - asyncio.Lock serializes writes (SQLite WAL allows 1 writer at a time)
     - Reads can happen concurrently via WAL snapshots
     - Auto-reconnect on stale/closed connections
-    - busy_timeout=10000 handles lock contention gracefully
     """
 
     def __init__(self, db_path: str = DB_PATH):
@@ -96,7 +131,6 @@ class Database:
 
         if self._conn is not None:
             try:
-                # Quick health check
                 async with self._conn.execute("SELECT 1") as cur:
                     await cur.fetchone()
                 return self._conn
@@ -108,12 +142,11 @@ class Database:
                     pass
                 self._conn = None
 
-        # Create new connection
         conn = await aiosqlite.connect(self.db_path)
         await conn.execute("PRAGMA journal_mode=WAL")
         await conn.execute("PRAGMA synchronous=NORMAL")
         await conn.execute("PRAGMA busy_timeout=10000")
-        await conn.execute("PRAGMA cache_size=-2000")  # 2MB cache
+        await conn.execute("PRAGMA cache_size=-2000")
         self._conn = conn
         return conn
 
@@ -142,6 +175,7 @@ class Database:
                 "ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'unknown'",
                 "ALTER TABLE users ADD COLUMN last_mood TEXT DEFAULT 'капризная'",
                 "ALTER TABLE users ADD COLUMN last_mood_change REAL DEFAULT 0",
+                "ALTER TABLE users ADD COLUMN subscribed_channel INTEGER DEFAULT 0",
             ]:
                 try:
                     await conn.execute(col_def)
@@ -187,11 +221,13 @@ class Database:
                 )
                 await conn.commit()
             return {"user_id": user_id, "username": username, "first_name": first_name,
-                    "gender": "unknown", "total_messages": 0, "last_mood": "капризная"}
+                    "gender": "unknown", "total_messages": 0, "last_mood": "капризная",
+                    "subscribed_channel": 0}
         except Exception as e:
             logger.error(f"get_or_create_user error: {e}")
             return {"user_id": user_id, "username": username, "first_name": first_name,
-                    "gender": "unknown", "total_messages": 0, "last_mood": "капризная"}
+                    "gender": "unknown", "total_messages": 0, "last_mood": "капризная",
+                    "subscribed_channel": 0}
 
     async def set_gender(self, user_id: int, gender: str) -> None:
         conn = await self._get_conn()
@@ -229,7 +265,6 @@ class Database:
             return 0
 
     async def get_user_mood(self, user_id: int) -> str:
-        """Get current mood for user, change it periodically."""
         conn = await self._get_conn()
         try:
             async with conn.execute(
@@ -239,7 +274,6 @@ class Database:
                 if not row:
                     return "капризная"
                 mood, last_change = row
-                # Change mood every 15-30 minutes
                 if time.time() - (last_change or 0) > 900:
                     new_mood = await self._pick_random_mood(conn)
                     async with self._write_lock:
@@ -282,10 +316,39 @@ class Database:
         except Exception as e:
             logger.error(f"set_user_mood error: {e}")
 
+    async def set_channel_subscribed(self, user_id: int, subscribed: bool = True) -> None:
+        conn = await self._get_conn()
+        try:
+            async with self._write_lock:
+                await conn.execute(
+                    "UPDATE users SET subscribed_channel = ? WHERE user_id = ?",
+                    (1 if subscribed else 0, user_id),
+                )
+                await conn.commit()
+        except Exception as e:
+            logger.error(f"set_channel_subscribed error: {e}")
+
+    async def get_active_users(self, min_messages: int = 5, limit: int = 100) -> List[Dict]:
+        """Get users who have chatted enough for proactive messages."""
+        conn = await self._get_conn()
+        try:
+            users = []
+            async with conn.execute(
+                "SELECT user_id, first_name, total_messages, last_active FROM users WHERE total_messages >= ? ORDER BY last_active DESC LIMIT ?",
+                (min_messages, limit),
+            ) as cur:
+                async for row in cur:
+                    users.append({
+                        "user_id": row[0], "first_name": row[1],
+                        "total_messages": row[2], "last_active": row[3],
+                    })
+            return users
+        except Exception:
+            return []
+
     # ── Chat History ─────────────────────────────────────────
 
     async def add_message(self, user_id: int, role: str, content: str) -> None:
-        """Add a message to chat history. Uses write lock for concurrency safety."""
         conn = await self._get_conn()
         try:
             now = time.time()
@@ -299,11 +362,6 @@ class Database:
             logger.error(f"add_message error: {e}")
 
     async def get_history(self, user_id: int, limit: int = 50, max_age_hours: int = 720) -> List[Dict[str, str]]:
-        """Get recent chat history. 30 days (720h) by default for context.
-
-        IMPORTANT: Returns messages in chronological order (oldest first).
-        Uses the index on (user_id, created_at) for fast lookup.
-        """
         conn = await self._get_conn()
         try:
             cutoff = time.time() - (max_age_hours * 3600)
@@ -330,7 +388,6 @@ class Database:
             logger.error(f"clear_history error: {e}")
 
     async def cleanup_old_history(self, max_age_hours: int = 720) -> int:
-        """Remove chat history older than max_age_hours. Returns deleted count."""
         conn = await self._get_conn()
         try:
             cutoff = time.time() - (max_age_hours * 3600)
@@ -379,6 +436,194 @@ class Database:
         except Exception:
             return 0
 
+    # ── News Items ───────────────────────────────────────────
+
+    async def add_news_item(self, source: str, title: str, link: str,
+                             summary: str = "", category: str = "general") -> bool:
+        """Add a news item. Returns True if new, False if duplicate."""
+        conn = await self._get_conn()
+        try:
+            now = time.time()
+            async with self._write_lock:
+                try:
+                    await conn.execute(
+                        """INSERT INTO news_items (source, title, link, summary, category, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)""",
+                        (source, title, link, summary, category, now),
+                    )
+                    await conn.commit()
+                    return True
+                except Exception:
+                    # Duplicate link — skip
+                    return False
+        except Exception as e:
+            logger.error(f"add_news_item error: {e}")
+            return False
+
+    async def update_news_comment(self, news_id: int, comment: str) -> None:
+        conn = await self._get_conn()
+        try:
+            async with self._write_lock:
+                await conn.execute(
+                    "UPDATE news_items SET nastya_comment = ? WHERE id = ?",
+                    (comment, news_id),
+                )
+                await conn.commit()
+        except Exception as e:
+            logger.error(f"update_news_comment error: {e}")
+
+    async def mark_news_posted(self, news_id: int) -> None:
+        conn = await self._get_conn()
+        try:
+            async with self._write_lock:
+                await conn.execute(
+                    "UPDATE news_items SET posted_to_channel = 1 WHERE id = ?",
+                    (news_id,),
+                )
+                await conn.commit()
+        except Exception as e:
+            logger.error(f"mark_news_posted error: {e}")
+
+    async def get_unposted_news(self, limit: int = 5) -> List[Dict]:
+        """Get news items not yet posted to channel."""
+        conn = await self._get_conn()
+        try:
+            items = []
+            async with conn.execute(
+                """SELECT id, source, title, link, summary, nastya_comment, category, created_at
+                FROM news_items WHERE posted_to_channel = 0 AND nastya_comment IS NOT NULL
+                ORDER BY created_at DESC LIMIT ?""",
+                (limit,),
+            ) as cur:
+                async for row in cur:
+                    items.append({
+                        "id": row[0], "source": row[1], "title": row[2],
+                        "link": row[3], "summary": row[4], "nastya_comment": row[5],
+                        "category": row[6], "created_at": row[7],
+                    })
+            return items
+        except Exception:
+            return []
+
+    async def get_recent_news(self, limit: int = 5, max_age_hours: int = 24) -> List[Dict]:
+        """Get recent news for conversation context."""
+        conn = await self._get_conn()
+        try:
+            cutoff = time.time() - (max_age_hours * 3600)
+            items = []
+            async with conn.execute(
+                """SELECT id, source, title, summary, nastya_comment, category
+                FROM news_items WHERE created_at > ?
+                ORDER BY created_at DESC LIMIT ?""",
+                (cutoff, limit),
+            ) as cur:
+                async for row in cur:
+                    items.append({
+                        "id": row[0], "source": row[1], "title": row[2],
+                        "summary": row[3], "nastya_comment": row[4], "category": row[5],
+                    })
+            return items
+        except Exception:
+            return []
+
+    async def cleanup_old_news(self, max_items: int = 200) -> int:
+        """Remove old news items to keep DB manageable."""
+        conn = await self._get_conn()
+        try:
+            async with self._write_lock:
+                cursor = await conn.execute(
+                    """DELETE FROM news_items WHERE id NOT IN (
+                        SELECT id FROM news_items ORDER BY created_at DESC LIMIT ?
+                    )""",
+                    (max_items,),
+                )
+                await conn.commit()
+                return cursor.rowcount
+        except Exception as e:
+            logger.error(f"cleanup_old_news error: {e}")
+            return 0
+
+    # ── Channel Posts ────────────────────────────────────────
+
+    async def add_channel_post(self, news_id: int, post_text: str, post_type: str = "news") -> int:
+        conn = await self._get_conn()
+        try:
+            now = time.time()
+            async with self._write_lock:
+                cur = await conn.execute(
+                    """INSERT INTO channel_posts (news_id, post_text, post_type, created_at)
+                    VALUES (?, ?, ?, ?)""",
+                    (news_id, post_text, post_type, now),
+                )
+                await conn.commit()
+                return cur.lastrowid
+        except Exception as e:
+            logger.error(f"add_channel_post error: {e}")
+            return 0
+
+    async def get_recent_channel_posts(self, limit: int = 5) -> List[Dict]:
+        conn = await self._get_conn()
+        try:
+            posts = []
+            async with conn.execute(
+                "SELECT id, news_id, post_text, post_type, created_at FROM channel_posts ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ) as cur:
+                async for row in cur:
+                    posts.append({
+                        "id": row[0], "news_id": row[1], "post_text": row[2],
+                        "post_type": row[3], "created_at": row[4],
+                    })
+            return posts
+        except Exception:
+            return []
+
+    # ── AI Cache ─────────────────────────────────────────────
+
+    async def cache_get(self, key: str, max_age: int = 3600) -> Optional[Dict]:
+        """Get cached AI response. Returns None if not found or expired."""
+        conn = await self._get_conn()
+        try:
+            async with conn.execute(
+                "SELECT response_data, created_at FROM ai_cache WHERE cache_key = ?",
+                (key,),
+            ) as cur:
+                row = await cur.fetchone()
+                if row and time.time() - row[1] < max_age:
+                    return json.loads(row[0])
+                return None
+        except Exception:
+            return None
+
+    async def cache_put(self, key: str, task_type: str, data: Dict) -> None:
+        """Store AI response in cache."""
+        conn = await self._get_conn()
+        try:
+            now = time.time()
+            async with self._write_lock:
+                await conn.execute(
+                    """INSERT OR REPLACE INTO ai_cache (cache_key, task_type, response_data, created_at)
+                    VALUES (?, ?, ?, ?)""",
+                    (key, task_type, json.dumps(data, default=str), now),
+                )
+                await conn.commit()
+        except Exception as e:
+            logger.debug(f"cache_put error: {e}")
+
+    async def cache_cleanup(self, max_age: int = 7200) -> int:
+        """Remove expired cache entries."""
+        conn = await self._get_conn()
+        try:
+            cutoff = time.time() - max_age
+            async with self._write_lock:
+                cursor = await conn.execute(
+                    "DELETE FROM ai_cache WHERE created_at < ?", (cutoff,)
+                )
+                await conn.commit()
+                return cursor.rowcount
+        except Exception:
+            return 0
+
     # ── Stats ───────────────────────────────────────────────
 
     async def get_stats(self) -> Dict:
@@ -390,6 +635,15 @@ class Database:
                 total_stars = (await cur.fetchone())[0]
             async with conn.execute("SELECT COUNT(*) FROM donations") as cur:
                 total_donations = (await cur.fetchone())[0]
-            return {"total_users": total_users, "total_stars": total_stars, "total_donations": total_donations}
+            async with conn.execute("SELECT COUNT(*) FROM news_items") as cur:
+                total_news = (await cur.fetchone())[0]
+            async with conn.execute("SELECT COUNT(*) FROM channel_posts") as cur:
+                total_posts = (await cur.fetchone())[0]
+            return {
+                "total_users": total_users, "total_stars": total_stars,
+                "total_donations": total_donations, "total_news": total_news,
+                "total_channel_posts": total_posts,
+            }
         except Exception:
-            return {"total_users": 0, "total_stars": 0, "total_donations": 0}
+            return {"total_users": 0, "total_stars": 0, "total_donations": 0,
+                    "total_news": 0, "total_channel_posts": 0}

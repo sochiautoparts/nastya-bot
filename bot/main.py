@@ -1,15 +1,15 @@
-"""Nastya Bot — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 2.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v9.0 (ported from ai-mega-bot):
+Architecture v2.0:
   - ErrorHandlingMiddleware as OUTER middleware — catches ALL exceptions
   - LoggingMiddleware — logs all messages for monitoring
   - RateLimitMiddleware — prevents spam/abuse
-  - AI Router: 9+ providers, NEVER crashes, ALWAYS responds
+  - AI Router: 9+ providers + caching, NEVER crashes, ALWAYS responds
   - Shared persistent DB connection with write lock — concurrent-safe
   - Stars donations with ACTIVE Pay buttons via send_invoice
-  - Deep links from GitHub Pages → /start donate_NNN → sends invoice
-  - 30-day context memory (50 messages)
-  - Proactive messages via asyncio background task
+  - NEWS ENGINE: RSS fetching + AI commentary
+  - CHANNEL MANAGER: auto-posting to Telegram channel
+  - Cross-linking: channel content ↔ user conversations
   - Keep-alive chain via GH PAT trigger
   - Memory leak prevention: periodic tracker cleanup
   - NO "голова разболелась" error messages — Nastya ALWAYS responds in character
@@ -33,7 +33,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("nastya-bot")
 
-from bot.config import BOT_TOKEN, ADMIN_IDS, DB_PATH, SESSION_DURATION_SECONDS, OWNER_ID
+from bot.config import (
+    BOT_TOKEN, ADMIN_IDS, DB_PATH, SESSION_DURATION_SECONDS, OWNER_ID,
+    NEWS_FETCH_INTERVAL, CHANNEL_POST_INTERVAL, CHANNEL_ID,
+)
 
 if not BOT_TOKEN:
     logger.critical("Missing BOT_TOKEN")
@@ -41,15 +44,13 @@ if not BOT_TOKEN:
 
 
 # ════════════════════════════════════════════════════════════
-#  MIDDLEWARE — ported from ai-mega-bot stable patterns
+#  MIDDLEWARE
 # ════════════════════════════════════════════════════════════
 
 class ErrorHandlingMiddleware(BaseMiddleware):
     """Catch and log errors without crashing the bot.
 
-    Ported from ai-mega-bot: used as OUTER middleware.
     NEVER sends error messages to users — they should only see Nastya's personality.
-    The chat handler already has fallback responses, so we just log and move on.
     """
 
     async def __call__(self, handler, event: TelegramObject, data: dict):
@@ -61,14 +62,11 @@ class ErrorHandlingMiddleware(BaseMiddleware):
             raise
         except Exception as e:
             logger.error(f"Unhandled error: {e}\n{traceback.format_exc()}")
-            # DO NOT send error message to user!
-            # The AI router always returns fallback responses.
-            # Only log the error and move on silently.
             return None
 
 
 class LoggingMiddleware(BaseMiddleware):
-    """Log all incoming updates for monitoring. Ported from ai-mega-bot."""
+    """Log all incoming updates for monitoring."""
 
     async def __call__(self, handler, event, data: dict):
         start = time.time()
@@ -90,7 +88,7 @@ class LoggingMiddleware(BaseMiddleware):
 
 
 class RateLimitMiddleware(BaseMiddleware):
-    """Per-user rate limiting to prevent abuse. Ported from ai-mega-bot."""
+    """Per-user rate limiting to prevent abuse."""
 
     def __init__(self, max_per_minute: int = 30):
         self.max_per_minute = max_per_minute
@@ -108,7 +106,6 @@ class RateLimitMiddleware(BaseMiddleware):
         if user_id not in self._user_requests:
             self._user_requests[user_id] = []
 
-        # Clean old entries
         self._user_requests[user_id] = [
             t for t in self._user_requests[user_id] if now - t < 60
         ]
@@ -136,12 +133,63 @@ dp: Dispatcher = None
 _start_time: float = 0
 
 
+# ════════════════════════════════════════════════════════════
+#  BACKGROUND TASKS
+# ════════════════════════════════════════════════════════════
+
+async def news_scheduler(bot_instance: Bot) -> None:
+    """Background task: periodically fetch news and generate Nastya's commentary."""
+    from news import run_news_cycle
+
+    # Wait for startup
+    await asyncio.sleep(30)
+
+    while True:
+        try:
+            if db and ai_router:
+                commented = await run_news_cycle(db, ai_router)
+                if commented > 0:
+                    logger.info(f"News scheduler: {commented} items commented")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"News scheduler error: {e}")
+
+        await asyncio.sleep(NEWS_FETCH_INTERVAL)
+
+
+async def channel_scheduler(bot_instance: Bot) -> None:
+    """Background task: periodically post to Telegram channel."""
+    from channel import run_channel_cycle
+
+    # Wait for startup + initial news fetch
+    await asyncio.sleep(60)
+
+    while True:
+        try:
+            if db and ai_router and CHANNEL_ID:
+                posted = await run_channel_cycle(bot_instance, db, ai_router)
+                if posted > 0:
+                    logger.info(f"Channel scheduler: {posted} posts made")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Channel scheduler error: {e}")
+
+        await asyncio.sleep(CHANNEL_POST_INTERVAL)
+
+
 async def proactive_scheduler(bot_instance: Bot) -> None:
     """Background task: periodically send proactive messages."""
     from bot.handlers.chat import check_and_send_proactive
+
+    # Wait for startup
+    await asyncio.sleep(120)
+
     while True:
         try:
-            await asyncio.sleep(random.randint(300, 600))
+            wait_time = random.randint(300, 600)
+            await asyncio.sleep(wait_time)
             if db and ai_router:
                 await check_and_send_proactive(bot_instance, db, ai_router)
         except asyncio.CancelledError:
@@ -160,22 +208,31 @@ async def periodic_db_cleanup() -> None:
                 deleted = await db.cleanup_old_history(max_age_hours=720)
                 if deleted > 0:
                     logger.info(f"DB cleanup: removed {deleted} old messages")
+
+                # Also cleanup AI cache
+                cache_deleted = await db.cache_cleanup(max_age=7200)
+                if cache_deleted > 0:
+                    logger.info(f"Cache cleanup: removed {cache_deleted} old entries")
         except asyncio.CancelledError:
             break
         except Exception as e:
             logger.error(f"DB cleanup error: {e}")
 
 
+# ════════════════════════════════════════════════════════════
+#  STARTUP / SHUTDOWN
+# ════════════════════════════════════════════════════════════
+
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot Starting ===")
+    logger.info("=== Nastya Bot 2.0 Starting ===")
 
     db = Database(DB_PATH)
     await db.init()
     logger.info("Database initialized")
 
-    ai_router = AIRouter()
+    ai_router = AIRouter(db)
     await ai_router.init()
     logger.info(f"AI Router: {len(ai_router.providers)} providers, chain: {ai_router._chain}")
 
@@ -191,10 +248,12 @@ async def on_startup(**kwargs) -> None:
         logger.info(f"workflow_data set: db={db is not None}, ai_router={ai_router is not None}")
 
     if bot:
+        asyncio.create_task(news_scheduler(bot))
+        asyncio.create_task(channel_scheduler(bot))
         asyncio.create_task(proactive_scheduler(bot))
         asyncio.create_task(periodic_db_cleanup())
 
-        # Startup notification — show provider status
+        # Startup notification
         for admin_id in ADMIN_IDS:
             if admin_id:
                 try:
@@ -205,21 +264,27 @@ async def on_startup(**kwargs) -> None:
                                      if p not in ("pollinations", "chutes")]
                     from bot.nastya import get_random_fact
                     thought = get_random_fact()
+
+                    channel_info = ""
+                    if CHANNEL_ID:
+                        channel_info = f"\n📺 Канал: {CHANNEL_ID}"
+
                     await bot.send_message(
                         admin_id,
-                        f"💅 <b>Настя проснулась!</b>\n\n"
+                        f"💅 <b>Настя 2.0 проснулась!</b>\n\n"
                         f"{thought}\n\n"
                         f"🤖 Провайдеров: {len(ai_router.providers)}\n"
                         f"   🆓 Бесплатные: {', '.join(free_providers) or 'нет'}\n"
                         f"   🔑 С ключами: {', '.join(paid_providers) or 'нет'}\n"
                         f"📊 БД: {DB_PATH}\n"
-                        f"⏱ Сессия: {SESSION_DURATION_SECONDS // 60} мин",
+                        f"⏱ Сессия: {SESSION_DURATION_SECONDS // 60} мин"
+                        f"{channel_info}",
                         parse_mode="HTML",
                     )
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot Ready ===")
+    logger.info("=== Nastya Bot 2.0 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:
@@ -242,27 +307,18 @@ async def on_shutdown(**kwargs) -> None:
 
 
 def setup_dispatcher() -> Dispatcher:
-    """Configure dispatcher with all routers and middleware.
-
-    CRITICAL: Middleware order matters (from ai-mega-bot):
-    1. RateLimitMiddleware — prevent spam
-    2. LoggingMiddleware — log all messages
-    3. ErrorHandlingMiddleware — as OUTER middleware, catches everything
-    """
+    """Configure dispatcher with all routers and middleware."""
     global dp
     dp = Dispatcher()
 
-    # Register middleware (order matters: outer first for error handling)
     dp.message.middleware(RateLimitMiddleware(max_per_minute=30))
     dp.callback_query.middleware(RateLimitMiddleware(max_per_minute=30))
     dp.message.middleware(LoggingMiddleware())
     dp.callback_query.middleware(LoggingMiddleware())
-    # CRITICAL: ErrorHandling as outer_middleware — catches ALL errors
     dp.message.outer_middleware(ErrorHandlingMiddleware())
     dp.callback_query.outer_middleware(ErrorHandlingMiddleware())
     dp.pre_checkout_query.middleware(ErrorHandlingMiddleware())
 
-    # Register all routers
     for router in all_routers:
         dp.include_router(router)
 

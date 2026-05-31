@@ -1,18 +1,21 @@
-"""AI Router — BULLETPROOF routing with multi-phase fallback.
+"""AI Router — BULLETPROOF routing with multi-phase fallback + caching.
 
-Architecture (ported from ai-mega-bot + Nastya enhancements):
-  - 9+ providers with proper fallback chain
+Architecture (v2.0 from ai-mega-bot + Nastya enhancements):
+  - 9 providers with proper fallback chain (NO Grok)
   - API-key providers FIRST (fast, reliable)
   - FREE providers as fallbacks (Pollinations, Chutes)
   - NEVER raises exceptions to caller — ALWAYS returns AIResponse
   - 30s timeouts with 5s connect timeout
   - Circuit breaker: skip providers that failed recently
   - Cache last working provider for faster retry
+  - AI Response caching (from ai-mega-bot)
   - Fallback responses as LAST resort — bot ALWAYS responds
   - NO "голова разболелась" error messages EVER
 """
 import logging
 import asyncio
+import hashlib
+import json
 import time
 import random
 from typing import Any, Dict, List, Optional
@@ -24,12 +27,12 @@ from bot.config import (
     OPENROUTER_API_KEY, GROQ_API_KEY, CEREBRAS_API_KEY,
     SAMBANOVA_API_KEY, MISTRAL_API_KEY, GEMINI_API_KEY,
     CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
+    GITHUB_TOKEN, CACHE_TTL_TEXT, CACHE_MAX_MEMORY,
 )
 
 logger = logging.getLogger(__name__)
 
 # Fallback responses — used when ALL AI providers fail
-# These are IN-CHARACTER responses — Nastya never shows errors
 FALLBACK_RESPONSES = [
     "Ммм... Настя задумалась. Повтори? 🤔",
     "Ой, Настя отвлеклась... Что ты сказал? 😅",
@@ -44,13 +47,13 @@ FALLBACK_RESPONSES = [
 ]
 
 # Provider chain: API-key providers FIRST (reliable, fast),
-# then free providers as fallbacks
+# then free providers as fallbacks — NO Grok!
 PROVIDER_CHAIN = [
     "sambanova", "groq", "cerebras", "mistral", "openrouter",
     "cloudflare", "gemini", "pollinations", "chutes",
 ]
 
-# Map env vars to provider configs
+# Map env vars to provider configs — NO Grok!
 PROVIDER_KEYS = {
     "groq": GROQ_API_KEY,
     "cerebras": CEREBRAS_API_KEY,
@@ -62,15 +65,48 @@ PROVIDER_KEYS = {
 }
 
 
+class AICache:
+    """Simple in-memory LRU cache for AI responses (from ai-mega-bot)."""
+
+    def __init__(self, max_size: int = CACHE_MAX_MEMORY, ttl: int = CACHE_TTL_TEXT):
+        self._cache: Dict[str, Dict] = {}
+        self._max_size = max_size
+        self._ttl = ttl
+
+    def _make_key(self, prompt: str, system_prompt: str = "") -> str:
+        data = f"{system_prompt}:{prompt}"
+        return hashlib.sha256(data.encode()).hexdigest()[:32]
+
+    def get(self, prompt: str, system_prompt: str = "") -> Optional[str]:
+        key = self._make_key(prompt, system_prompt)
+        entry = self._cache.get(key)
+        if entry and time.time() - entry["ts"] < self._ttl:
+            return entry["text"]
+        if key in self._cache:
+            del self._cache[key]
+        return None
+
+    def put(self, prompt: str, system_prompt: str, text: str) -> None:
+        key = self._make_key(prompt, system_prompt)
+        self._cache[key] = {"text": text, "ts": time.time()}
+        # Evict oldest if over limit
+        while len(self._cache) > self._max_size:
+            oldest_key = next(iter(self._cache))
+            del self._cache[oldest_key]
+
+    def clear(self) -> None:
+        self._cache.clear()
+
+
 class AIRouter:
     """Central AI request router — NEVER crashes, ALWAYS responds.
 
     Based on ai-mega-bot's proven AIRouter pattern with Nastya-specific
-    enhancements: circuit breaker, provider caching, and in-character
-    fallback responses.
+    enhancements: circuit breaker, provider caching, response caching,
+    and in-character fallback responses.
     """
 
-    def __init__(self):
+    def __init__(self, db=None):
         self.providers: Dict[str, Any] = {}
         self._chain: List[str] = []
         self._vision_providers: List[str] = []
@@ -79,29 +115,29 @@ class AIRouter:
         self._last_fail: Dict[str, float] = {}
         # Cache last working provider
         self._last_good_provider: Optional[str] = None
+        # Response cache (in-memory LRU)
+        self._cache = AICache()
+        # DB for persistent cache
+        self._db = db
         # Stats
         self._total_requests: int = 0
         self._total_fallbacks: int = 0
+        self._cache_hits: int = 0
 
     async def init(self) -> None:
         """Initialize all available providers from ALL_PROVIDERS registry."""
         for name, provider_cls in ALL_PROVIDERS.items():
             try:
-                # Get API key for this provider (if needed)
                 api_key = PROVIDER_KEYS.get(name, "")
 
-                # Provider-specific initialization
                 if name in ("pollinations", "chutes"):
-                    # Free providers — no key needed, longer timeout
                     provider = provider_cls(timeout=30.0)
                 elif name == "cloudflare":
-                    # Cloudflare needs account_id too
                     provider = provider_cls(
                         api_key=api_key, timeout=30.0,
                         account_id=CLOUDFLARE_ACCOUNT_ID,
                     )
                 elif api_key:
-                    # API-key providers
                     provider = provider_cls(api_key=api_key, timeout=30.0)
                 else:
                     logger.info(f"Provider: {name} — SKIPPED (no API key)")
@@ -173,11 +209,51 @@ class AIRouter:
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
         """Route text chat. NEVER raises exceptions. ALWAYS returns a response.
 
-        This is the core routing method — based on ai-mega-bot's proven pattern.
-        Multiple fallback phases ensure the bot ALWAYS responds.
+        Multi-phase routing with caching:
+        1. Check memory cache (fast)
+        2. Check DB cache (if available)
+        3. Try providers with circuit breaker
+        4. Retry top providers
+        5. Try Pollinations with simpler prompt
+        6. Fallback response (in-character)
         """
         image_base64 = kwargs.pop("image_base64", None)
         self._total_requests += 1
+
+        # ── PHASE 0: Check memory cache (only for no-history requests) ──
+        if not messages and not image_base64:
+            cached = self._cache.get(prompt, system_prompt)
+            if cached:
+                self._cache_hits += 1
+                logger.debug(f"Cache hit for: {prompt[:50]}...")
+                return AIResponse(
+                    text=cached,
+                    provider="cache",
+                    model="none",
+                    tokens_used=0,
+                    metadata={"from_cache": True},
+                )
+
+        # ── PHASE 0.5: Check DB cache (if available) ──
+        if not messages and not image_base64 and self._db:
+            try:
+                cache_key = hashlib.sha256(f"{system_prompt}:{prompt}".encode()).hexdigest()[:32]
+                cached_db = await self._db.cache_get(cache_key, max_age=CACHE_TTL_TEXT)
+                if cached_db:
+                    self._cache_hits += 1
+                    text = cached_db.get("text", "")
+                    if text:
+                        # Promote to memory cache
+                        self._cache.put(prompt, system_prompt, text)
+                        return AIResponse(
+                            text=text,
+                            provider="db_cache",
+                            model="none",
+                            tokens_used=0,
+                            metadata={"from_cache": True},
+                        )
+            except Exception:
+                pass
 
         # If image, try vision providers first
         if image_base64:
@@ -197,7 +273,7 @@ class AIRouter:
                     logger.warning(f"Vision provider {vp_name} failed: {e}")
                     self._mark_failure(vp_name)
 
-        # ── PHASE 1: Try configured providers (API-key + free) ──
+        # ── PHASE 1: Try configured providers ──
         chain = self._get_ordered_chain()
 
         for provider_name in chain:
@@ -212,19 +288,29 @@ class AIRouter:
                 )
                 if result and result.text:
                     self._mark_success(provider_name)
+
+                    # Cache the response (only for no-history requests)
+                    if not messages and not image_base64:
+                        self._cache.put(prompt, system_prompt, result.text)
+                        if self._db:
+                            try:
+                                cache_key = hashlib.sha256(f"{system_prompt}:{prompt}".encode()).hexdigest()[:32]
+                                await self._db.cache_put(cache_key, "text", {"text": result.text})
+                            except Exception:
+                                pass
+
                     return result
                 logger.warning(f"Provider {provider_name} returned empty")
             except ProviderError as e:
                 self._mark_failure(provider_name)
                 logger.warning(f"Provider {provider_name} failed: {e}")
-                # If non-retryable, skip rest
                 if not e.retryable:
                     continue
             except Exception as e:
                 self._mark_failure(provider_name)
                 logger.warning(f"Error from {provider_name}: {e}")
 
-        # ── PHASE 2: Retry top providers one more time ──
+        # ── PHASE 2: Retry top providers ──
         logger.info("All providers failed on first try, retrying top 3...")
         await asyncio.sleep(1)
 
@@ -243,15 +329,13 @@ class AIRouter:
             except Exception:
                 pass
 
-        # ── PHASE 3: Try Pollinations with a simpler prompt ──
-        # Pollinations is the ultimate fallback — always available
+        # ── PHASE 3: Try Pollinations with simpler prompt ──
         if "pollinations" in self.providers:
             try:
                 provider = self.providers["pollinations"]
-                # Simplify: just system + prompt, no long history
                 result = await provider.generate(
                     prompt, system_prompt=system_prompt,
-                    messages=None,  # No history to reduce payload
+                    messages=None,  # Simplified
                 )
                 if result and result.text:
                     self._mark_success("pollinations")
@@ -259,7 +343,21 @@ class AIRouter:
             except Exception as e:
                 logger.error(f"Even Pollinations failed: {e}")
 
-        # ── PHASE 4: FALLBACK — bot ALWAYS responds ──
+        # ── PHASE 4: Try Chutes as last resort ──
+        if "chutes" in self.providers:
+            try:
+                provider = self.providers["chutes"]
+                result = await provider.generate(
+                    prompt, system_prompt=system_prompt,
+                    messages=None,
+                )
+                if result and result.text:
+                    self._mark_success("chutes")
+                    return result
+            except Exception as e:
+                logger.error(f"Even Chutes failed: {e}")
+
+        # ── PHASE 5: FALLBACK — bot ALWAYS responds ──
         self._total_fallbacks += 1
         logger.error("ALL providers failed! Using fallback response.")
 
@@ -295,6 +393,7 @@ class AIRouter:
         status["_stats"] = {
             "total_requests": self._total_requests,
             "total_fallbacks": self._total_fallbacks,
+            "cache_hits": self._cache_hits,
             "last_good_provider": self._last_good_provider,
         }
         return status

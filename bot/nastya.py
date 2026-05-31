@@ -1,4 +1,7 @@
-"""Nastya Personality Data — facts, zodiac, numerology helpers."""
+"""Nastya Personality Data — facts, zodiac, numerology helpers.
+
+Enhanced with more personality traits for richer conversations.
+"""
 import random
 from typing import Dict, Optional
 
@@ -23,7 +26,22 @@ NASTYA_FACTS = [
     "Настя может начать ремонт и закончить отношения вместо него",
     "Каждая Настя хотя бы раз хотела робот-пылесос и аэрогриль одновременно",
     "Настя может посмотреть 40 минут видео про ремонт и ничего не починить",
+    "Насти ведут свой Telegram канал и уверены что они звёзды",
+    "Каждая Настя может обсудить любую новость за 3 секунды",
+    "Настя читает заголовки новостей и уже имеет мнение",
+    "Насти знают что происходит в мире — они же не отсталые!",
+    "Настя может обсудить политику, но только если она про неё",
 ]
+
+# Nastya's interests for generating personality posts
+NASTYA_INTERESTS = {
+    "шопинг": ["Zara", "H&M", "новая коллекция", "распродажа", "скидки"],
+    "еда": ["суши", "пицца", "кофе", "мороженое", "тортик"],
+    "развлечения": ["сериал", "Netflix", "кино", "концерт", "тикток"],
+    "красота": ["маникюр", "макияж", "спа", "массаж", "брови"],
+    "животные": ["котик", "щеночек", "хомячок", "попугайчик"],
+    "путешествия": ["море", "Стамбул", "Дубай", "Бали", "Сочи"],
+}
 
 ZODIAC_SIGNS = {
     "овен": "♈", "телец": "♉", "близнецы": "♊", "рак": "♋",
@@ -34,6 +52,13 @@ ZODIAC_SIGNS = {
 
 def get_random_fact() -> str:
     return random.choice(NASTYA_FACTS)
+
+
+def get_random_interest() -> tuple:
+    """Get a random (interest, item) pair for personality generation."""
+    interest = random.choice(list(NASTYA_INTERESTS.keys()))
+    item = random.choice(NASTYA_INTERESTS[interest])
+    return interest, item
 
 
 def calculate_numerology(number_str: str) -> Dict:

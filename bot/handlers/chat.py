@@ -1,17 +1,17 @@
-"""Nastya Chat Handler — BULLETPROOF conversation + ACTIVE Stars payments.
+"""Nastya Chat Handler — INTELLIGENT conversation + news context + channel invites.
 
 STABILITY RULES:
   - Bot ALWAYS responds, even if ALL AI providers fail (fallback responses)
   - NO error messages ever shown to user
   - Per-operation DB with write lock — safe for concurrent users
-  - 30-day context memory
+  - 30-day context memory + news context injection
   - Short, effective system prompt
 
-CONTEXT QUALITY:
-  - Quick reactions are BRIEF and don't derail the conversation
-  - Stars asks happen AFTER the main AI response, not instead of
-  - Proactive messages are sent only to idle users
-  - AI handles most conversations — quick reactions are for flavor only
+INTELLIGENCE FEATURES:
+  - News context injected into system prompt for richer conversations
+  - Nastya mentions recent events she "discovered"
+  - Channel invites for engaged users
+  - Cross-referencing channel posts in conversations
 """
 import logging
 import random
@@ -27,30 +27,28 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import CommandStart, Command
 from bot.config import (
     NASTYA_SYSTEM_PROMPT, DONATION_AMOUNTS, DONATION_LABELS,
-    PROACTIVE_COOLDOWN, BOT_USERNAME,
+    PROACTIVE_COOLDOWN, BOT_USERNAME, CHANNEL_ID, CHANNEL_USERNAME,
 )
 
 logger = logging.getLogger(__name__)
 router = Router()
 
-# Per-user state — keyed by user_id, safe for concurrent access in asyncio
+# Per-user state
 _stars_tracker: dict = {}
 _proactive_tracker: dict = {}
 _last_tracker_cleanup: float = 0.0
-
-# How often to clean up trackers (seconds)
-_TRACKER_CLEANUP_INTERVAL = 3600  # 1 hour
+_TRACKER_CLEANUP_INTERVAL = 3600
 
 
 def _cleanup_trackers():
-    """Remove entries for users inactive for > 24 hours to prevent memory leaks."""
+    """Remove entries for users inactive for > 24 hours."""
     global _last_tracker_cleanup
     now = time.time()
     if now - _last_tracker_cleanup < _TRACKER_CLEANUP_INTERVAL:
         return
     _last_tracker_cleanup = now
 
-    cutoff = now - 86400  # 24 hours
+    cutoff = now - 86400
     stale = [uid for uid, data in _stars_tracker.items()
              if data.get("last_ask", 0) < cutoff]
     for uid in stale:
@@ -74,7 +72,7 @@ AGE_DESCRIPTIONS = [
     "Возраст — это просто цифра. А Настя — это явление! 💅✨",
 ]
 
-# ── Stars request phrases — BOLD, demanding, NO "побалуешь/поможешь" ──
+# ── Stars request phrases ───────────────────────────────────
 
 STARS_REQUESTS = [
     "Хочу {want}! Давай звёздочки! 💅⭐",
@@ -100,7 +98,7 @@ NASTYA_WANTS = [
     "попугайчика 🦜", "щеночка 🐶", "котика 🐱", "хомячка 🐹",
 ]
 
-# ── Proactive messages — CONTEXTUAL, not random wants ───────
+# ── Proactive messages ──────────────────────────────────────
 
 PROACTIVE_MESSAGES = [
     "Спишь? 🥱", "Мне скучно... 😿", "Чё молчишь? 🤨",
@@ -112,7 +110,7 @@ PROACTIVE_MESSAGES = [
     "Ты с другими ботами разговариваешь?! 😤💔",
 ]
 
-# ── Girl Logic ───────────────────────────────────────────────
+# ── Girl Logic ──────────────────────────────────────────────
 
 JEALOUSY_PHRASES = [
     "А ты с другими ботами разговариваешь?! 😤💔",
@@ -124,7 +122,7 @@ JEALOUSY_PHRASES = [
 SILENT_TREATMENT = ["...", "Не знаю.", "Как хочешь.", "Мне всё равно. 💅"]
 
 
-# ── Gender detection ──────────────────────────────────────────
+# ── Gender detection ────────────────────────────────────────
 
 def _guess_gender_from_name(first_name: str) -> str:
     if not first_name:
@@ -206,15 +204,42 @@ async def _send_stars_invoice(chat_id: int, user_id: int, amount: int, bot):
 async def _ask_for_stars(chat_id: int, user_id: int, bot, want: str = ""):
     if not want:
         want = _get_random_want()
-
     phrase = random.choice(STARS_REQUESTS).format(want=want)
     try:
         await bot.send_message(chat_id, phrase)
     except Exception as e:
         logger.error(f"Failed to send stars ask: {e}")
-
     recommended = random.choice([100, 300, 500])
     await _send_stars_invoice(chat_id, user_id, recommended, bot)
+
+
+# ════════════════════════════════════════════════════════════
+#  NEWS CONTEXT INJECTION
+# ════════════════════════════════════════════════════════════
+
+async def _build_news_context(db) -> str:
+    """Build news context string for system prompt."""
+    try:
+        from news import format_news_for_context
+        recent_news = await db.get_recent_news(limit=3, max_age_hours=12)
+        return format_news_for_context(recent_news)
+    except Exception:
+        return ""
+
+
+async def _maybe_news_opener(db, ai_router, user_id: int) -> str:
+    """Maybe start conversation with a news item. Returns empty string if not."""
+    if random.random() > 0.15:  # 15% chance to mention news
+        return ""
+
+    try:
+        from channel import get_news_discussion
+        recent = await db.get_recent_news(limit=1, max_age_hours=6)
+        if recent and recent[0].get("nastya_comment"):
+            return get_news_discussion(recent[0]["nastya_comment"])
+    except Exception:
+        pass
+    return ""
 
 
 # ════════════════════════════════════════════════════════════
@@ -254,7 +279,14 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
         f"Привеееет, {name}! 😊 Настя как раз о тебе думала... ну, или о {want}",
     ]
     greeting_text = random.choice(greetings)
-    greeting_text += f"\n\n⭐ /donates — кинуть Насте звёздочки!"
+
+    # Add channel invite to start message
+    extras = []
+    extras.append("⭐ /donates — кинуть Насте звёздочки!")
+    if CHANNEL_USERNAME:
+        extras.append(f"📺 Мой канал: t.me/{CHANNEL_USERNAME.replace('@', '')}")
+
+    greeting_text += "\n\n" + "\n".join(extras)
 
     await message.answer(greeting_text)
     await _ask_for_stars(message.chat.id, user.id, message.bot, want)
@@ -269,6 +301,49 @@ async def cmd_donates(message: Message, db=None, ai_router=None) -> None:
 @router.message(Command("donate"))
 async def cmd_donate(message: Message, db=None, ai_router=None) -> None:
     await cmd_donates(message, db, ai_router)
+
+
+@router.message(Command("news"))
+async def cmd_news(message: Message, db=None, ai_router=None) -> None:
+    """Show recent news that Nastya found interesting."""
+    if not db:
+        await message.answer("Настя пока не в курсе новостей... 💅")
+        return
+
+    recent = await db.get_recent_news(limit=3, max_age_hours=24)
+    if not recent:
+        await message.answer("Настя ещё ничего не нашла... Проверь позже! 🔍💅")
+        return
+
+    lines = ["📰 Что Настя нашла:\n"]
+    for item in recent:
+        comment = item.get("nastya_comment", "Интересно...")
+        lines.append(f"• {item['title']}")
+        lines.append(f"  💬 {comment}\n")
+
+    if CHANNEL_USERNAME:
+        lines.append(f"Больше в канале: t.me/{CHANNEL_USERNAME.replace('@', '')} 💅")
+
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command("channel"))
+async def cmd_channel(message: Message, db=None, ai_router=None) -> None:
+    """Invite user to Nastya's channel."""
+    if not CHANNEL_USERNAME:
+        await message.answer("У Насти пока нет канала... Но будет! 💅")
+        return
+
+    invite = random.choice([
+        f"Мой канал! Подписывайся! 💅✨\n👉 t.me/{CHANNEL_USERNAME.replace('@', '')}",
+        f"Заходи ко мне на канал, там самое интересное! 💋\n👉 t.me/{CHANNEL_USERNAME.replace('@', '')}",
+        f"Настя ведёт канал! Подписывайся, не пожалеешь! 🎀\n👉 t.me/{CHANNEL_USERNAME.replace('@', '')}",
+    ])
+    await message.answer(invite)
+
+    # Mark as invited
+    if db:
+        await db.set_channel_subscribed(message.from_user.id, True)
 
 
 @router.message(F.text == "/clear")
@@ -345,14 +420,16 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
                                      first_name=message.from_user.first_name or "")
         await db.increment_messages(user_id)
 
-        # Get history BEFORE saving user message (prevents duplication)
         history = await db.get_history(user_id, limit=50)
-
-        # NOW save the user message
         await db.add_message(user_id, "user", f"[Фото] {caption}")
 
         mood = await db.get_user_mood(user_id)
         system_prompt = NASTYA_SYSTEM_PROMPT + f"\nНастроение: {mood}. Пользователь прислал фото — прокомментируй как живая девушка."
+
+        # Add news context
+        news_ctx = await _build_news_context(db)
+        if news_ctx:
+            system_prompt += f"\n\n{news_ctx}"
 
         result = await ai_router.chat_with_image(
             prompt=caption, image_base64=image_b64,
@@ -422,7 +499,7 @@ async def handle_video(message: Message, db=None, ai_router=None) -> None:
 
 
 # ════════════════════════════════════════════════════════════
-#  MAIN TEXT CHAT HANDLER — BULLETPROOF + CONTEXTUAL
+#  MAIN TEXT CHAT HANDLER — INTELLIGENT + NEWS AWARE
 # ════════════════════════════════════════════════════════════
 
 @router.message(F.text, ~F.text.startswith("/"))
@@ -434,10 +511,10 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     text = message.text
     text_lower = text.lower()
 
-    # Periodic cleanup of in-memory trackers
+    # Periodic cleanup
     _cleanup_trackers()
 
-    # ── Quick reactions (no AI needed) — KEEP BRIEF, don't derail conversations ──
+    # ── Quick reactions (no AI needed) ──
 
     # Donation keywords → ACTIVE payment
     donate_keywords = ["донат", "звёзд", "звезд", "подар", "подари",
@@ -463,7 +540,34 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         await _save_simple_exchange(message, text, answer, db)
         return
 
-    # Jealousy trigger — only if explicitly mentioning other bots
+    # Channel question
+    if any(t in text_lower for t in ["канал", "где канал", "твой канал", "подписаться"]):
+        if CHANNEL_USERNAME:
+            answer = f"Мой канал! Подписывайся! 💅✨\n👉 t.me/{CHANNEL_USERNAME.replace('@', '')}"
+            await db.set_channel_subscribed(message.from_user.id, True)
+        else:
+            answer = "У Насти пока нет канала... Но скоро будет! 💅"
+        await message.answer(answer)
+        await _save_simple_exchange(message, text, answer, db)
+        return
+
+    # News question
+    if any(t in text_lower for t in ["новости", "что нового", "что случилось", "что происходит"]):
+        recent = await db.get_recent_news(limit=2, max_age_hours=24)
+        if recent:
+            from channel import get_news_discussion
+            comments = []
+            for item in recent:
+                comment = item.get("nastya_comment", "Интересно...")
+                comments.append(f"Ты слышал про {item['title']}? {comment}")
+            answer = random.choice(comments)
+        else:
+            answer = "Настя пока ничего интересного не нашла... Но ищу! 🔍"
+        await message.answer(answer)
+        await _save_simple_exchange(message, text, answer, db)
+        return
+
+    # Jealousy trigger
     if any(t in text_lower for t in ["siri", "алиса", "chatgpt", "другой бот"]):
         if random.random() < 0.5:
             jealousy = random.choice(JEALOUSY_PHRASES)
@@ -484,7 +588,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         await _save_simple_exchange(message, text, answer, db)
         return
 
-    # Silent treatment (0.5% — very rare now)
+    # Silent treatment (0.5% — very rare)
     if random.random() < 0.005:
         silent = random.choice(SILENT_TREATMENT)
         await message.answer(silent)
@@ -512,9 +616,10 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                                  is_voice: bool = False, extra_suffix: str = "") -> None:
     """Process text with AI. ALWAYS responds — even if all providers fail.
 
-    CRITICAL FIX: Get history BEFORE saving the user message to avoid
-    duplication. The user message is saved AFTER getting history, so
-    the AI doesn't see the same message twice.
+    Enhanced with:
+    - News context injection into system prompt
+    - Channel invite for engaged users
+    - Emotional continuity
     """
     user_id = message.from_user.id
 
@@ -553,7 +658,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     except Exception:
         pass
 
-    # Build system prompt
+    # Build system prompt with gender context
     gender_ctx = ""
     if gender == "male":
         gender_ctx = "Собеседник — мужчина. Иногда ревнуй к другим ботам."
@@ -562,8 +667,12 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     system_prompt = NASTYA_SYSTEM_PROMPT + f"\nНастроение: {mood}. {gender_ctx}"
 
+    # ── NEWS CONTEXT INJECTION ──
+    news_ctx = await _build_news_context(db)
+    if news_ctx:
+        system_prompt += f"\n\n{news_ctx}"
+
     # CRITICAL FIX: Get history BEFORE saving user message
-    # This prevents the AI from seeing the same message twice
     history = []
     try:
         history = await db.get_history(user_id, limit=50)
@@ -577,7 +686,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     except Exception:
         pass
 
-    # Call AI — the router ALWAYS returns a response (never raises to caller)
+    # Call AI — the router ALWAYS returns a response
     try:
         result = await ai_router.chat(
             prompt=text, system_prompt=system_prompt, messages=history,
@@ -585,11 +694,20 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         response_text = _clean_response(result.text)
 
     except Exception as e:
-        # This should never happen since router returns fallback, but just in case
         logger.error(f"Chat error for user={user_id}: {e}")
         response_text = ai_router.get_fallback_response()
 
-    # Add extra suffix if any
+    # ── CHANNEL INVITE CHECK ──
+    channel_invite = ""
+    if CHANNEL_ID:
+        from channel import should_invite_to_channel, get_channel_invite
+        if should_invite_to_channel(user, msg_count):
+            channel_invite = "\n\n" + get_channel_invite()
+            try:
+                await db.set_channel_subscribed(user_id, True)
+            except Exception:
+                pass
+
     if extra_suffix:
         response_text += extra_suffix
 
@@ -610,11 +728,13 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     # Send response
     try:
-        if len(response_text) > 4096:
-            for i in range(0, len(response_text), 4096):
-                await message.answer(response_text[i:i + 4096])
+        # Main response
+        full_response = response_text + channel_invite
+        if len(full_response) > 4096:
+            for i in range(0, len(full_response), 4096):
+                await message.answer(full_response[i:i + 4096])
         else:
-            await message.answer(response_text)
+            await message.answer(full_response)
     except Exception as e:
         logger.error(f"Failed to send response: {e}")
 
@@ -630,7 +750,6 @@ async def _maybe_ask_stars_check(user_id: int, msg_count: int, db, message: Mess
     try:
         tracker = _stars_tracker.get(user_id, {"count": 0, "last_ask": 0})
         tracker["count"] = msg_count
-        # Ask for stars every 5+ messages, with 10-minute cooldown, 20% chance
         if msg_count >= 5 and time.time() - tracker["last_ask"] > 600 and random.random() < 0.20:
             tracker["last_ask"] = time.time()
             _stars_tracker[user_id] = tracker
@@ -654,16 +773,13 @@ def _clean_response(text: str) -> str:
     if text.startswith("'") and text.endswith("'"):
         text = text[1:-1]
     text = text.strip("*").strip()
-    # Remove Markdown formatting that violates personality
+    # Remove Markdown formatting
     import re
-    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # Remove bold
-    text = re.sub(r'\*([^*]+)\*', r'\1', text)  # Remove italic
-    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)  # Remove headers
-    # Remove "побалуешь" / "поможешь" that AI might generate
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
     text = re.sub(r'\bпобалуешь\b', 'давай', text, flags=re.IGNORECASE)
     text = re.sub(r'\bпоможешь\b', 'кидай', text, flags=re.IGNORECASE)
-    # If response is too long (AI got carried away), trim it
-    # Increased from 500 to 800 chars — Nastya can be chatty
     if len(text) > 800:
         sentences = text[:800].rsplit('。' if '。' in text else '.', 1)
         if len(sentences) > 1:
@@ -703,14 +819,13 @@ async def callback_donate(callback: CallbackQuery, db=None, ai_router=None) -> N
 
 
 # ════════════════════════════════════════════════════════════
-#  PROACTIVE MESSAGES
+#  PROACTIVE MESSAGES — NEWS AWARE
 # ════════════════════════════════════════════════════════════
 
 async def check_and_send_proactive(bot, db, ai_router) -> None:
     """Send proactive messages to users who haven't chatted recently.
 
-    MULTI-USER SAFE: Only sends to 5 users per cycle to avoid spam.
-    Cleans up stale tracker entries.
+    Enhanced: Sometimes mentions news or channel content.
     """
     now = time.time()
     sent = 0
@@ -723,12 +838,21 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
         if now - last < PROACTIVE_COOLDOWN:
             continue
         try:
-            msg = random.choice(PROACTIVE_MESSAGES)
+            # 70% regular proactive, 30% news-based
+            if random.random() < 0.3 and db:
+                recent = await db.get_recent_news(limit=1, max_age_hours=6)
+                if recent and recent[0].get("nastya_comment"):
+                    from channel import get_news_discussion
+                    msg = get_news_discussion(recent[0]["nastya_comment"])
+                else:
+                    msg = random.choice(PROACTIVE_MESSAGES)
+            else:
+                msg = random.choice(PROACTIVE_MESSAGES)
+
             chat_id = pro.get("chat_id", user_id)
             await bot.send_message(chat_id, msg)
             pro["last_proactive"] = now
             sent += 1
         except Exception as e:
             logger.error(f"Proactive error for user {user_id}: {e}")
-            # Remove users who blocked the bot
             _proactive_tracker.pop(user_id, None)
