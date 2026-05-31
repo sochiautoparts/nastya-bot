@@ -844,6 +844,9 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                     "коллекц", "тренд", "шопинг", "распродаж", "оверсайз", "винтаж", "стритстайл"],
         "travel": ["путешеств", "отпуск", "море", "стамбул", "дубай", "бали", "сочи", "самолёт",
                    "отель", "виз", "перелёт", "пляж", "курорт", "турци"],
+        "tech": ["технолог", "айфон", "iphone", "нейросет", "ии", "искусственн", "интеллект",
+                 "gpt", "chatgpt", "тикток", "tiktok", "airpods", "электромобил", "5g",
+                 "квант", "компьютер", "программ", "приложен", "смартфон", "гаджет"],
     }
     for topic_key, topic_data in KNOWLEDGE_TOPICS.items():
         topic_facts = topic_data.get("facts", [])
@@ -856,7 +859,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
             knowledge_injected = True
 
     # Also inject a random knowledge fact 25% of the time for variety
-    if not knowledge_injected and random.random() < 0.25:
+    if not knowledge_injected and random.random() < 0.35:
         random_topic = random.choice(list(KNOWLEDGE_TOPICS.keys()))
         topic_data = KNOWLEDGE_TOPICS[random_topic]
         random_fact = random.choice(topic_data["facts"])
@@ -910,10 +913,14 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     except Exception:
         pass
 
+    # Append current user message to history for AI context
+    # This ensures the AI sees the full conversation including the latest message
+    history_with_current = history + [{"role": "user", "content": f"{prefix}{text}"}]
+
     # Call AI — the router ALWAYS returns a response
     try:
         result = await ai_router.chat(
-            prompt=text, system_prompt=system_prompt, messages=history,
+            prompt=text, system_prompt=system_prompt, messages=history_with_current,
         )
         response_text = _clean_response(result.text)
 

@@ -403,9 +403,28 @@ class AIRouter:
             r'keep AI accessible for everyone.*',
             r'---\s*\n\s*\*\*Support Pollinations',
             r'---\s*\n\s*🌸\s*\*\*Ad\*\*',
+            r'Visit Pollinations\.AI.*',
+            r'pollinations\.ai.*',
+            r'🌸.*Ad.*🌸.*',
+            r'free.*API.*access.*',
+            r'open source.*AI.*',
+            r'Check out Pollinations.*',
+            r'Learn more about Pollinations.*',
+            r'Pollinations\.AI —.*',
+            r'powered by.*Pollinations.*',
+            r'Support free AI.*',
+            r'🌻.*',
+            r'🌱.*Support.*',
         ]
         for pattern in ad_patterns:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE | re.DOTALL)
+
+        # Strip DeepSeek R1 "think" tags
+        text = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<thinking\b[^>]*>.*?</thinking\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
+
+        # Strip "ad" sections with various emoji markers
+        text = re.sub(r'[\U0001f33f\U0001f331\U0001f31f].{0,5}(?:Ad|Support|Visit|Check).{0,100}', '', text, flags=re.IGNORECASE)
 
         # Remove separator lines with ads after them
         text = re.sub(r'\n---\s*$', '', text)
