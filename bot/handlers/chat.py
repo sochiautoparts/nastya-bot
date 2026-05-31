@@ -666,10 +666,19 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         # The AI will remember the user's zodiac sign from previous messages
         pass  # Fall through to normal AI chat
 
-    # Channel question
-    if any(t in text_lower for t in ["канал", "где канал", "твой канал", "подписаться"]):
+    # Channel question — also handles "дай ссылку" in context of channel discussion
+    channel_triggers = ["канал", "где канал", "твой канал", "подписаться"]
+    link_triggers = ["дай ссылку", "скинь ссылку", "ссылку дай", "ссылка", "где ссылк", "как найти"]
+    if any(t in text_lower for t in channel_triggers) or \
+       (any(t in text_lower for t in link_triggers) and any(k in text_lower for k in ["канал", "насти", "настя", "твой", "cha", "подписк"])):
         if CHANNEL_USERNAME:
-            answer = f"Мой канал! Подписывайся! 💅✨\n👉 t.me/{CHANNEL_USERNAME.replace('@', '')}"
+            answer = random.choice([
+                f"Мой канал! Подписывайся! 💅✨\n👉 t.me/{CHANNEL_USERNAME.replace('@', '')}",
+                f"Конечно! Вот он — t.me/{CHANNEL_USERNAME.replace('@', '')} 💋✨",
+                f"О, хочешь подписаться? Кайф! Вот: t.me/{CHANNEL_USERNAME.replace('@', '')} 💅",
+                f"Заходи! t.me/{CHANNEL_USERNAME.replace('@', '')} — там я настоящая! ✨",
+                f"Мой канал @chasnastya! Там новости, факты, опросы! 💅✨\n👉 t.me/{CHANNEL_USERNAME.replace('@', '')}",
+            ])
             await db.set_channel_subscribed(message.from_user.id, True)
         else:
             answer = "У Насти пока нет канала... Но скоро будет! 💅"
@@ -740,6 +749,48 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         silent = random.choice(SILENT_TREATMENT)
         await message.answer(silent)
         await _save_simple_exchange(message, text, silent, db)
+        return
+
+    # ── "Дай ссылку" — context-dependent link request ──
+    # If user says "дай ссылку" without mentioning channel, they might be asking
+    # about a news/event link from the conversation context
+    if any(t in text_lower for t in ["дай ссылку", "скинь ссылку", "ссылку дай", "где ссылк", "где прочитать", "где посмотреть", "источник"]):
+        # Try to find a relevant news link from recent context
+        try:
+            recent = await db.get_recent_news_with_links(limit=3, max_age_hours=24)
+            if recent:
+                # Check if any recent news title keywords match recent conversation
+                user_history = await db.get_history(message.from_user.id, limit=10)
+                recent_text = " ".join(m.get("content", "") for m in user_history[-5:]).lower()
+                for item in recent:
+                    title_words = [w for w in re.split(r'[\s,.\-!?;:()]+', item["title"].lower()) if len(w) > 3]
+                    if any(w in recent_text for w in title_words):
+                        link = item.get("link", "")
+                        comment = item.get("nastya_comment", "")
+                        if link:
+                            answer = f"Вот, держи! 💅\n🔗 {link}"
+                            if comment:
+                                answer += f"\nА я про это писала: {comment}"
+                            answer += f"\n📺 Ещё в @chasnastya!"
+                            await message.answer(answer)
+                            await _save_simple_exchange(message, text, answer, db)
+                            return
+                # No matching news — give any recent
+                any_news = recent[0]
+                if any_news.get("link"):
+                    answer = f"Не совсем поняла про что, но вот что есть! 💅\n🔗 {any_news['link']}\n📺 Больше в @chasnastya!"
+                    await message.answer(answer)
+                    await _save_simple_exchange(message, text, answer, db)
+                    return
+        except Exception:
+            pass
+        # Fallback to channel link
+        if CHANNEL_USERNAME:
+            answer = f"Может ты про мой канал? Вот: t.me/{CHANNEL_USERNAME.replace('@', '')} 💅"
+        else:
+            answer = "Настя пока не нашла ссылку... Спроси по-другому! 🔍"
+        await message.answer(answer)
+        await _save_simple_exchange(message, text, answer, db)
         return
 
     # ── Normal AI chat — MOST conversations go here ──
@@ -1190,6 +1241,18 @@ def _clean_response(text: str) -> str:
     }
     for pattern, replacement in forbidden.items():
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+    # Strip "As an AI" disclaimers that might slip through
+    text = re.sub(r'(?:как AI|как искусственный интеллект|я AI|я бот|я программа|я нейросеть)[^.]*\.', '', text, flags=re.IGNORECASE)
+
+    # Strip generic AI intro phrases that make responses feel robotic
+    ai_intros = [
+        r'давай уточни[^.]*\.',
+        r'раз уж ты[^.]*\.',
+        r'я могу помочь[^.]*\.',
+    ]
+    for pattern in ai_intros:
+        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
     # Truncate long responses
     if len(text) > 800:

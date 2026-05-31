@@ -223,12 +223,18 @@ class AIRouter:
 
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
-        """Route text chat. NEVER raises exceptions. ALWAYS returns a response."""
+        """Route text chat. NEVER raises exceptions. ALWAYS returns a response.
+
+        v7.1: Caching DISABLED for conversations with history — prevents context loss
+        and garbage responses. Cache only used for no-history requests (commentary, etc).
+        """
         image_base64 = kwargs.get("image_base64")
         self._total_requests += 1
 
-        # ── PHASE 0: Check memory cache (only for no-history requests) ──
-        if not messages and not image_base64:
+        # ── PHASE 0: Check memory cache ONLY for no-history requests ──
+        # CRITICAL FIX: Never cache conversations with history — causes context amnesia!
+        has_conversation = bool(messages and len(messages) > 0)
+        if not has_conversation and not image_base64:
             cached = self._cache.get(prompt, system_prompt)
             if cached:
                 self._cache_hits += 1
@@ -237,8 +243,8 @@ class AIRouter:
                     tokens_used=0, metadata={"from_cache": True},
                 )
 
-        # ── PHASE 0.5: Check DB cache ──
-        if not messages and not image_base64 and self._db:
+        # ── PHASE 0.5: Check DB cache ONLY for no-history requests ──
+        if not has_conversation and not image_base64 and self._db:
             try:
                 cache_key = hashlib.sha256(f"{system_prompt}:{prompt}".encode()).hexdigest()[:32]
                 cached_db = await self._db.cache_get(cache_key, max_age=CACHE_TTL_TEXT)
@@ -293,7 +299,8 @@ class AIRouter:
                 if result and result.text:
                     self._mark_success(provider_name)
 
-                    if not messages and not image_base64:
+                    # Only cache responses without conversation history
+                    if not has_conversation and not image_base64:
                         self._cache.put(prompt, system_prompt, result.text)
                         if self._db:
                             try:

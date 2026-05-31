@@ -18,9 +18,9 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 logger = logging.getLogger(__name__)
 
 # Model chain — try in order, fall back to next on failure
-# Updated with latest Cloudflare Workers AI models
+# Updated with latest Cloudflare Workers AI models (June 2025)
 TEXT_MODELS = {
-    "default": "@cf/meta/llama-4-scout-17b-16e-instruct",
+    "default": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "fast": "@cf/meta/llama-3.1-8b-instruct-fp8",
     "reasoning": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
     "code": "@cf/qwen/qwen2.5-coder-32b-instruct",
@@ -30,9 +30,9 @@ TEXT_MODELS = {
 FALLBACK_MODELS = [
     "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "@cf/meta/llama-4-scout-17b-16e-instruct",
+    "@cf/meta/llama-3.1-8b-instruct-fp8",
     "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
     "@cf/qwen/qwen2.5-coder-32b-instruct",
-    "@cf/meta/llama-3.1-8b-instruct-fp8",
     "@cf/mistralai/mistral-small-3.1-24b-instruct",
 ]
 

@@ -169,6 +169,59 @@ QUIZ_POSTS = [
     "Кто круче? 🤔\n\nКотики или собачки? Настя за котиков! 🐱🐶\n\nГолосуйте!",
 ]
 
+# ── Knowledge quiz posts — with REAL correct answers! ──
+
+KNOWLEDGE_QUIZZES = [
+    {
+        "question": "Какой знак зодиака самый разговорчивый? ♊",
+        "options": ["Овен 🔥", "Близнецы ♊", "Скорпион 🦂", "Телец ♉"],
+        "correct": 1,
+        "explanation": "Близнецы — самый разговорчивый знак! Настя тоже болтушка! 💅✨",
+    },
+    {
+        "question": "Сколько слов в день говорит средняя женщина? 🗣️",
+        "options": ["5 000", "10 000", "20 000", "50 000"],
+        "correct": 2,
+        "explanation": "20 000 слов! Настя точно больше! 💅✨",
+    },
+    {
+        "question": "Какая машина самая продаваемая в мире? 🚗",
+        "options": ["Lada 🇷🇺", "Toyota Corolla 🇯🇵", "Volkswagen Golf 🇩🇪", "Honda Civic 🇯🇵"],
+        "correct": 1,
+        "explanation": "Toyota Corolla — больше 50 миллионов продано! Настя знает авто! 🚗💅",
+    },
+    {
+        "question": "Сколько процентов жизни котики спят? 🐱",
+        "options": ["30%", "50%", "70%", "90%"],
+        "correct": 2,
+        "explanation": "70%! Настя официально завидует! 😴🐱",
+    },
+    {
+        "question": "Какой город на двух континентах? 🌍",
+        "options": ["Москва 🇷🇺", "Дубай 🇦🇪", "Стамбул 🇹🇷", "Сочи 🇷🇺"],
+        "correct": 2,
+        "explanation": "Стамбул — единственный город на двух континентах! Настя хочет туда! ✈️💅",
+    },
+    {
+        "question": "Что дороже: мёд или золото? (вес к весу) 🍯",
+        "options": ["Золото, конечно! 🥇", "Мёд! 🍯", "Одинаково! ⚖️", "Настя не знает! 💅"],
+        "correct": 1,
+        "explanation": "Мёд 3000-летней давности — ценнее золота для археологов! Но Настя за шоколадку! 🍫",
+    },
+    {
+        "question": "Сколько серий в самом длинном сериале? 📺",
+        "options": ["1 000", "5 000", "10 000", "15 762"],
+        "correct": 3,
+        "explanation": "15 762 серии в 'Направляющий свет'! Настя бы не выдержала! 📺😱",
+    },
+    {
+        "question": "Какая скорость интернета 5G? 📶",
+        "options": ["100 Мбит/с", "1 Гбит/с", "10 Гбит/с", "100 Гбит/с"],
+        "correct": 2,
+        "explanation": "До 10 Гбит/с — в 100 раз быстрее 4G! Но батарея садится быстрее! 📱⚡",
+    },
+]
+
 # ── Event reaction posts — react to what's happening! ──
 
 EVENT_REACTION_POSTS = [
@@ -414,6 +467,7 @@ async def post_real_poll_to_channel(bot: Bot, db) -> bool:
 
     Creates an interactive poll with clickable vote buttons,
     NOT just a text post asking people to vote.
+    Also sometimes creates a quiz with a correct answer for fun!
     """
     if not CHANNEL_ID:
         return False
@@ -427,13 +481,40 @@ async def post_real_poll_to_channel(bot: Bot, db) -> bool:
         return False
 
     try:
-        await bot.send_poll(
-            chat_id=CHANNEL_ID,
-            question=question,
-            options=options,
-            is_anonymous=False,  # Show who voted — more engaging!
-            allows_multiple_answers=False,
-        )
+        # 30% chance to make it a QUIZ (with correct answer) for more engagement
+        is_quiz = random.random() < 0.30
+
+        if is_quiz and len(options) > 1:
+            # Pick a random "correct" answer for fun quizzes
+            # Last option is often the joke answer, so we pick from non-last options
+            correct_index = random.randint(0, min(len(options) - 2, len(options) - 1))
+
+            # Quiz explanation
+            explanation = random.choice([
+                f"Правильный ответ: {options[correct_index]}! Настя знает всё! 💅✨",
+                f"Точняк, это {options[correct_index]}! Настя не ошибается! 💅",
+                f"Кайф, ты знал? {options[correct_index]} — правильный ответ! 💋",
+            ])
+
+            await bot.send_poll(
+                chat_id=CHANNEL_ID,
+                question=question,
+                options=options,
+                is_anonymous=False,
+                allows_multiple_answers=False,
+                type="quiz",
+                correct_option_id=correct_index,
+                explanation=explanation,
+            )
+        else:
+            # Regular poll — show who voted
+            await bot.send_poll(
+                chat_id=CHANNEL_ID,
+                question=question,
+                options=options,
+                is_anonymous=False,  # Show who voted — more engaging!
+                allows_multiple_answers=False,
+            )
 
         await db.add_channel_post(
             news_id=0,
@@ -442,7 +523,7 @@ async def post_real_poll_to_channel(bot: Bot, db) -> bool:
         )
         _track_post(question)
 
-        logger.info(f"Channel REAL poll: {question[:50]}...")
+        logger.info(f"Channel {'quiz' if is_quiz else 'poll'}: {question[:50]}...")
         return True
 
     except Exception as e:
@@ -599,6 +680,33 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
                 logger.info("Posted REAL Telegram poll to channel!")
         except Exception as e:
             logger.error(f"Channel real poll cycle error: {e}")
+
+    # Knowledge quizzes with correct answers (8% chance) — more engaging!
+    if posted < max_posts and random.random() < 0.20:
+        try:
+            quiz = random.choice(KNOWLEDGE_QUIZZES)
+            question = quiz["question"]
+            if not _is_recent_post(question):
+                await bot.send_poll(
+                    chat_id=CHANNEL_ID,
+                    question=question,
+                    options=quiz["options"],
+                    is_anonymous=False,
+                    allows_multiple_answers=False,
+                    type="quiz",
+                    correct_option_id=quiz["correct"],
+                    explanation=quiz.get("explanation", "Настя знает всё! 💅✨"),
+                )
+                await db.add_channel_post(
+                    news_id=0,
+                    post_text=f"[QUIZ] {question}",
+                    post_type="quiz",
+                )
+                _track_post(question)
+                posted += 1
+                logger.info(f"Channel knowledge quiz: {question[:50]}...")
+        except Exception as e:
+            logger.error(f"Channel knowledge quiz error: {e}")
 
     # Promo posts (3% chance — rare, not spammy)
     if posted < max_posts and random.random() < 0.03:
