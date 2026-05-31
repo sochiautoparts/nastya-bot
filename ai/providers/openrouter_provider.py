@@ -33,10 +33,13 @@ FALLBACK_MODELS = [
     "nvidia/nemotron-nano-9b-v2:free",
 ]
 
-# Vision-capable free models
+# Vision-capable free models — ordered by reliability for image understanding
 VISION_MODELS = [
-    "nvidia/nemotron-nano-12b-v2-vl:free",
-    "google/gemma-4-31b-it:free",
+    "google/gemma-4-31b-it:free",             # Gemma 4 31B — excellent vision + text
+    "nvidia/nemotron-nano-12b-v2-vl:free",    # Nemotron VL — dedicated vision model
+    "meta-llama/llama-4-scout-17b-16e-instruct:free",  # Llama 4 Scout — vision capable
+    "qwen/qwen2.5-vl-72b-instruct:free",     # Qwen VL 72B — powerful vision
+    "mistralai/mistral-small-3.1-24b-instruct:free",   # Mistral Small — has vision
 ]
 
 
@@ -98,10 +101,12 @@ class OpenRouterProvider(BaseProvider):
         # and prioritize vision-capable models
         if image_base64:
             self._inject_image_into_messages(messages, image_base64)
+            logger.info(f"Vision request: trying {len(VISION_MODELS)} vision models first")
 
         # Build model try list: vision models first if image provided
         if image_base64:
             models_to_try = list(VISION_MODELS)
+            # Add non-vision fallbacks too in case vision models all fail
             for fb in FALLBACK_MODELS:
                 if fb not in models_to_try:
                     models_to_try.append(fb)

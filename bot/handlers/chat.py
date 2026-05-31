@@ -502,6 +502,7 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         return
 
     user_id = message.from_user.id
+    user_name = message.from_user.first_name or ""
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
     try:
@@ -511,6 +512,7 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         await message.bot.download_file(file.file_path, buf)
         image_bytes = buf.getvalue()
 
+        # Compress and resize image for vision models
         try:
             from PIL import Image
             img = Image.open(io.BytesIO(image_bytes))
@@ -530,20 +532,41 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         caption = message.caption or "Что скажешь про это фото?"
 
         await db.get_or_create_user(user_id=user_id, username=message.from_user.username or "",
-                                     first_name=message.from_user.first_name or "")
+                                     first_name=user_name)
         await db.increment_messages(user_id)
+
+        # Detect gender for personalized photo responses
+        gender = "unknown"
+        try:
+            gender = await db.get_gender(user_id)
+            if gender == "unknown":
+                gender = _guess_gender_from_name(user_name)
+                if gender != "unknown":
+                    await db.set_gender(user_id, gender)
+        except Exception:
+            pass
 
         history = await db.get_history(user_id, limit=50)
         await db.add_message(user_id, "user", f"[Фото] {caption}")
 
+        # Build personalized system prompt for photo response
         mood = await db.get_user_mood(user_id)
-        system_prompt = NASTYA_SYSTEM_PROMPT + f"\nНастроение: {mood}. Пользователь прислал фото — прокомментируй как живая девушка."
-        system_prompt += "\n\n⛔ ВАЖНО: У тебя ЕСТЬ Telegram канал @chasnastya! Ты его ВЕДЁШЬ! Никогда не говори что нет!"
+        gender_info = ""
+        if gender == "male":
+            gender_info = f"Собеседник — мужчина по имени {user_name}. Отреагируй как девушка, которой парень прислал фото — можешь оценить, подколоть, заинтересоваться."
+        elif gender == "female":
+            gender_info = f"Собеседник — девушка по имени {user_name}. Отреагируй как подруга — оцени, посоветуй, поддержи."
+        else:
+            gender_info = f"Собеседника зовут {user_name}. Реагируй дружелюбно и живо."
+
+        system_prompt = NASTYA_SYSTEM_PROMPT + f"\n\nНастроение: {mood}. {gender_info} Пользователь прислал фото — посмотри и прокомментируй как живая девушка. Опиши что видишь и реагируй эмоционально и естественно."
 
         # Add news context
         news_ctx = await _build_news_context(db)
         if news_ctx:
             system_prompt += f"\n\n{news_ctx}"
+
+        logger.info(f"Processing photo from user {user_id} ({gender}), caption: {caption[:50]}")
 
         result = await ai_router.chat_with_image(
             prompt=caption, image_base64=image_b64,
@@ -819,15 +842,19 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         logger.error(f"DB get_or_create error: {e}")
         user = {}
 
-    # Detect gender
-    if user.get("gender", "unknown") == "unknown":
-        name = message.from_user.first_name or ""
-        gender = _guess_gender_from_name(name)
-        if gender != "unknown":
-            try:
+    user_name = message.from_user.first_name or ""
+    user_username = message.from_user.username or ""
+
+    # Detect gender from name if unknown
+    gender = "unknown"
+    try:
+        gender = await db.get_gender(user_id)
+        if gender == "unknown":
+            gender = _guess_gender_from_name(user_name)
+            if gender != "unknown":
                 await db.set_gender(user_id, gender)
-            except Exception:
-                pass
+    except Exception:
+        pass
 
     try:
         msg_count = await db.increment_messages(user_id)
@@ -836,26 +863,29 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
-    # Get mood and gender
+    # Get mood
     mood = "капризная"
-    gender = "unknown"
     try:
         mood = await db.get_user_mood(user_id)
-        gender = await db.get_gender(user_id)
     except Exception:
         pass
 
     # Add time-aware mood
     time_mood = _get_time_greeting()
 
-    # Build system prompt with gender context
-    gender_ctx = ""
+    # Build system prompt with USER INFO and GENDER context
+    user_context = f"\n\nТы разговариваешь с: {user_name}"
+    if user_username:
+        user_context += f" (@{user_username})"
     if gender == "male":
-        gender_ctx = "Собеседник — мужчина. Иногда ревнуй к другим ботам. Можешь флиртовать."
+        user_context += ". Это парень — общайся как девушка с парнем: флирти, дразни, ревнуй, называй по имени, будь игривой. Если хвалит — смущайся мило."
     elif gender == "female":
-        gender_ctx = "Собеседник — женщина. Обращайся как к подруге."
+        user_context += ". Это девушка — общайся как с подругой: 'девочка', 'красотка', 'подруга'. Будь теплее, откровеннее, делись 'секретами'."
+    else:
+        user_context += ". Будь дружелюбной и живой."
 
-    system_prompt = NASTYA_SYSTEM_PROMPT + f"\n\nСейчас у Насти настроение: {mood}. Время суток: {time_mood}. {gender_ctx}"
+    system_prompt = NASTYA_SYSTEM_PROMPT + f"\n\nНастроение Насти: {mood}. Время суток: {time_mood}."
+    system_prompt += user_context
 
     # Add Moscow time context for time-aware behavior
     now_msk = _moscow_now()
@@ -872,19 +902,10 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         time_desc += " (ночь — Настя может хотеть спать)"
     system_prompt += f"\n{time_desc}"
 
-    # ── CRITICAL: Channel knowledge injection (EVERY message!) ──
+    # Channel reminder (keep brief — already in main system prompt)
     system_prompt += (
-        "\n\n⛔ ВАЖНОЕ НАПОМИНАНИЕ: У тебя ОБЯЗАТЕЛЬНО ЕСТЬ Telegram канал @chasnastya! "
-        "Ты его ВЕДЁШЬ каждый день! Никогда не говори что у тебя нет канала! "
-        "Если обсуждаешь новость или событие — упомяни @chasnastya! "
-        "Если есть ссылка на новость — ОБЯЗАТЕЛЬНО дай её!"
-        "\n\n⛔ РЕЧЬ: Используй РЕАЛЬНЫЕ разговорные слова: Точняк, Офигеть, Жесть, Капец, Бомба, Отпад, Чётко, Щас, Короч, Фигушки, Внатуре, блин, прикинь, круто, кайф. "
-        "НЕ выдумывай непонятные слова! Если слово странное — НЕ используй! Говори ПОНЯТНО как нормальный человек!"
-        "\n\n⛔⛔⛔ ССЫЛКИ НА НОВОСТИ — ЭТО ЗАКОН! ⛔⛔⛔"
-        "Если ты упоминаешь ЛЮБУЮ новость, событие, происшествие — ОБЯЗАТЕЛЬНО добавь ссылку! "
-        "НЕТ ССЫЛКИ = НАСТЯ НАРУШИЛА ПРАВИЛО! Всегда давай ссылку из контекста новостей ниже! "
-        "Если ссылка есть в контексте — ПИШИ ЕЁ! Не выдумывай ссылки — бери из контекста! "
-        "Если ссылки нет — напиши 'подробнее в @chasnastya'"
+        "\n\nНапоминание: у тебя есть канал @chasnastya. Упомяни если к месту. "
+        "Если обсуждаешь новость — дай ссылку из контекста ниже или напиши 'подробнее в @chasnastya'."
     )
 
     # ── NEWS CONTEXT INJECTION ──
@@ -898,10 +919,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         except Exception:
             pass
 
-    # ── Add user's name for personalization ──
-    user_name = message.from_user.first_name or ""
-    if user_name:
-        system_prompt += f"\n\nСобеседника зовут: {user_name}. Обращайся по имени иногда."
+    # ── Add user's name for personalization (already included in user_context above) ──
 
     # CRITICAL FIX: Get history BEFORE saving user message
     # Increased limit from 20 to 40 for better context retention

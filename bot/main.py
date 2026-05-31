@@ -1,32 +1,18 @@
-"""Nastya Bot 11.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 12.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v11.0:
-  - ПОНЯТНЫЙ сленг: Точняк, Офигеть, Жесть, Капец, Бомба, Отпад, Чётко и т.д.
-  - НЕ выдумывать непонятные слова! Только реальные разговорные!
-  - Настя: ПРИЛИЧНАЯ, ОТЗЫВЧИВАЯ, ИСПОЛНИТЕЛЬНАЯ. С прибабахом, но добрая. Иногда капризная.
-  - OpenRouter as PRIMARY (25+ free models, Gemma 4 31B, Nemotron 120B, vision)
-  - Cloudflare Workers AI as SECONDARY (free, reliable, many models, vision)
-  - Groq as TERTIARY (free, ultra-fast LPU, great Russian, 30 RPM)
-  - HuggingFace as QUATERNARY (free tier with token, many models)
-  - Chutes as QUINARY (free DeepSeek V3, rate-limited)
-  - Pollinations as FALLBACK #1 (always free, always available, ads cleaned)
-  - GitHub Models as FALLBACK #2 (needs PAT with 'models' permission)
-  - DeepSeek REMOVED ENTIRELY (was returning 402 Insufficient Balance)
-  - Web search: DuckDuckGo-based, auto-triggers on questions/events
-  - Real Telegram polls in channel using send_poll() with vote buttons
-  - Poll answer reactions — Nastya reacts when someone votes!
-  - /search command for explicit web searches
-  - Knowledge injection by 10 topics: auto, zodiac, psychology, facts, Moscow,
-    cinema, cooking, relationships, fashion, travel, tech
-  - Context memory: zodiac signs, names, city, preferences — NEVER forgets
-  - Channel @chasnastya — ALWAYS remembered, links in news!
-  - NEWS ENGINE: RSS + AI commentary + links (15 min cycle)
-  - CHANNEL MANAGER: diverse posts, REAL POLLS, events, reactions (20 min)
-  - Stars donations with ACTIVE Pay buttons
+Architecture v12.0:
+  - ГЕНДЕРНАЯ АДАПТАЦИЯ: Настя понимает с кем общается (мужчина/женщина)
+  - МАКСИМАЛЬНО ЖИВАЯ РЕЧЬ: ещё более человечное общение
+  - OPTIMIZED VISION: фото понимаются через vision-модели OpenRouter
+  - OpenRouter as PRIMARY (25+ free models, vision support)
+  - Cloudflare Workers AI as SECONDARY (free, reliable, vision)
+  - Groq as TERTIARY (free, ultra-fast LPU)
+  - HuggingFace as QUATERNARY (free tier)
+  - DeepSeek REMOVED ENTIRELY (402 Insufficient Balance)
+  - Web search, knowledge injection, channel management
+  - Context memory: 40 messages, 30 days
+  - Stars donations, proactive messages (reduced frequency)
   - MOSCOW TIMEZONE — Настя из Москвы!
-  - Keep-alive chain via GH PAT trigger
-  - NO "голова разболелась" — Nastya ALWAYS responds in character
-  - Proactive messages: LESS FREQUENT (30-60 min), but KEPT (they're fun!)
 """
 import asyncio
 import logging
@@ -259,7 +245,7 @@ async def memory_cleanup() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 11.0 Starting (OpenRouter PRIMARY, ПОНЯТНЫЙ СЛЕНГ) ===")
+    logger.info("=== Nastya Bot 12.0 Starting (Gender-aware, Vision-optimized, More human) ===")
 
     db = Database(DB_PATH)
     await db.init()
@@ -301,7 +287,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 11.0 Ready ===")
+    logger.info("=== Nastya Bot 12.0 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:
