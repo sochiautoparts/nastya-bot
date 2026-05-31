@@ -1,6 +1,6 @@
 """AI Router — BULLETPROOF routing with multi-phase fallback + caching.
 
-Architecture (v13.0 — 4 FREE UNLIMITED providers as PRIMARY):
+Architecture (v14.0 — Apolitical, 4 FREE UNLIMITED providers as PRIMARY):
   - Pollinations FIRST (always free, always available, vision support)
   - Chutes SECOND (free DeepSeek V3, no key, vision support)
   - Blackbox THIRD (free, unlimited, multiple models, vision support)
@@ -16,6 +16,7 @@ Architecture (v13.0 — 4 FREE UNLIMITED providers as PRIMARY):
   - Cache last working provider for faster retry
   - AI Response caching (disabled for conversations to prevent context amnesia)
   - Fallback responses as LAST resort — bot ALWAYS responds
+  - Political content filtering — responses with political keywords are replaced
   - NO "голова разболелась" error messages EVER
   - Aggressive response cleaning: strips ads, markdown, artifacts
 """

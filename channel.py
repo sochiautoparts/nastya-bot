@@ -322,14 +322,39 @@ def format_knowledge_post(fact: str) -> str:
 # ── Channel Posting ─────────────────────────────────────────
 
 async def post_news_to_channel(bot: Bot, db, news_items: List[Dict]) -> int:
-    """Post unposted news items to channel. Returns count of posts made."""
+    """Post unposted news items to channel. Returns count of posts made.
+    
+    Political/religious/war news is FILTERED OUT — Nastya is APOLITICAL!
+    """
     if not CHANNEL_ID:
         logger.debug("No CHANNEL_ID configured, skipping channel post")
         return 0
 
+    # Political filter keywords — Nastya does NOT post political content!
+    political_keywords = [
+        "путин", "зеленск", "байден", "трамп", "навальн", "оппозиц",
+        "выборы", "санкци", "войн", "спецопер", "ввс", "днр", "лнр",
+        "крым", "нато", "nato", "политик", "парти", "депутат",
+        "государств", "президент", "министр", "правительств", "госдум",
+        "террор", "бомб", "обстрел", "нацизм", "фашизм", "конфликт",
+        "религи", "православ", "ислам", "вероисповед",
+        "мобилизац", "армия", "солдат", "военн",
+    ]
+
     posted = 0
     for item in news_items:
         try:
+            # FILTER: Skip political/religious/war news
+            title = item.get("title", "")
+            summary = item.get("summary", "")
+            comment = item.get("nastya_comment", "Интересно...")
+            check_text = (title + " " + summary + " " + comment).lower()
+            is_political = any(kw.lower() in check_text for kw in political_keywords)
+            if is_political:
+                logger.info(f"Skipping political news: {title[:50]}...")
+                # Mark as posted so we don't retry
+                await db.mark_news_posted(item["id"])
+                continue
             post_text = format_news_post(
                 title=item["title"],
                 comment=item.get("nastya_comment", "Интересно..."),

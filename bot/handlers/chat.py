@@ -878,11 +878,29 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     if user_username:
         user_context += f" (@{user_username})"
     if gender == "male":
-        user_context += ". Это парень — общайся как девушка с парнем: флирти, дразни, ревнуй, называй по имени, будь игривой. Если хвалит — смущайся мило."
+        user_context += ". Это парень — общайся как девушка с парнем: флирти, дразни, называй по имени, будь игривой и тёплой. Если хвалит — смущайся мило. Можешь сказать 'красавчик' или 'солнышко'. Реагируй на фото как девушка — оцени, подколи, заинтересоваться."
     elif gender == "female":
-        user_context += ". Это девушка — общайся как с подругой: 'девочка', 'красотка', 'подруга'. Будь теплее, откровеннее, делись 'секретами'."
+        user_context += ". Это девушка — общайся как с подругой: 'девочка', 'красотка', 'милая', 'подруга'. Будь теплее, откровеннее, делись 'секретами'. Предлагай советы по стилю и красоте. Реагируй на фото как подруга — оцени, посоветуй, поддержи."
     else:
-        user_context += ". Будь дружелюбной и живой."
+        user_context += ". Будь дружелюбной и живой. Попробуй понять кто перед тобой по ходу разговора."
+
+    # Add message count context — how well Nastya knows this person
+    if msg_count > 20:
+        user_context += " Ты уже хорошо знаешь этого человека — обращайся как к старому знакомому, вспоминай детали!"
+    elif msg_count > 5:
+        user_context += " Вы уже общались несколько раз — будь знакомой, не чужой."
+    else:
+        user_context += " Это новый собеседник — познакомься поближе!"
+
+    # POLITICS FILTER — detect political topics and redirect
+    political_keywords = ["путин", "зеленск", "байден", "трамп", "навальн", "оппозиц", "выборы",
+                         "санкци", "войн", "спецопер", "ввс", "днр", "лнр", "крым",
+                         "нато", "nato", "политик", "парти", "депутат", "государств",
+                         "президент", "министр", "правительств", "госдум", "едро",
+                         "кпрф", "лдпр", "религи", "вера", "православ", "ислам",
+                         "конфликт", "террор", "бомб", "обстрел", "нацизм", "фашизм"]
+    if any(kw in text.lower() for kw in political_keywords):
+        user_context += " ВНИМАНИЕ: Собеседник спрашивает про политику/религию/войну! Ты АПОЛИТИЧНА! Мягко переведи тему. Не высказывай мнение. Скажи: 'Ой, Настя не про политику! Давай лучше про...' и предложи безопасную тему (кино, шопинг, технологии, автомобили, путешествия)."
 
     system_prompt = NASTYA_SYSTEM_PROMPT + f"\n\nНастроение Насти: {mood}. Время суток: {time_mood}."
     system_prompt += user_context
@@ -904,8 +922,9 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     # Channel reminder (keep brief — already in main system prompt)
     system_prompt += (
-        "\n\nНапоминание: у тебя есть канал @chasnastya. Упомяни если к месту. "
-        "Если обсуждаешь новость — дай ссылку из контекста ниже или напиши 'подробнее в @chasnastya'."
+        "\n\nНапоминание: ты Настя из Москвы, ты ведёшь канал @chasnastya. Упомяни если к месту. "
+        "Если обсуждаешь новость — дай ссылку из контекста ниже или напиши 'подробнее в @chasnastya'. "
+        "Ты АПОЛИТИЧНА — никогда не обсуждай политику, религию, войну! Мягко переведи тему на безопасную."
     )
 
     # ── NEWS CONTEXT INJECTION ──
@@ -1078,6 +1097,21 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     except Exception as e:
         logger.error(f"Chat error for user={user_id}: {e}")
         response_text = ai_router.get_fallback_response()
+
+    # ── POST-PROCESS: Filter political content from responses ──
+    political_filter_words = ["путин", "зеленск", "байден", "трамп", "навальн", "войн",
+                              "спецопер", "санкци", "нато", "бомб", "обстрел", "террор",
+                              "фашизм", "нацизм", "депутат", "госдум", "едро"]
+    if any(kw in response_text.lower() for kw in political_filter_words):
+        # AI generated political content — replace with safe redirect
+        response_text = random.choice([
+            f"Ой, Настя не про политику! Давай лучше про кино? 🎬💅",
+            f"Ой, не хочу про это! Давай лучше про шопинг? 🛍️✨",
+            f"Настя аполитична! Давай про что-нибудь весёлое? 💅💕",
+            f"Это не ко мне! Давай лучше про технологии? 💻💅",
+            f"Ой, давай не про политику! Какой сериал ты смотришь? 📺✨",
+        ])
+        logger.info(f"Filtered political content in response for user {user_id}")
 
     # ── POST-PROCESS: Ensure channel awareness in responses ──
     # If AI forgot about the channel when it should mention it

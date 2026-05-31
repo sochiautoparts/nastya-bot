@@ -20,10 +20,11 @@ logger = logging.getLogger(__name__)
 TEXT_BASE = "https://text.pollinations.ai"
 
 TEXT_MODELS = {
-    "default": "openai",      # GPT-4o-mini
-    "fast": "mistral",        # Mistral Small
-    "reasoning": "deepseek",  # DeepSeek V3
+    "default": "openai",      # GPT-4o-mini — good Russian + vision
+    "fast": "mistral",        # Mistral Small — fast responses
+    "reasoning": "deepseek",  # DeepSeek V3 — reasoning tasks
     "vision": "openai",       # openai model supports vision
+    "qwen": "qwen",           # Qwen — excellent for multilingual/Russian
 }
 
 
