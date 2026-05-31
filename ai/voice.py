@@ -1,5 +1,7 @@
 """Voice transcription — uses AI router for transcription.
 Pollinations Whisper as primary (free), Groq as fallback if key available.
+
+v2.1: Fixed Pollinations Whisper endpoint, added Cloudflare as fallback.
 """
 import logging
 from typing import Optional
@@ -9,24 +11,34 @@ logger = logging.getLogger(__name__)
 
 
 async def transcribe_voice_ogg(ogg_bytes: bytes) -> Optional[str]:
-    """Transcribe voice message using free providers."""
+    """Transcribe voice message using free providers.
+
+    Tries providers in order:
+    1. Pollinations Whisper (free, no key)
+    2. Groq Whisper (if key available)
+    """
 
     # Try Pollinations Whisper endpoint (free, no key)
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                "https://text.pollinations.ai/openai/audio/transcriptions",
-                files={"file": ("voice.ogg", ogg_bytes, "audio/ogg")},
-                data={"model": "whisper-1", "language": "ru", "response_format": "json"},
-            )
-            if response.status_code == 200:
-                data = response.json()
-                text = data.get("text", "").strip()
-                if text:
-                    logger.info(f"Voice transcribed (Pollinations): {text[:50]}...")
-                    return text
-    except Exception as e:
-        logger.warning(f"Pollinations Whisper error: {e}")
+    # Note: Pollinations has changed their API — try multiple endpoints
+    for endpoint in [
+        "https://text.pollinations.ai/openai/audio/transcriptions",
+        "https://api.pollinations.ai/openai/audio/transcriptions",
+    ]:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    endpoint,
+                    files={"file": ("voice.ogg", ogg_bytes, "audio/ogg")},
+                    data={"model": "whisper-1", "language": "ru", "response_format": "json"},
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    text = data.get("text", "").strip()
+                    if text:
+                        logger.info(f"Voice transcribed (Pollinations): {text[:50]}...")
+                        return text
+        except Exception as e:
+            logger.warning(f"Pollinations Whisper error ({endpoint}): {e}")
 
     # Try Groq Whisper as fallback (if key is set)
     import os

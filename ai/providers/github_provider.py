@@ -1,13 +1,12 @@
-"""Cloudflare Workers AI Provider — serverless AI via OpenAI-compatible API.
+"""GitHub Models Provider — free AI models via GitHub Marketplace.
 
-Ported from ai-mega-bot + enhanced with vision support.
-Requires: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
-Free tier: 10,000 neurons/day (enough for thousands of chat requests)
-Models: Llama 3.3 70B, Llama 4 Scout, Qwen 2.5 Coder 32B, DeepSeek R1, Llava (vision).
+Uses GITHUB_TOKEN for authentication.
+Free tier: GitHub Models provides access to GPT-4o-mini, Llama, etc.
+Rate limited but free — great as reliable fallback.
+Supports vision via GPT-4o-mini.
 """
 import base64
 import logging
-import os
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -17,36 +16,30 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 logger = logging.getLogger(__name__)
 
 TEXT_MODELS = {
-    "default": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-    "fast": "@cf/meta/llama-3.1-8b-instruct-fp8",
-    "reasoning": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-    "code": "@cf/qwen/qwen2.5-coder-32b-instruct",
+    "default": "gpt-4o-mini",
+    "fast": "gpt-4o-mini",
+    "reasoning": "meta-llama-3.1-70b-instruct",
 }
 
-VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct"
-
-CHAT_URL_TEMPLATE = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions"
+VISION_MODEL = "gpt-4o-mini"
 
 
-class CloudflareProvider(BaseProvider):
-    """Cloudflare Workers AI provider using httpx.
+class GitHubModelsProvider(BaseProvider):
+    """GitHub Models provider — free, reliable, uses GITHUB_TOKEN.
 
-    Now with vision support via Llama 3.2 11B Vision.
-    Promoted to top of provider chain — free, fast, reliable.
+    GitHub Models provides free access to various AI models
+    through the Azure AI inference API.
     """
 
-    name: str = "cloudflare"
-    supports_streaming: bool = False
+    name: str = "github_models"
     supports_vision: bool = True
 
-    def __init__(self, api_key: str = "", timeout: float = 30.0, account_id: str = ""):
+    def __init__(self, api_key: str = "", timeout: float = 30.0):
         super().__init__(api_key=api_key, timeout=timeout)
-        self.account_id = account_id or os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
 
     async def init(self) -> None:
-        if not self.account_id:
-            logger.warning("Cloudflare: no ACCOUNT_ID configured")
         self._client = httpx.AsyncClient(
+            base_url="https://models.inference.ai.azure.com",
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -55,16 +48,9 @@ class CloudflareProvider(BaseProvider):
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
 
-    def is_available(self) -> bool:
-        """Cloudflare needs both API token and account ID."""
-        return bool(self.api_key and self.account_id)
-
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         if not self._client:
             await self.init()
-
-        if not self.account_id:
-            raise ProviderError(self.name, "No account ID configured", retryable=False)
 
         image_base64 = kwargs.pop("image_base64", None)
         model_key: str = kwargs.get("model_key", "default")
@@ -74,7 +60,7 @@ class CloudflareProvider(BaseProvider):
         max_tokens: int = kwargs.get("max_tokens", 4096)
         messages_history: Optional[List[Dict[str, Any]]] = kwargs.get("messages")
 
-        # If image provided, use vision model
+        # Use vision model if image provided
         if image_base64:
             model = VISION_MODEL
 
@@ -82,7 +68,6 @@ class CloudflareProvider(BaseProvider):
 
         # Add image content to last user message if vision
         if image_base64 and messages:
-            # Find the last user message and add image content
             for i in range(len(messages) - 1, -1, -1):
                 if messages[i].get("role") == "user":
                     messages[i] = {
@@ -101,37 +86,20 @@ class CloudflareProvider(BaseProvider):
             "max_tokens": max_tokens,
         }
 
-        url = CHAT_URL_TEMPLATE.format(account_id=self.account_id)
-
         try:
-            response = await self._client.post(url, json=payload)
+            response = await self._client.post("/v1/chat/completions", json=payload)
             response.raise_for_status()
             data = response.json()
 
-            # Cloudflare wraps in {success, result, ...}
-            if not data.get("success", True) and "result" not in data:
-                errors = data.get("errors", [])
-                err_msg = errors[0].get("message", "Unknown error") if errors else "Unknown error"
-                raise ProviderError(self.name, f"API error: {err_msg}", retryable=True)
-
-            # OpenAI-compatible response format
-            if "choices" in data:
-                choice = data["choices"][0]
-                usage = data.get("usage", {})
-                text = choice["message"]["content"]
-            elif "result" in data and "response" in data["result"]:
-                text = data["result"]["response"]
-                usage = {}
-            else:
-                # Fallback: try to extract text from any reasonable structure
-                text = str(data.get("result", {}).get("response", ""))
-                usage = {}
+            choice = data["choices"][0]
+            usage = data.get("usage", {})
 
             return AIResponse(
-                text=text,
+                text=choice["message"]["content"],
                 provider=self.name,
-                model=model,
+                model=f"github:{model}",
                 tokens_used=usage.get("total_tokens", 0),
+                finish_reason=choice.get("finish_reason", ""),
                 metadata={
                     "prompt_tokens": usage.get("prompt_tokens", 0),
                     "completion_tokens": usage.get("completion_tokens", 0),
@@ -145,7 +113,5 @@ class CloudflareProvider(BaseProvider):
             status = exc.response.status_code
             retryable = status in (429, 500, 502, 503, 504)
             raise ProviderError(self.name, f"HTTP {status}: {exc.response.text[:200]}", retryable=retryable)
-        except ProviderError:
-            raise
         except Exception as exc:
             raise ProviderError(self.name, f"Unexpected error: {exc}", retryable=True)

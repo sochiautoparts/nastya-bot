@@ -4,6 +4,7 @@ All secrets from environment variables only.
 
 NO Grok (only 2 requests, useless — REMOVED)
 Added: News sources, channel settings, AI caching, intelligent conversation
+v2.1: Cloudflare Workers AI promoted, Moscow timezone, better RSS sources
 """
 import os
 from typing import Dict, List
@@ -64,25 +65,29 @@ CACHE_MAX_MEMORY = 500       # LRU entries in memory
 CHANNEL_ID: str = _env("CHANNEL_ID", "-1003980256272")
 CHANNEL_USERNAME: str = _env("CHANNEL_USERNAME", "chasnastya")
 
+# ── Timezone — Настя из Москвы! ───────────────────────────
+MOSCOW_TZ = "Europe/Moscow"
+
 # ── News Sources — Настя в курсе событий! ───────────────────
-# RSS feeds for Russian news — multiple categories for variety
+# RSS feeds for Russian news — RELIABLE sources with fallbacks
 NEWS_SOURCES: List[Dict[str, str]] = [
-    # General news
+    # General news — reliable sources that don't block automated access
     {"name": "РБК", "url": "https://rssexport.rbc.ru/rbcnews/news/30/full.rss", "category": "general"},
-    {"name": "Lenta.ru", "url": "https://lenta.ru/rss", "category": "general"},
     {"name": "РИА Новости", "url": "https://ria.ru/export/rss2/archive/index.xml", "category": "general"},
-    {"name": "ТАСС", "url": "https://tass.ru/rss/v2.xml", "category": "general"},
+    {"name": "Интерфакс", "url": "https://www.interfax.ru/rss.asp", "category": "general"},
+    {"name": "Ведомости", "url": "https://www.vedomosti.ru/rss/news", "category": "general"},
+    # International (reliable, always works)
+    {"name": "BBC Russian", "url": "https://feeds.bbci.co.uk/russian/rss.xml", "category": "world"},
+    {"name": "DW Russian", "url": "https://rss.dw.com/rdf/rss-ru-all", "category": "world"},
+    {"name": "Meduza", "url": "https://meduza.io/rss/all", "category": "world"},
     # Tech
     {"name": "Хабр", "url": "https://habr.com/ru/rss/best/daily/", "category": "tech"},
     {"name": "iXBT", "url": "https://www.ixbt.com/export/news.rss", "category": "tech"},
+    {"name": "3DNews", "url": "https://3dnews.ru/news/rss/", "category": "tech"},
     # Gaming & Entertainment
     {"name": "DTF", "url": "https://dtf.ru/rss", "category": "gaming"},
-    {"name": "КиноПоиск", "url": "https://www.kinopoisk.ru/media/rss/", "category": "entertainment"},
-    # Lifestyle
-    {"name": "TJournal", "url": "https://tjournal.ru/rss", "category": "internet"},
-    {"name": "НЭГ", "url": "https://neg.by/rss/", "category": "general"},
-    # International (for broader context)
-    {"name": "BBC Russian", "url": "https://feeds.bbci.co.uk/russian/rss.xml", "category": "world"},
+    # Lifestyle / Internet
+    {"name": "Пикабу", "url": "https://pikabu.ru/xmlfeed.php", "category": "internet"},
 ]
 
 # How often to check news (seconds)

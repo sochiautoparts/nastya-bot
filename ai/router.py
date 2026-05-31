@@ -1,8 +1,10 @@
 """AI Router — BULLETPROOF routing with multi-phase fallback + caching.
 
-Architecture (v2.0 from ai-mega-bot + Nastya enhancements):
+Architecture (v2.1 — Cloudflare-first + GitHub Models):
   - 9 providers with proper fallback chain (NO Grok)
-  - API-key providers FIRST (fast, reliable)
+  - CLOUDFLARE FIRST (free, fast, reliable, has vision)
+  - GitHub Models second (free, uses GITHUB_TOKEN, GPT-4o-mini)
+  - Other API-key providers next (sambanova, cerebras, etc.)
   - FREE providers as fallbacks (Pollinations, Chutes)
   - NEVER raises exceptions to caller — ALWAYS returns AIResponse
   - 30s timeouts with 5s connect timeout
@@ -46,21 +48,23 @@ FALLBACK_RESPONSES = [
     "А? Настя считала звёздочки... Что? ⭐",
 ]
 
-# Provider chain: API-key providers FIRST (reliable, fast),
+# Provider chain v2.1: Cloudflare FIRST (free + reliable + vision),
+# then GitHub Models (free + GPT-4o-mini), then other key providers,
 # then free providers as fallbacks — NO Grok!
 PROVIDER_CHAIN = [
-    "sambanova", "cerebras", "mistral", "openrouter",
-    "cloudflare", "gemini", "pollinations", "chutes",
+    "cloudflare", "github_models", "sambanova", "cerebras",
+    "mistral", "openrouter", "gemini", "pollinations", "chutes",
 ]
 
 # Map env vars to provider configs — NO Grok!
 PROVIDER_KEYS = {
+    "cloudflare": CLOUDFLARE_API_TOKEN,
+    "github_models": GITHUB_TOKEN,
     "cerebras": CEREBRAS_API_KEY,
     "openrouter": OPENROUTER_API_KEY,
     "sambanova": SAMBANOVA_API_KEY,
     "mistral": MISTRAL_API_KEY,
     "gemini": GEMINI_API_KEY,
-    "cloudflare": CLOUDFLARE_API_TOKEN,
 }
 
 
@@ -103,6 +107,8 @@ class AIRouter:
     Based on ai-mega-bot's proven AIRouter pattern with Nastya-specific
     enhancements: circuit breaker, provider caching, response caching,
     and in-character fallback responses.
+
+    v2.1: Cloudflare-first chain + GitHub Models.
     """
 
     def __init__(self, db=None):

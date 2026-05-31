@@ -82,9 +82,10 @@ NIGHT_POSTS = [
 
 
 def _get_time_posts() -> List[str]:
-    """Get post templates based on current hour."""
+    """Get post templates based on current hour (Moscow time)."""
     import datetime
-    hour = datetime.datetime.now().hour
+    from zoneinfo import ZoneInfo
+    hour = datetime.datetime.now(ZoneInfo("Europe/Moscow")).hour
     if 6 <= hour < 12:
         return MORNING_POSTS + PERSONAL_POSTS
     elif 12 <= hour < 18:

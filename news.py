@@ -1,4 +1,4 @@
-"""Nastya News Engine 2.0 — RSS news fetching + AI summarization.
+"""Nastya News Engine 2.1 — RSS news fetching + AI summarization.
 
 Architecture:
   - Fetches RSS feeds from configured sources using feedparser (robust)
@@ -8,6 +8,7 @@ Architecture:
   - Stores in DB for channel posting + conversation context
   - Runs periodically as background task
   - Picks interesting items by category priority
+  - v2.1: More reliable RSS sources, better error handling, Moscow time
 """
 import logging
 import time
@@ -148,24 +149,28 @@ def _score_news_interest(item: Dict) -> float:
 
 
 async def fetch_all_news() -> List[Dict]:
-    """Fetch news from all configured RSS sources."""
+    """Fetch news from all configured RSS sources.
+
+    Uses concurrent fetching for speed. Each source has its own timeout.
+    Logs per-source errors without failing the whole batch.
+    """
     all_items = []
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(15.0, connect=5.0),
         follow_redirects=True,
-        headers={"User-Agent": "NastyaBot/2.0 (RSS Reader)"},
+        headers={"User-Agent": "Mozilla/5.0 (compatible; NastyaBot/2.1; RSS Reader)"},
     ) as client:
+        # Fetch all sources concurrently
+        tasks = []
         for source in NEWS_SOURCES:
-            try:
-                response = await client.get(source["url"])
-                if response.status_code == 200:
-                    items = _parse_rss(response.text, source["name"], source.get("category", "general"))
-                    all_items.extend(items)
-                    logger.info(f"Fetched {len(items)} items from {source['name']}")
-                else:
-                    logger.warning(f"RSS {source['name']}: HTTP {response.status_code}")
-            except Exception as e:
-                logger.warning(f"RSS fetch error {source['name']}: {e}")
+            tasks.append(_fetch_single_source(client, source))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for result in results:
+            if isinstance(result, list):
+                all_items.extend(result)
+            # Exceptions are already logged in _fetch_single_source
 
     # Score and sort by interest level
     for item in all_items:
@@ -178,6 +183,25 @@ async def fetch_all_news() -> List[Dict]:
         item.pop("_interest_score", None)
 
     return all_items
+
+
+async def _fetch_single_source(client: httpx.AsyncClient, source: Dict) -> List[Dict]:
+    """Fetch and parse a single RSS source."""
+    try:
+        response = await client.get(source["url"])
+        if response.status_code == 200:
+            items = _parse_rss(response.text, source["name"], source.get("category", "general"))
+            logger.info(f"Fetched {len(items)} items from {source['name']}")
+            return items
+        else:
+            logger.warning(f"RSS {source['name']}: HTTP {response.status_code}")
+            return []
+    except Exception as e:
+        logger.warning(f"RSS fetch error {source['name']}: {e}")
+        return []
+
+
+import asyncio  # needed for gather
 
 
 async def store_news_items(db, items: List[Dict]) -> int:

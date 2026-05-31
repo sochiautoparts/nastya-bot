@@ -1,15 +1,18 @@
-"""Nastya Bot 2.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 2.1 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v2.0:
+Architecture v2.1:
   - ErrorHandlingMiddleware as OUTER middleware — catches ALL exceptions
   - LoggingMiddleware — logs all messages for monitoring
   - RateLimitMiddleware — prevents spam/abuse
-  - AI Router: 8+ providers + caching, NEVER crashes, ALWAYS responds
+  - AI Router: 9 providers + caching, NEVER crashes, ALWAYS responds
+  - CLOUDFLARE FIRST in provider chain (free + reliable + vision)
+  - GitHub Models as second provider (free GPT-4o-mini)
   - Shared persistent DB connection with write lock — concurrent-safe
   - Stars donations with ACTIVE Pay buttons via send_invoice
-  - NEWS ENGINE: RSS fetching + AI commentary (feedparser + XML fallback)
+  - NEWS ENGINE: RSS fetching + AI commentary (concurrent fetching)
   - CHANNEL MANAGER: auto-posting to @chasnastya with personality posts
   - Cross-linking: channel content ↔ user conversations
+  - MOSCOW TIMEZONE — Настя из Москвы!
   - Keep-alive chain via GH PAT trigger
   - Memory leak prevention: periodic tracker cleanup
   - NO "голова разболелась" error messages — Nastya ALWAYS responds in character

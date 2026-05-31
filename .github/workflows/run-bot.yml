@@ -61,6 +61,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
+          # GitHub Models — free GPT-4o-mini access
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Channel defaults are in config.py (@chasnastya, ID: -1003980256272)
           # Override with secrets if needed:

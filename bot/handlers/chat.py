@@ -22,6 +22,7 @@ import io
 import re
 import time
 import datetime
+from zoneinfo import ZoneInfo
 from aiogram import Router, F
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
@@ -64,11 +65,26 @@ def _cleanup_trackers():
         del _proactive_tracker[uid]
 
 
+# ── Moscow timezone helper ──────────────────────────────────
+
+_MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+
+
+def _moscow_now() -> datetime.datetime:
+    """Get current Moscow time — Настя из Москвы!"""
+    return datetime.datetime.now(_MOSCOW_TZ)
+
+
+def _moscow_hour() -> int:
+    """Get current hour in Moscow timezone."""
+    return _moscow_now().hour
+
+
 # ── Time-aware greetings ─────────────────────────────────────
 
 def _get_time_greeting() -> str:
-    """Get a time-appropriate greeting mood."""
-    hour = datetime.datetime.now().hour
+    """Get a time-appropriate greeting mood (Moscow time!)."""
+    hour = _moscow_hour()
     if 6 <= hour < 12:
         return random.choice(["утренняя", "сонная", "кофейная"])
     elif 12 <= hour < 18:
@@ -722,6 +738,21 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         gender_ctx = "Собеседник — женщина. Обращайся как к подруге."
 
     system_prompt = NASTYA_SYSTEM_PROMPT + f"\n\nСейчас у Насти настроение: {mood}. Время суток: {time_mood}. {gender_ctx}"
+
+    # Add Moscow time context for time-aware behavior
+    now_msk = _moscow_now()
+    time_desc = f"Сейчас {now_msk.strftime('%H:%M')} по Москве"
+    if 6 <= now_msk.hour < 10:
+        time_desc += " (утро — Настя может быть сонной)"
+    elif 10 <= now_msk.hour < 14:
+        time_desc += " (день — Настя может хотеть обедать)"
+    elif 14 <= now_msk.hour < 18:
+        time_desc += " (вторая половина дня — Настя может хотеть шопинг)"
+    elif 18 <= now_msk.hour < 22:
+        time_desc += " (вечер — Настя может хотеть сериал)"
+    else:
+        time_desc += " (ночь — Настя может хотеть спать)"
+    system_prompt += f"\n{time_desc}"
 
     # ── NEWS CONTEXT INJECTION ──
     news_ctx = await _build_news_context(db)
