@@ -46,18 +46,22 @@ jobs:
           restore-keys: |
             nastya-db-
 
-      - name: Run Nastya Bot 7.0 💅
+      - name: Run Nastya Bot 13.0 💅
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           OWNER_ID: ${{ secrets.OWNER_ID }}
           ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
           BOT_USERNAME: asnastya_bot
-          # AI Provider keys — OpenRouter PRIORITY #1, Cloudflare #2!
+          # AI Provider keys — 4 FREE UNLIMITED providers need NO keys!
+          # Pollinations, Chutes, Blackbox — always free, no key
+          # HuggingFace — works without key (optional)
+          HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
+          # OpenRouter — DEMOTED (50 free req/day — too greedy!)
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # Additional providers (optional fallbacks)
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           SAMBANOVA_API_KEY: ${{ secrets.SAMBANOVA_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}

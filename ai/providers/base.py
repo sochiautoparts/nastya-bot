@@ -43,7 +43,7 @@ class BaseProvider:
     supports_vision: bool = False
 
     # Providers that work without API keys
-    NO_KEY_PROVIDERS = {"pollinations", "chutes"}
+    NO_KEY_PROVIDERS = {"pollinations", "chutes", "blackbox", "huggingface"}
 
     def __init__(self, api_key: str = "", timeout: float = 30.0):
         self.api_key = api_key

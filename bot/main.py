@@ -1,14 +1,15 @@
-"""Nastya Bot 12.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 13.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v12.0:
+Architecture v13.0:
+  - 4 FREE UNLIMITED providers as PRIMARY!
+  - Pollinations FIRST (always free, always available, vision)
+  - Chutes SECOND (free DeepSeek V3, no key, vision)
+  - Blackbox THIRD (free, unlimited, multiple models, vision)
+  - HuggingFace FOURTH (free tier, optional key, many models, vision)
+  - OpenRouter DEMOTED to FIFTH (only 50 free req/day — too greedy!)
   - ГЕНДЕРНАЯ АДАПТАЦИЯ: Настя понимает с кем общается (мужчина/женщина)
   - МАКСИМАЛЬНО ЖИВАЯ РЕЧЬ: ещё более человечное общение
-  - OPTIMIZED VISION: фото понимаются через vision-модели OpenRouter
-  - OpenRouter as PRIMARY (25+ free models, vision support)
-  - Cloudflare Workers AI as SECONDARY (free, reliable, vision)
-  - Groq as TERTIARY (free, ultra-fast LPU)
-  - HuggingFace as QUATERNARY (free tier)
-  - DeepSeek REMOVED ENTIRELY (402 Insufficient Balance)
+  - OPTIMIZED VISION: фото понимаются через vision-модели
   - Web search, knowledge injection, channel management
   - Context memory: 40 messages, 30 days
   - Stars donations, proactive messages (reduced frequency)
@@ -21,6 +22,17 @@ import sys
 import time
 import traceback
 import random
+from pathlib import Path
+
+# Load .env file before any other imports
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).parent.parent / ".env"
+    if _env_path.exists():
+        load_dotenv(_env_path)
+        logging.getLogger(__name__).info(f"Loaded .env from {_env_path}")
+except ImportError:
+    pass  # python-dotenv not installed, rely on system env vars
 
 from aiogram import Bot, Dispatcher, BaseMiddleware
 from aiogram.enums import ParseMode
@@ -245,7 +257,7 @@ async def memory_cleanup() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 12.0 Starting (Gender-aware, Vision-optimized, More human) ===")
+    logger.info("=== Nastya Bot 13.0 Starting (4 Free Unlimited Providers, Vision-optimized, More human) ===")
 
     db = Database(DB_PATH)
     await db.init()
@@ -287,7 +299,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 12.0 Ready ===")
+    logger.info("=== Nastya Bot 13.0 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:

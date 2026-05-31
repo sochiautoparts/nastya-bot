@@ -1,13 +1,14 @@
 """AI Router — BULLETPROOF routing with multi-phase fallback + caching.
 
-Architecture (v7.0 — OpenRouter PRIMARY for maximum quality):
-  - OpenRouter FIRST (25+ free models, Gemma 4 31B, Nemotron 120B, vision)
-  - Cloudflare Workers AI SECOND (free, reliable, many models, vision)
-  - Groq THIRD (free, ultra-fast LPU, excellent Russian, 30 RPM)
-  - HuggingFace FOURTH (free tier with token, many models)
-  - Chutes FIFTH (free DeepSeek V3, but rate-limited)
-  - Pollinations SIXTH (always free, always available, leaks ads — cleaned)
-  - GitHub Models SEVENTH (free, needs PAT with 'models' permission)
+Architecture (v13.0 — 4 FREE UNLIMITED providers as PRIMARY):
+  - Pollinations FIRST (always free, always available, vision support)
+  - Chutes SECOND (free DeepSeek V3, no key, vision support)
+  - Blackbox THIRD (free, unlimited, multiple models, vision support)
+  - HuggingFace FOURTH (free tier, optional key, many models, vision)
+  - OpenRouter FIFTH (50 free req/day — demoted, too greedy!)
+  - Cloudflare SIXTH (free if credentials available)
+  - Groq SEVENTH (free, ultra-fast LPU, excellent Russian, 30 RPM)
+  - GitHub Models EIGHTH (free, needs PAT with 'models' permission)
   - Other API-key providers as additional fallbacks
   - NEVER raises exceptions to caller — ALWAYS returns AIResponse
   - 30s timeouts with proper connect timeouts
@@ -39,6 +40,9 @@ from bot.config import (
     CACHE_TTL_TEXT, CACHE_MAX_MEMORY,
 )
 
+# 4 FREE UNLIMITED providers — no API key needed, no rate limits
+FREE_PROVIDERS = {"pollinations", "chutes", "blackbox", "huggingface"}
+
 logger = logging.getLogger(__name__)
 
 # Fallback responses — used when ALL AI providers fail
@@ -51,20 +55,24 @@ FALLBACK_RESPONSES = [
     "Кстати, заходи на мой канал @chasnastya! 💅 А ты что сказал?",
 ]
 
-# Provider chain v7.0: OpenRouter FIRST for quality, Cloudflare SECOND
+# Provider chain v13.0: 4 FREE UNLIMITED providers FIRST, then limited ones
 PROVIDER_CHAIN = [
-    # OpenRouter — PRIMARY, 25+ free models including vision (Gemma 4, Nemotron)
-    "openrouter",
-    # Cloudflare — SECONDARY, free, reliable, many models, vision support
-    "cloudflare",
-    # Groq — fast LPU inference, great Russian, 30 RPM
-    "groq",
-    # HuggingFace — free tier with token, many models
-    "huggingface",
-    # Chutes — free DeepSeek V3, but rate-limited
-    "chutes",
-    # Pollinations — always free, always available, leaks ads (cleaned)
+    # ── 4 FREE UNLIMITED providers (no key, no limits, vision) ──
+    # Pollinations — always free, always available, vision support
     "pollinations",
+    # Chutes — free DeepSeek V3, no key, vision support
+    "chutes",
+    # Blackbox — free, unlimited, multiple models (GPT-4o, Gemini, Claude), vision
+    "blackbox",
+    # HuggingFace — free tier, optional key, many models, vision support
+    "huggingface",
+    # ── Limited free providers (demoted — too greedy!) ──
+    # OpenRouter — only 50 free req/day, demoted from PRIMARY
+    "openrouter",
+    # Cloudflare — free if credentials available, reliable, vision
+    "cloudflare",
+    # Groq — free, ultra-fast LPU, great Russian, 30 RPM
+    "groq",
     # GitHub Models — free, needs PAT with 'models' permission
     "github_models",
     # Other API-key providers as additional fallbacks
@@ -142,8 +150,12 @@ class AIRouter:
             try:
                 api_key = PROVIDER_KEYS.get(name, "")
 
-                if name in ("pollinations", "chutes"):
+                if name in ("pollinations", "chutes", "blackbox"):
+                    # Always-free providers — no key needed
                     provider = provider_cls(timeout=30.0)
+                elif name == "huggingface":
+                    # HuggingFace works with or without key
+                    provider = provider_cls(api_key=api_key, timeout=30.0)
                 elif name == "cloudflare":
                     provider = provider_cls(
                         api_key=api_key, timeout=30.0,
@@ -330,33 +342,20 @@ class AIRouter:
             except Exception:
                 pass
 
-        # ── PHASE 3: Try Pollinations with simplified prompt ──
-        if "pollinations" in self.providers:
-            try:
-                provider = self.providers["pollinations"]
-                result = await provider.generate(
-                    prompt, system_prompt=system_prompt,
-                    messages=None,
-                )
-                if result and result.text:
-                    self._mark_success("pollinations")
-                    return result
-            except Exception as e:
-                logger.error(f"Even Pollinations failed: {e}")
-
-        # ── PHASE 4: Try Chutes as last resort ──
-        if "chutes" in self.providers:
-            try:
-                provider = self.providers["chutes"]
-                result = await provider.generate(
-                    prompt, system_prompt=system_prompt,
-                    messages=None,
-                )
-                if result and result.text:
-                    self._mark_success("chutes")
-                    return result
-            except Exception as e:
-                logger.error(f"Even Chutes failed: {e}")
+        # ── PHASE 3: Try free providers with simplified prompt (no history) ──
+        for free_name in ["pollinations", "chutes", "blackbox"]:
+            if free_name in self.providers:
+                try:
+                    provider = self.providers[free_name]
+                    result = await provider.generate(
+                        prompt, system_prompt=system_prompt,
+                        messages=None,
+                    )
+                    if result and result.text:
+                        self._mark_success(free_name)
+                        return result
+                except Exception as e:
+                    logger.error(f"Even {free_name} failed: {e}")
 
         # ── PHASE 5: FALLBACK — bot ALWAYS responds ──
         self._total_fallbacks += 1

@@ -1,10 +1,12 @@
-"""Nastya Bot 7.0 — Configuration
+"""Nastya Bot 13.0 — Configuration
 All secrets from environment variables only.
 
-v7.0: OpenRouter as PRIMARY (25+ free models, Gemma 4 31B, Nemotron 120B, vision),
-      Cloudflare Workers AI as SECONDARY (free, reliable, many models),
-      Groq as TERTIARY (free, ultra-fast LPU, great Russian),
-      HuggingFace as QUATERNARY (free tier with token),
+v13.0: 4 FREE UNLIMITED providers as PRIMARY!
+      Pollinations FIRST (always free, always available, vision)
+      Chutes SECOND (free DeepSeek V3, no key, vision)
+      Blackbox THIRD (free, unlimited, multiple models, vision)
+      HuggingFace FOURTH (free tier, optional key, many models, vision)
+      OpenRouter DEMOTED to FIFTH (only 50 free req/day — too greedy!)
       DeepSeek REMOVED ENTIRELY (was returning 402 Insufficient Balance),
       Enhanced channel memory — Nastya ALWAYS remembers @chasnastya,
       News links MANDATORY in every news-related response,
@@ -39,15 +41,22 @@ ADMIN_IDS: List[int] = list(set(
 BOT_USERNAME: str = _env("BOT_USERNAME", "asnastya_bot")
 
 # ── AI Provider API keys — NO DeepSeek (402 Insufficient Balance)! ───
+# ── 4 FREE UNLIMITED providers (Pollinations, Chutes, Blackbox, HuggingFace) ──
+# These work WITHOUT API keys — no limits, no costs!
+# Pollinations, Chutes, Blackbox — always free, no key needed
+# HuggingFace — works without key (lower limits), better with key
+
+# OPENROUTER — DEMOTED from PRIMARY (only 50 free req/day — too greedy!)
+# Still useful as fallback for quality models
+OPENROUTER_API_KEY: str = _env("OPENROUTER_API_KEY")
+
 # SECONDARY: Cloudflare Workers AI — free, reliable, many models
 CLOUDFLARE_API_TOKEN: str = _env("CLOUDFLARE_API_TOKEN")
 CLOUDFLARE_ACCOUNT_ID: str = _env("CLOUDFLARE_ACCOUNT_ID")
 # TERTIARY: Groq — free, ultra-fast LPU inference, great Russian
 GROQ_API_KEY: str = _env("GROQ_API_KEY")
-# QUATERNARY: HuggingFace — free tier with token, many models
+# QUATERNARY: HuggingFace — free tier (optional key), many models
 HUGGINGFACE_API_KEY: str = _env("HUGGINGFACE_API_KEY")
-# PRIMARY: OpenRouter — 25+ free models, Gemma 4 31B, Nemotron 120B, vision
-OPENROUTER_API_KEY: str = _env("OPENROUTER_API_KEY")
 # Additional providers
 CEREBRAS_API_KEY: str = _env("CEREBRAS_API_KEY")
 SAMBANOVA_API_KEY: str = _env("SAMBANOVA_API_KEY")

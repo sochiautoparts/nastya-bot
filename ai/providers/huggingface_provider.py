@@ -1,12 +1,11 @@
-"""HuggingFace Inference API Provider — free tier models with API token.
+"""HuggingFace Inference API Provider — free tier models, API token optional.
 
 Uses HF inference API (serverless) for text generation.
-Requires: HUGGINGFACE_API_KEY
-Free tier: rate limited but works reliably with many models.
+Free tier: works WITHOUT API key (rate limited) or WITH key (higher limits).
 
-v2.0: Fixed URL format for OpenAI-compatible endpoint.
-      The correct format is: POST /models/{model}/v1/chat/completions
-      Also added Inference API fallback: POST /models/{model}
+v3.0: API key is now OPTIONAL. Free inference works without authentication.
+      Updated to work as one of the 4 free unlimited providers.
+      Added vision support via Qwen2.5-VL models.
 """
 import logging
 from typing import Any, Dict, List, Optional
@@ -38,30 +37,34 @@ class HuggingFaceProvider(BaseProvider):
 
     Uses the OpenAI-compatible endpoint for maximum compatibility.
     Falls back to the native Inference API if OpenAI-compat fails.
+    API key is OPTIONAL — works without one (with lower rate limits).
     """
 
     name: str = "huggingface"
     supports_streaming: bool = False
-    supports_vision: bool = False
+    supports_vision: bool = True  # Via Qwen2.5-VL and similar models
 
     def __init__(self, api_key: str = "", timeout: float = 30.0):
         super().__init__(api_key=api_key, timeout=timeout)
         self._last_good_model: Optional[str] = None
 
     async def init(self) -> None:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
         self._client = httpx.AsyncClient(
             base_url="https://api-inference.huggingface.co",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             timeout=httpx.Timeout(self.timeout, connect=10.0),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
-        logger.info("HuggingFace provider initialized")
+        key_status = "with API key" if self.api_key else "without API key (free)"
+        logger.info(f"HuggingFace provider initialized ({key_status})")
 
     def is_available(self) -> bool:
-        return bool(self.api_key)
+        """HuggingFace is available with or without API key."""
+        return True
 
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         if not self._client:
