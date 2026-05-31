@@ -24,7 +24,7 @@ from ai.providers.base import AIResponse, ProviderError
 from ai.providers import ALL_PROVIDERS
 from ai.voice import transcribe_voice_ogg
 from bot.config import (
-    OPENROUTER_API_KEY, GROQ_API_KEY, CEREBRAS_API_KEY,
+    OPENROUTER_API_KEY, CEREBRAS_API_KEY,
     SAMBANOVA_API_KEY, MISTRAL_API_KEY, GEMINI_API_KEY,
     CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
     GITHUB_TOKEN, CACHE_TTL_TEXT, CACHE_MAX_MEMORY,
@@ -49,13 +49,12 @@ FALLBACK_RESPONSES = [
 # Provider chain: API-key providers FIRST (reliable, fast),
 # then free providers as fallbacks — NO Grok!
 PROVIDER_CHAIN = [
-    "sambanova", "groq", "cerebras", "mistral", "openrouter",
+    "sambanova", "cerebras", "mistral", "openrouter",
     "cloudflare", "gemini", "pollinations", "chutes",
 ]
 
 # Map env vars to provider configs — NO Grok!
 PROVIDER_KEYS = {
-    "groq": GROQ_API_KEY,
     "cerebras": CEREBRAS_API_KEY,
     "openrouter": OPENROUTER_API_KEY,
     "sambanova": SAMBANOVA_API_KEY,

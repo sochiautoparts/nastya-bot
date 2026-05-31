@@ -4,11 +4,11 @@ Architecture v2.0:
   - ErrorHandlingMiddleware as OUTER middleware — catches ALL exceptions
   - LoggingMiddleware — logs all messages for monitoring
   - RateLimitMiddleware — prevents spam/abuse
-  - AI Router: 9+ providers + caching, NEVER crashes, ALWAYS responds
+  - AI Router: 8+ providers + caching, NEVER crashes, ALWAYS responds
   - Shared persistent DB connection with write lock — concurrent-safe
   - Stars donations with ACTIVE Pay buttons via send_invoice
-  - NEWS ENGINE: RSS fetching + AI commentary
-  - CHANNEL MANAGER: auto-posting to Telegram channel
+  - NEWS ENGINE: RSS fetching + AI commentary (feedparser + XML fallback)
+  - CHANNEL MANAGER: auto-posting to @chasnastya with personality posts
   - Cross-linking: channel content ↔ user conversations
   - Keep-alive chain via GH PAT trigger
   - Memory leak prevention: periodic tracker cleanup
@@ -35,7 +35,7 @@ logger = logging.getLogger("nastya-bot")
 
 from bot.config import (
     BOT_TOKEN, ADMIN_IDS, DB_PATH, SESSION_DURATION_SECONDS, OWNER_ID,
-    NEWS_FETCH_INTERVAL, CHANNEL_POST_INTERVAL, CHANNEL_ID,
+    NEWS_FETCH_INTERVAL, CHANNEL_POST_INTERVAL, CHANNEL_ID, CHANNEL_USERNAME,
 )
 
 if not BOT_TOKEN:
@@ -159,7 +159,7 @@ async def news_scheduler(bot_instance: Bot) -> None:
 
 
 async def channel_scheduler(bot_instance: Bot) -> None:
-    """Background task: periodically post to Telegram channel."""
+    """Background task: periodically post to Telegram channel @chasnastya."""
     from channel import run_channel_cycle
 
     # Wait for startup + initial news fetch
@@ -213,10 +213,29 @@ async def periodic_db_cleanup() -> None:
                 cache_deleted = await db.cache_cleanup(max_age=7200)
                 if cache_deleted > 0:
                     logger.info(f"Cache cleanup: removed {cache_deleted} old entries")
+
+                # Cleanup old news
+                from bot.config import NEWS_MAX_ITEMS
+                news_deleted = await db.cleanup_old_news(NEWS_MAX_ITEMS)
+                if news_deleted > 0:
+                    logger.info(f"News cleanup: removed {news_deleted} old news items")
         except asyncio.CancelledError:
             break
         except Exception as e:
             logger.error(f"DB cleanup error: {e}")
+
+
+async def memory_cleanup() -> None:
+    """Background task: periodically clean in-memory trackers to prevent leaks."""
+    while True:
+        try:
+            await asyncio.sleep(3600)  # Every hour
+            from bot.handlers.chat import _cleanup_trackers
+            _cleanup_trackers()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Memory cleanup error: {e}")
 
 
 # ════════════════════════════════════════════════════════════
@@ -252,6 +271,7 @@ async def on_startup(**kwargs) -> None:
         asyncio.create_task(channel_scheduler(bot))
         asyncio.create_task(proactive_scheduler(bot))
         asyncio.create_task(periodic_db_cleanup())
+        asyncio.create_task(memory_cleanup())
 
         # Startup notification
         for admin_id in ADMIN_IDS:
@@ -267,7 +287,7 @@ async def on_startup(**kwargs) -> None:
 
                     channel_info = ""
                     if CHANNEL_ID:
-                        channel_info = f"\n📺 Канал: {CHANNEL_ID}"
+                        channel_info = f"\n📺 Канал: @{CHANNEL_USERNAME}"
 
                     await bot.send_message(
                         admin_id,

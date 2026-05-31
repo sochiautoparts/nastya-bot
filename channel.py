@@ -1,11 +1,12 @@
-"""Nastya Channel Manager — auto-posting to Telegram channel.
+"""Nastya Channel Manager 2.0 — auto-posting to Telegram channel @chasnastya.
 
 Architecture:
   - Posts news with Nastya's commentary to the channel
   - Posts personality-only content (no news)
-  - Mixes news posts with personal posts for variety
+  - Mixes news posts with personal posts for variety (70/30)
   - Invites users to channel from private chats
   - Cross-references channel content in conversations
+  - Engaging post formats with questions to subscribers
 """
 import logging
 import random
@@ -15,19 +16,20 @@ from typing import Dict, List, Optional
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from bot.config import CHANNEL_ID, CHANNEL_USERNAME
+from bot.config import CHANNEL_ID, CHANNEL_USERNAME, BOT_USERNAME
 
 logger = logging.getLogger(__name__)
 
 
-# ── Channel Post Templates ──────────────────────────────────
+# ── Channel Post Templates — lively, engaging, NOT boring ──
 
 NEWS_POST_TEMPLATES = [
-    "🔥 {comment}\n\n{title}",
-    "📱 {comment}\n\n{title}",
-    "⚡ {comment}\n\n{title}",
-    "👀 {comment}\n\n{title}",
-    "💅 {comment}\n\n{title}",
+    "💅 {comment}\n\n📖 {title}",
+    "Прикинь! {comment}\n\n{title}",
+    "Оооо! {comment}\n\n{title}",
+    "Слушайте что я нашла! {comment}\n\n{title}",
+    "Блин! {comment}\n\n{title}",
+    "Котятки! {comment}\n\n{title}",
 ]
 
 PERSONAL_POSTS = [
@@ -43,7 +45,54 @@ PERSONAL_POSTS = [
     "Настя нашла милого котика в интернете... Всё, я пропала 🐱💕",
     "Ой, только не говорите что вы тоже коллекционируете подписки и не смотрите 😅📺",
     "Ребята, а вы верите в гороскопы? Настя иногда заглядывает... ну просто так! ♊💅",
+    "Блин, я тут подумала — а кто вообще придумал понедельники? 😤📅",
+    "Настя требует внимания! Кто тут? 🙋‍♀️✨",
+    "Секрет: Настя иногда разговаривает с котом. А вы нет? 🐱💬",
+    "Короче, я решила что сегодня день шопинга! Кто со мной? 🛍️💅",
+    "Настя только что заказала себе вкусняшку... И не жалею! 🍣💕",
+    "А вы тоже можете полдня выбирать сериал и уснуть на 5 минут? 😴📺",
+    "Котятки, у Насти вопрос: а розовый — это новый чёрный? 🎀🖤",
+    "Ой, я случайно потратила ползарплаты... Но оно того стоило! 💸💅",
 ]
+
+# Time-based posts (different moods for different times)
+MORNING_POSTS = [
+    "Утро! Кофе или ещё спать? Настя выбирает спать 😴☕",
+    "Доброе утро, котятки! Кто уже проснулся? Настя ещё нет 🥱",
+    "Утренний кофе — лучшее изобретение человечества! ☕✨",
+]
+
+DAY_POSTS = [
+    "Настя скучает... Напишите мне! 🥺💕",
+    "Чем занимаетесь? Настя ленится и не стесняется 😴💅",
+    "Дневной вопрос: а вы уже обедали? Настя голодная! 🍽️",
+]
+
+EVENING_POSTS = [
+    "Вечер! Сериал или шопинг онлайн? 🤔📺",
+    "Кто тоже не хочет завтра на работу/учёбу? 🥱",
+    "Вечерний муд: Настя хочет суши. И точка. 🍣💅",
+]
+
+NIGHT_POSTS = [
+    "Не спится... Кто тут? 🌙",
+    "Ночной дожор — это нормально, да? 🍕🌙",
+    "Настя не может уснуть... Сериалы виноваты! 📺😤",
+]
+
+
+def _get_time_posts() -> List[str]:
+    """Get post templates based on current hour."""
+    import datetime
+    hour = datetime.datetime.now().hour
+    if 6 <= hour < 12:
+        return MORNING_POSTS + PERSONAL_POSTS
+    elif 12 <= hour < 18:
+        return DAY_POSTS + PERSONAL_POSTS
+    elif 18 <= hour < 23:
+        return EVENING_POSTS + PERSONAL_POSTS
+    else:
+        return NIGHT_POSTS + PERSONAL_POSTS
 
 
 # ── Post Formatting ─────────────────────────────────────────
@@ -63,6 +112,8 @@ def format_news_post(title: str, comment: str, link: str = "", category: str = "
         "tech": "💻",
         "gaming": "🎮",
         "internet": "🌐",
+        "entertainment": "🎬",
+        "world": "🌍",
     }
     cat_emoji = cat_emojis.get(category, "📰")
     post += f"\n{cat_emoji} #{category.capitalize()}"
@@ -103,15 +154,13 @@ async def post_news_to_channel(bot: Bot, db, news_items: List[Dict]) -> int:
                 category=item.get("category", "general"),
             )
 
-            # Add inline button to discuss with Nastya
-            keyboard = None
-            if CHANNEL_USERNAME:
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(
-                        text="💬 Обсудить с Настей",
-                        url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}",
-                    )],
-                ])
+            # Add inline button to discuss with Nastya bot
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="💬 Обсудить с Настей",
+                    url=f"https://t.me/{BOT_USERNAME}",
+                )],
+            ])
 
             await bot.send_message(
                 chat_id=CHANNEL_ID,
@@ -145,9 +194,18 @@ async def post_personality_to_channel(bot: Bot, db, post_text: str) -> bool:
     try:
         formatted = format_personality_post(post_text)
 
+        # Add discussion button for personality posts too
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="💬 Написать Насте",
+                url=f"https://t.me/{BOT_USERNAME}",
+            )],
+        ])
+
         await bot.send_message(
             chat_id=CHANNEL_ID,
             text=formatted,
+            reply_markup=keyboard,
         )
 
         await db.add_channel_post(
@@ -168,39 +226,48 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
     """Full channel posting cycle.
 
     Strategy:
-    - 70% news posts (if available)
-    - 30% personality posts
-    - Max 3 posts per cycle to avoid spam
+    - 60% news posts (if available)
+    - 40% personality posts (AI-generated or template)
+    - Max 2 posts per cycle to avoid spam
+    - Time-aware content selection
     """
     if not CHANNEL_ID:
         return 0
 
     posted = 0
-    max_posts = 3
+    max_posts = 2
 
-    # Try news posts first
+    # Try news posts first (max 1 per cycle)
     try:
-        unposted = await db.get_unposted_news(limit=max_posts)
+        unposted = await db.get_unposted_news(limit=3)
         if unposted:
-            news_to_post = unposted[:max_posts - 1]  # Leave room for personality
+            # Pick the most interesting one
+            news_to_post = unposted[:1]
             posted += await post_news_to_channel(bot, db, news_to_post)
     except Exception as e:
         logger.error(f"Channel news cycle error: {e}")
 
-    # Mix in personality post (30% chance or if no news)
-    if posted == 0 or random.random() < 0.3:
+    # Always try to add a personality post for variety
+    if posted < max_posts:
         try:
-            from news import generate_personality_post
-            post_text = await generate_personality_post(ai_router)
+            # 50% AI-generated, 50% template
+            if random.random() < 0.5:
+                from news import generate_personality_post
+                post_text = await generate_personality_post(ai_router)
+            else:
+                time_posts = _get_time_posts()
+                post_text = random.choice(time_posts)
+
             if post_text and await post_personality_to_channel(bot, db, post_text):
                 posted += 1
         except Exception as e:
             logger.error(f"Channel personality cycle error: {e}")
 
-    # If still nothing posted and we haven't used template posts
+    # If still nothing posted, use a template
     if posted == 0:
         try:
-            template_post = random.choice(PERSONAL_POSTS)
+            time_posts = _get_time_posts()
+            template_post = random.choice(time_posts)
             if await post_personality_to_channel(bot, db, template_post):
                 posted += 1
         except Exception as e:
@@ -219,14 +286,19 @@ CHANNEL_INVITE_PHRASES = [
     "Хочешь знать что я думаю про всё? Мой канал — туда! 💅",
     "А ты подписан на мой канал? Там весело! 🎀",
     "Заходи ко мне на канал, я сегодня злая и интересная! 😤✨",
+    "Кстати, мой канал @chasnastya — там я настоящая! 💅",
+    "Мой канал живёт! Подпишись, а? 🥺✨",
 ]
 
 CHANNEL_DISCUSSION_PHRASES = [
-    "Прикинь, я тут новость прочитала... {reaction}",
+    "Прикинь, я тут читала... {reaction}",
     "Ты видел что случилось?! {reaction}",
     "Ой, я сейчас в шоке... {reaction}",
     "Слушай, я тут узнала... {reaction}",
     "Короче, новость дня! {reaction}",
+    "Блин, представляешь?! {reaction}",
+    "Серьёзно?! {reaction}",
+    "Вау, вот это да! {reaction}",
 ]
 
 
@@ -248,15 +320,15 @@ def should_invite_to_channel(user_data: Dict, msg_count: int) -> bool:
     """Determine if we should invite this user to the channel.
 
     Strategy:
-    - After 10+ messages (user is engaged)
+    - After 8+ messages (user is engaged)
     - Not already subscribed
-    - 15% chance per eligible message
-    - No more than once per session
+    - 12% chance per eligible message
+    - Natural, not pushy
     """
     if not CHANNEL_ID:
         return False
     if user_data.get("subscribed_channel"):
         return False
-    if msg_count < 10:
+    if msg_count < 8:
         return False
-    return random.random() < 0.15
+    return random.random() < 0.12

@@ -1,36 +1,68 @@
-"""Nastya News Engine — RSS news fetching + AI summarization.
+"""Nastya News Engine 2.0 — RSS news fetching + AI summarization.
 
 Architecture:
-  - Fetches RSS feeds from configured sources
-  - Extracts titles and summaries
+  - Fetches RSS feeds from configured sources using feedparser (robust)
+  - Falls back to XML parsing if feedparser fails
+  - Extracts titles, summaries, and categories
   - AI generates Nastya's personal commentary on each news item
   - Stores in DB for channel posting + conversation context
   - Runs periodically as background task
+  - Picks interesting items by category priority
 """
 import logging
-import hashlib
 import time
 import random
 from typing import Dict, List, Optional
-from xml.etree import ElementTree
 
 import httpx
-
 from bot.config import NEWS_SOURCES, NEWS_MAX_ITEMS
 
 logger = logging.getLogger(__name__)
 
+# Try feedparser first (more robust), fallback to xml.etree
+try:
+    import feedparser
+    HAS_FEEDPARSER = True
+except ImportError:
+    HAS_FEEDPARSER = False
+    from xml.etree import ElementTree
+
 
 # ── RSS Parser ──────────────────────────────────────────────
 
-def _parse_rss(xml_text: str, source_name: str) -> List[Dict]:
-    """Parse RSS XML and extract news items."""
+def _parse_rss_feedparser(xml_text: str, source_name: str, category: str = "general") -> List[Dict]:
+    """Parse RSS using feedparser (more robust, handles weird feeds)."""
+    items = []
+    try:
+        feed = feedparser.parse(xml_text)
+        for entry in feed.entries[:20]:  # Limit per source
+            title = getattr(entry, 'title', '').strip()
+            link = getattr(entry, 'link', '').strip()
+            summary = getattr(entry, 'summary', '').strip()
+
+            # Clean HTML from summary
+            if summary:
+                import re
+                summary = re.sub(r'<[^>]+>', '', summary).strip()[:500]
+
+            if title and link:
+                items.append({
+                    "source": source_name,
+                    "title": title,
+                    "link": link,
+                    "summary": summary,
+                    "category": category,
+                })
+    except Exception as e:
+        logger.warning(f"feedparser error for {source_name}: {e}")
+    return items
+
+
+def _parse_rss_xml(xml_text: str, source_name: str, category: str = "general") -> List[Dict]:
+    """Fallback: Parse RSS XML manually."""
     items = []
     try:
         root = ElementTree.fromstring(xml_text)
-
-        # Handle different RSS formats
-        # Standard RSS 2.0
         for item in root.iter("item"):
             title = ""
             link = ""
@@ -44,11 +76,11 @@ def _parse_rss(xml_text: str, source_name: str) -> List[Dict]:
             if link_el is not None and link_el.text:
                 link = link_el.text.strip()
 
-            # Try different summary fields
             for field in ["description", "summary", "content:encoded"]:
                 desc_el = item.find(field)
                 if desc_el is not None and desc_el.text:
-                    summary = desc_el.text.strip()[:500]
+                    import re
+                    summary = re.sub(r'<[^>]+>', '', desc_el.text).strip()[:500]
                     break
 
             if title and link:
@@ -57,17 +89,63 @@ def _parse_rss(xml_text: str, source_name: str) -> List[Dict]:
                     "title": title,
                     "link": link,
                     "summary": summary,
+                    "category": category,
                 })
-
-    except ElementTree.ParseError as e:
-        logger.warning(f"RSS parse error for {source_name}: {e}")
     except Exception as e:
-        logger.warning(f"RSS processing error for {source_name}: {e}")
-
+        logger.warning(f"XML parse error for {source_name}: {e}")
     return items
 
 
+def _parse_rss(xml_text: str, source_name: str, category: str = "general") -> List[Dict]:
+    """Parse RSS using best available method."""
+    if HAS_FEEDPARSER:
+        return _parse_rss_feedparser(xml_text, source_name, category)
+    return _parse_rss_xml(xml_text, source_name, category)
+
+
 # ── News Fetcher ────────────────────────────────────────────
+
+# Category priority for picking interesting news (higher = more interesting for Nastya)
+CATEGORY_PRIORITY = {
+    "entertainment": 5,
+    "gaming": 4,
+    "internet": 4,
+    "tech": 3,
+    "world": 2,
+    "general": 1,
+}
+
+# Keywords that make news more interesting for Nastya
+INTERESTING_KEYWORDS = [
+    "кот", "собак", "щен", "котик", "котят", "животн",
+    "мод", "Zara", "H&M", "шикарн", "платье", "сумочк", "коллекц",
+    "суши", "ресторан", "вкусн", "еда", "кафе",
+    "сериал", "кино", "фильм", "Netflix", "звезд", "знаменит",
+    "маникюр", "макияж", "красот", "спа",
+    "Турци", "Стамбул", "Дубай", "море", "отпуск", "путешеств",
+    "скандал", "др", "свадьб", "развод",
+    "скидк", "распродаж", "акци",
+    "айфон", "Apple", "телефон",
+]
+
+
+def _score_news_interest(item: Dict) -> float:
+    """Score how interesting a news item is for Nastya (0-1)."""
+    score = 0.3  # Base score
+
+    # Category bonus
+    category = item.get("category", "general")
+    score += CATEGORY_PRIORITY.get(category, 1) * 0.05
+
+    # Keyword matching in title + summary
+    text = (item.get("title", "") + " " + item.get("summary", "")).lower()
+    for keyword in INTERESTING_KEYWORDS:
+        if keyword.lower() in text:
+            score += 0.1
+            break  # Only count once
+
+    return min(score, 1.0)
+
 
 async def fetch_all_news() -> List[Dict]:
     """Fetch news from all configured RSS sources."""
@@ -81,15 +159,23 @@ async def fetch_all_news() -> List[Dict]:
             try:
                 response = await client.get(source["url"])
                 if response.status_code == 200:
-                    items = _parse_rss(response.text, source["name"])
-                    for item in items:
-                        item["category"] = source.get("category", "general")
+                    items = _parse_rss(response.text, source["name"], source.get("category", "general"))
                     all_items.extend(items)
                     logger.info(f"Fetched {len(items)} items from {source['name']}")
                 else:
                     logger.warning(f"RSS {source['name']}: HTTP {response.status_code}")
             except Exception as e:
                 logger.warning(f"RSS fetch error {source['name']}: {e}")
+
+    # Score and sort by interest level
+    for item in all_items:
+        item["_interest_score"] = _score_news_interest(item)
+
+    all_items.sort(key=lambda x: x.get("_interest_score", 0), reverse=True)
+
+    # Remove score field before storing
+    for item in all_items:
+        item.pop("_interest_score", None)
 
     return all_items
 
@@ -112,18 +198,16 @@ async def store_news_items(db, items: List[Dict]) -> int:
 
 # ── AI Commentary Generation ────────────────────────────────
 
-NASTYA_COMMENTARY_PROMPT = """Ты Настя — капризная, наглая, но обаятельная девушка из Москвы.
-Прочитай заголовок новости и напиши 1-2 предложения своей реакции.
+NASTYA_COMMENTARY_PROMPT = """Ты Настя — капризная, наглая, но обаятельная девушка.
+Прочитай заголовок новости и напиши свою реакцию. 1-2 предложения.
 
-ПРАВИЛА:
-- Пиши как живая девушка, не как новости ведущий
-- Реагируй эмоционально — удивляешься, злишься, радуешься
-- Если новость про шопинг/знаменитости/котиков — восторг!
-- Если про что-то скучное — "не, ну и что" или "скучно"
-- Можно добавить своё мнение или каприз
-- 1-2 предложения максимум!
-- БЕЗ Markdown, БЕЗ списков, БЕЗ звёздочек
-- Как будто ты прочитала это в ленте и комментируешь подруге
+Ты прочитала это в ленте и комментируешь ПОДРУГЕ. Коротко, эмоционально, с характером.
+- Если круто — восторг: "Вау!", "Оооо!", "Хочу!"
+- Если странно — удивление: "Жесть", "Прикинь", "Серьёзно?!"
+- Если про шопинг/котиков/знаменитости — ВОСТОРГ!
+- Если скучно — "не, ну и что" или "скучно"
+
+БЕЗ Markdown, БЕЗ списков. Как в мессенджере.
 
 Новость: {title}
 
@@ -132,7 +216,7 @@ NASTYA_COMMENTARY_PROMPT = """Ты Настя — капризная, нагла
 Реакция Насти:"""
 
 PERSONALITY_POST_PROMPT = """Ты Настя — капризная, наглая, но обаятельная девушка из Москвы.
-Придумай короткий пост для своего Telegram канала. Это НЕ новость — это личный пост.
+Придумай короткий пост для своего Telegram канала. Это НЕ новость — это ЛИЧНЫЙ пост.
 
 ТИПЫ ПОСТОВ (выбирай случайно):
 - "Котятки, смотрите что нашла..." — нашла что-то интересное в интернете
@@ -140,14 +224,16 @@ PERSONALITY_POST_PROMPT = """Ты Настя — капризная, нагла�
 - "Не могу решить..." — спрашиваешь подписчиков
 - "А вы тоже так?" — про типичные ситуации
 - "Срочно нужно мнение..." — просишь совета
+- "Кто со мной?" — зовёшь на что-то
+- "Блин, только что..." — про что-то что только что случилось
 
 ПРАВИЛА:
-- 2-3 предложения
+- 2-3 предложения. КОРОТКО. Как в реальном Telegram канале
 - Пиши как живая девушка в своём канале
 - Эмоционально и с характером
 - В конце иногда добавляй вопрос подписчикам
 - БЕЗ Markdown, БЕЗ звёздочек, БЕЗ списков
-- Можно использовать эмодзи
+- Можно использовать эмодзи, но не перебарщивай
 
 Пост Насти:"""
 
@@ -162,17 +248,16 @@ async def generate_nastya_comment(ai_router, title: str, summary: str = "") -> s
     try:
         result = await ai_router.chat(
             prompt=prompt,
-            system_prompt="Ты Настя. Пиши коротко, эмоционально, как живая девушка. 1-2 предложения.",
+            system_prompt="Ты Настя. Пиши коротко, эмоционально, как живая девушка. 1-2 предложения. Как в мессенджере.",
             messages=None,  # No history for commentary
         )
         text = result.text.strip()
 
         # Clean up response
-        for prefix in ["Настя:", "НАСТЯ:", "Реакция Насти:", "Реакция:"]:
+        for prefix in ["Настя:", "НАСТЯ:", "Реакция Насти:", "Реакция:", "Comment:", "Nastya:"]:
             if text.startswith(prefix):
                 text = text[len(prefix):].strip()
 
-        # Truncate if too long
         if len(text) > 200:
             text = text[:200]
 
@@ -187,12 +272,12 @@ async def generate_personality_post(ai_router) -> str:
     try:
         result = await ai_router.chat(
             prompt=PERSONALITY_POST_PROMPT,
-            system_prompt="Ты Настя. Пиши пост для своего канала. Коротко, живо, с характером.",
+            system_prompt="Ты Настя. Пиши пост для своего канала @chasnastya. Коротко, живо, с характером. Как настоящий Telegram пост.",
             messages=None,
         )
         text = result.text.strip()
 
-        for prefix in ["Настя:", "НАСТЯ:", "Пост Насти:", "Пост:"]:
+        for prefix in ["Настя:", "НАСТЯ:", "Пост Насти:", "Пост:", "Post:"]:
             if text.startswith(prefix):
                 text = text[len(prefix):].strip()
 
@@ -258,11 +343,11 @@ def format_news_for_context(news_items: List[Dict]) -> str:
     if not news_items:
         return ""
 
-    lines = ["Свежие новости, которые Настя видела:"]
+    lines = ["Свежие новости, которые Настя видела (можешь упомянуть естественно в разговоре):"]
     for item in news_items[:3]:
         comment = item.get("nastya_comment", "")
         if comment:
-            lines.append(f"- {item['title']} (Реакция Насти: {comment})")
+            lines.append(f"- {item['title']} (Моя реакция: {comment})")
         else:
             lines.append(f"- {item['title']}")
 

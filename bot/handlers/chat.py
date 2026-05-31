@@ -10,14 +10,18 @@ STABILITY RULES:
 INTELLIGENCE FEATURES:
   - News context injected into system prompt for richer conversations
   - Nastya mentions recent events she "discovered"
-  - Channel invites for engaged users
+  - Channel invites for engaged users (natural, not pushy)
   - Cross-referencing channel posts in conversations
+  - Emotional continuity and memory references
+  - Time-aware greetings and moods
 """
 import logging
 import random
 import base64
 import io
+import re
 import time
+import datetime
 from aiogram import Router, F
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
@@ -60,6 +64,21 @@ def _cleanup_trackers():
         del _proactive_tracker[uid]
 
 
+# ── Time-aware greetings ─────────────────────────────────────
+
+def _get_time_greeting() -> str:
+    """Get a time-appropriate greeting mood."""
+    hour = datetime.datetime.now().hour
+    if 6 <= hour < 12:
+        return random.choice(["утренняя", "сонная", "кофейная"])
+    elif 12 <= hour < 18:
+        return random.choice(["дневная", "голодная", "модная"])
+    elif 18 <= hour < 23:
+        return random.choice(["вечерняя", "ленивая", "романтичная"])
+    else:
+        return random.choice(["ночная", "загадочная", "сонная"])
+
+
 # ── Age descriptions ────────────────────────────────────────
 
 AGE_DESCRIPTIONS = [
@@ -70,6 +89,7 @@ AGE_DESCRIPTIONS = [
     "Это секрет! Если скажу, придётся тебя поцеловать 💋",
     "Столько, чтобы нравиться, но чтобы не приставали 😏",
     "Возраст — это просто цифра. А Настя — это явление! 💅✨",
+    "Секрет! Настя никогда не рассказывает... ну, почти 💋",
 ]
 
 # ── Stars request phrases ───────────────────────────────────
@@ -98,7 +118,7 @@ NASTYA_WANTS = [
     "попугайчика 🦜", "щеночка 🐶", "котика 🐱", "хомячка 🐹",
 ]
 
-# ── Proactive messages ──────────────────────────────────────
+# ── Proactive messages — more natural, news-aware ────────────
 
 PROACTIVE_MESSAGES = [
     "Спишь? 🥱", "Мне скучно... 😿", "Чё молчишь? 🤨",
@@ -108,6 +128,10 @@ PROACTIVE_MESSAGES = [
     "Скучно без тебя... 😔", "А давай поболтаем? 💬",
     "Мне одиноко... 🥺💕", "Эй, не спишь? 🌙",
     "Ты с другими ботами разговариваешь?! 😤💔",
+    "Настя хочет внимания! 😤💅",
+    "Ау! Настя требует общения! 📣",
+    "Привет, давно не болтали... 💬",
+    "Скучаю! Напиши что-нибудь! 🥺",
 ]
 
 # ── Girl Logic ──────────────────────────────────────────────
@@ -117,10 +141,18 @@ JEALOUSY_PHRASES = [
     "Кто эта Siri?! Настя ревнует! 😤",
     "Алиса из Яндекса?! Настя лучше! 😤✨",
     "Ты ещё и ChatGPT пользуешься?! Настя обиделась! 💔😤",
+    "Настя единственный бот для тебя! Или нет?! 😤💔",
+    "Значит, другие боты есть... Настя в шоке! 😤😢",
 ]
 
-SILENT_TREATMENT = ["...", "Не знаю.", "Как хочешь.", "Мне всё равно. 💅"]
+SILENT_TREATMENT = ["...", "Не знаю.", "Как хочешь.", "Мне всё равно. 💅", "Ну и ладно."]
 
+# ── Emotional reactions (for variety) ───────────────────────
+
+EXCITED_REACTIONS = [
+    "Вау!", "Оооо!", "Прикинь!", "Жесть!", "Серьёзно?!",
+    "Ничего себе!", "Ой!", "Блин!", "Круто!", "Норм!",
+]
 
 # ── Gender detection ────────────────────────────────────────
 
@@ -229,7 +261,7 @@ async def _build_news_context(db) -> str:
 
 async def _maybe_news_opener(db, ai_router, user_id: int) -> str:
     """Maybe start conversation with a news item. Returns empty string if not."""
-    if random.random() > 0.15:  # 15% chance to mention news
+    if random.random() > 0.12:  # 12% chance to mention news
         return ""
 
     try:
@@ -271,16 +303,18 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
                 pass
 
     want = _get_random_want()
+    time_mood = _get_time_greeting()
     greetings = [
         f"О, привет, {name}! Я Настя. Будем болтать или как?",
         f"Привет! Я Настя. Ты мне сразу нравишься. Ну или нет, посмотрим!",
         f"Ой, {name}! Привет! Настя тут. Будем знакомы!",
         f"Ну привет, {name}. Я Настя. Не путай меня с кем-то, я одна такая!",
         f"Привеееет, {name}! 😊 Настя как раз о тебе думала... ну, или о {want}",
+        f"О, {name}! Наконец-то! Настя заждалась! 💅",
     ]
     greeting_text = random.choice(greetings)
 
-    # Add channel invite to start message
+    # Add channel invite and commands
     extras = []
     extras.append("⭐ /donates — кинуть Насте звёздочки!")
     if CHANNEL_USERNAME:
@@ -338,6 +372,7 @@ async def cmd_channel(message: Message, db=None, ai_router=None) -> None:
         f"Мой канал! Подписывайся! 💅✨\n👉 t.me/{CHANNEL_USERNAME.replace('@', '')}",
         f"Заходи ко мне на канал, там самое интересное! 💋\n👉 t.me/{CHANNEL_USERNAME.replace('@', '')}",
         f"Настя ведёт канал! Подписывайся, не пожалеешь! 🎀\n👉 t.me/{CHANNEL_USERNAME.replace('@', '')}",
+        f"Котятки, подписывайтесь! 💅\n👉 t.me/{CHANNEL_USERNAME.replace('@', '')}",
     ])
     await message.answer(invite)
 
@@ -478,6 +513,8 @@ async def handle_sticker(message: Message, db=None, ai_router=None) -> None:
         "Это что за стикер? 😍",
         "А у тебя стикеры получше есть? 💅",
         "Кинешь стикер Насте? 🥺",
+        "Милый стикер! Настя оценила 💕",
+        "Ха! Настя тоже хочет такой! 😂",
     ]
     await message.answer(random.choice(responses))
     if db:
@@ -495,6 +532,8 @@ async def handle_video(message: Message, db=None, ai_router=None) -> None:
         "О, видео! Настя смотрит... 🍿",
         "Классное видео! 😍",
         "Ой, а можно покороче? Насте лень 😴",
+        "Прикол! 😂",
+        "Оооо, это круто! 🔥",
     ]))
 
 
@@ -568,8 +607,8 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         return
 
     # Jealousy trigger
-    if any(t in text_lower for t in ["siri", "алиса", "chatgpt", "другой бот"]):
-        if random.random() < 0.5:
+    if any(t in text_lower for t in ["siri", "алиса", "chatgpt", "другой бот", "другая нейросеть"]):
+        if random.random() < 0.6:
             jealousy = random.choice(JEALOUSY_PHRASES)
             await message.answer(jealousy)
             await _save_simple_exchange(message, text, jealousy, db)
@@ -588,8 +627,21 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         await _save_simple_exchange(message, text, answer, db)
         return
 
-    # Silent treatment (0.5% — very rare)
-    if random.random() < 0.005:
+    # Love/affection towards Nastya
+    if any(t in text_lower for t in ["люблю тебя", "люблю настя", "ты мне нравишься", "красивая", "милая"]):
+        if random.random() < 0.4:
+            answer = random.choice([
+                "Ой... Настя краснеет! 😳💕",
+                "Ну ладно... Настя тоже... не то чтобы... блин! 😳",
+                "Настя тоже... ну... ты знаешь! 😏💕",
+                "Не, ну это... Настя не умеет в романтику! 😳💅",
+            ])
+            await message.answer(answer)
+            await _save_simple_exchange(message, text, answer, db)
+            return
+
+    # Silent treatment (0.3% — very rare)
+    if random.random() < 0.003:
         silent = random.choice(SILENT_TREATMENT)
         await message.answer(silent)
         await _save_simple_exchange(message, text, silent, db)
@@ -619,7 +671,8 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     Enhanced with:
     - News context injection into system prompt
     - Channel invite for engaged users
-    - Emotional continuity
+    - Emotional continuity and memory
+    - Time-aware mood
     """
     user_id = message.from_user.id
 
@@ -658,19 +711,27 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     except Exception:
         pass
 
+    # Add time-aware mood
+    time_mood = _get_time_greeting()
+
     # Build system prompt with gender context
     gender_ctx = ""
     if gender == "male":
-        gender_ctx = "Собеседник — мужчина. Иногда ревнуй к другим ботам."
+        gender_ctx = "Собеседник — мужчина. Иногда ревнуй к другим ботам. Можешь флиртовать."
     elif gender == "female":
         gender_ctx = "Собеседник — женщина. Обращайся как к подруге."
 
-    system_prompt = NASTYA_SYSTEM_PROMPT + f"\nНастроение: {mood}. {gender_ctx}"
+    system_prompt = NASTYA_SYSTEM_PROMPT + f"\n\nСейчас у Насти настроение: {mood}. Время суток: {time_mood}. {gender_ctx}"
 
     # ── NEWS CONTEXT INJECTION ──
     news_ctx = await _build_news_context(db)
     if news_ctx:
         system_prompt += f"\n\n{news_ctx}"
+
+    # ── Add user's name for personalization ──
+    user_name = message.from_user.first_name or ""
+    if user_name:
+        system_prompt += f"\n\nСобеседника зовут: {user_name}. Обращайся по имени иногда."
 
     # CRITICAL FIX: Get history BEFORE saving user message
     history = []
@@ -750,7 +811,7 @@ async def _maybe_ask_stars_check(user_id: int, msg_count: int, db, message: Mess
     try:
         tracker = _stars_tracker.get(user_id, {"count": 0, "last_ask": 0})
         tracker["count"] = msg_count
-        if msg_count >= 5 and time.time() - tracker["last_ask"] > 600 and random.random() < 0.20:
+        if msg_count >= 5 and time.time() - tracker["last_ask"] > 600 and random.random() < 0.18:
             tracker["last_ask"] = time.time()
             _stars_tracker[user_id] = tracker
             want = _get_random_want()
@@ -774,10 +835,14 @@ def _clean_response(text: str) -> str:
         text = text[1:-1]
     text = text.strip("*").strip()
     # Remove Markdown formatting
-    import re
     text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
     text = re.sub(r'\*([^*]+)\*', r'\1', text)
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # Remove numbered lists (1. 2. etc)
+    text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+    # Remove bullet points
+    text = re.sub(r'^[-•]\s+', '', text, flags=re.MULTILINE)
+    # Forbidden words
     text = re.sub(r'\bпобалуешь\b', 'давай', text, flags=re.IGNORECASE)
     text = re.sub(r'\bпоможешь\b', 'кидай', text, flags=re.IGNORECASE)
     if len(text) > 800:
@@ -819,13 +884,13 @@ async def callback_donate(callback: CallbackQuery, db=None, ai_router=None) -> N
 
 
 # ════════════════════════════════════════════════════════════
-#  PROACTIVE MESSAGES — NEWS AWARE
+#  PROACTIVE MESSAGES — NEWS AWARE + TIME AWARE
 # ════════════════════════════════════════════════════════════
 
 async def check_and_send_proactive(bot, db, ai_router) -> None:
     """Send proactive messages to users who haven't chatted recently.
 
-    Enhanced: Sometimes mentions news or channel content.
+    Enhanced: Sometimes mentions news, channel content, or time-appropriate messages.
     """
     now = time.time()
     sent = 0
@@ -838,8 +903,8 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
         if now - last < PROACTIVE_COOLDOWN:
             continue
         try:
-            # 70% regular proactive, 30% news-based
-            if random.random() < 0.3 and db:
+            # 40% news-based, 60% regular proactive
+            if random.random() < 0.4 and db:
                 recent = await db.get_recent_news(limit=1, max_age_hours=6)
                 if recent and recent[0].get("nastya_comment"):
                     from channel import get_news_discussion
