@@ -1,7 +1,9 @@
-"""Nastya Bot 7.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 11.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v7.0:
-  - Web search integration — Nastya can find and verify information!
+Architecture v11.0:
+  - ПОНЯТНЫЙ сленг: Точняк, Офигеть, Жесть, Капец, Бомба, Отпад, Чётко и т.д.
+  - НЕ выдумывать непонятные слова! Только реальные разговорные!
+  - Настя: ПРИЛИЧНАЯ, ОТЗЫВЧИВАЯ, ИСПОЛНИТЕЛЬНАЯ. С прибабахом, но добрая. Иногда капризная.
   - OpenRouter as PRIMARY (25+ free models, Gemma 4 31B, Nemotron 120B, vision)
   - Cloudflare Workers AI as SECONDARY (free, reliable, many models, vision)
   - Groq as TERTIARY (free, ultra-fast LPU, great Russian, 30 RPM)
@@ -14,7 +16,6 @@ Architecture v7.0:
   - Real Telegram polls in channel using send_poll() with vote buttons
   - Poll answer reactions — Nastya reacts when someone votes!
   - /search command for explicit web searches
-  - Expanded vocabulary: "Точняк!", "Офигеть!", "Кайф!", "Жесть!" etc. 30+ words
   - Knowledge injection by 10 topics: auto, zodiac, psychology, facts, Moscow,
     cinema, cooking, relationships, fashion, travel, tech
   - Context memory: zodiac signs, names, city, preferences — NEVER forgets
@@ -25,6 +26,7 @@ Architecture v7.0:
   - MOSCOW TIMEZONE — Настя из Москвы!
   - Keep-alive chain via GH PAT trigger
   - NO "голова разболелась" — Nastya ALWAYS responds in character
+  - Proactive messages: LESS FREQUENT (30-60 min), but KEPT (they're fun!)
 """
 import asyncio
 import logging
@@ -200,7 +202,7 @@ async def proactive_scheduler(bot_instance: Bot) -> None:
 
     while True:
         try:
-            wait_time = random.randint(900, 1800)  # 15-30 min — less spammy
+            wait_time = random.randint(1800, 3600)  # 30-60 min — less spammy, but still fun!
             await asyncio.sleep(wait_time)
             if db and ai_router:
                 await check_and_send_proactive(bot_instance, db, ai_router)
@@ -257,7 +259,7 @@ async def memory_cleanup() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 7.1 Starting (OpenRouter PRIMARY) ===")
+    logger.info("=== Nastya Bot 11.0 Starting (OpenRouter PRIMARY, ПОНЯТНЫЙ СЛЕНГ) ===")
 
     db = Database(DB_PATH)
     await db.init()
@@ -299,7 +301,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 7.1 Ready ===")
+    logger.info("=== Nastya Bot 11.0 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:
