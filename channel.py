@@ -99,13 +99,13 @@ def _get_time_posts() -> List[str]:
 # ── Post Formatting ─────────────────────────────────────────
 
 def format_news_post(title: str, comment: str, link: str = "", category: str = "general") -> str:
-    """Format a news item as a channel post."""
+    """Format a news item as a channel post with CLICKABLE link."""
     template = random.choice(NEWS_POST_TEMPLATES)
     post = template.format(comment=comment, title=title)
 
-    # Add link if available
+    # Add clickable link if available
     if link:
-        post += f"\n\n🔗 Читать"
+        post += f"\n\n🔗 <a href=\"{link}\">Читать</a>"
 
     # Category emoji
     cat_emojis = {
@@ -167,6 +167,7 @@ async def post_news_to_channel(bot: Bot, db, news_items: List[Dict]) -> int:
                 chat_id=CHANNEL_ID,
                 text=post_text,
                 reply_markup=keyboard,
+                parse_mode="HTML",
                 disable_web_page_preview=True,
             )
 

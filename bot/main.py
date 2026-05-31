@@ -294,13 +294,11 @@ async def on_startup(**kwargs) -> None:
 
                     await bot.send_message(
                         admin_id,
-                        f"💅 <b>Настя 2.0 проснулась!</b>\n\n"
+                        f"💅 <b>Настя проснулась!</b>\n\n"
                         f"{thought}\n\n"
                         f"🤖 Провайдеров: {len(ai_router.providers)}\n"
                         f"   🆓 Бесплатные: {', '.join(free_providers) or 'нет'}\n"
-                        f"   🔑 С ключами: {', '.join(paid_providers) or 'нет'}\n"
-                        f"📊 БД: {DB_PATH}\n"
-                        f"⏱ Сессия: {SESSION_DURATION_SECONDS // 60} мин"
+                        f"   🔑 С ключами: {', '.join(paid_providers) or 'нет'}"
                         f"{channel_info}",
                         parse_mode="HTML",
                     )
@@ -317,7 +315,14 @@ async def on_shutdown(**kwargs) -> None:
     if bot:
         for admin_id in ADMIN_IDS:
             try:
-                await bot.send_message(admin_id, "😴 Настя уснула... 💤")
+                sleepy = random.choice([
+                    "Я спать 💤",
+                    "Я спать! Не буди! 😤💤",
+                    "Настя спать... 💤",
+                    "Всё, я спать! 💅💤",
+                    "Спать хочу! Ночи! 🌙💤",
+                ])
+                await bot.send_message(admin_id, sleepy)
             except Exception:
                 pass
 
