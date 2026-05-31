@@ -1,11 +1,11 @@
-"""Nastya Bot 4.1 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 4.2 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v4.1:
-  - DeepSeek API as PRIMARY — best Russian quality, direct API
-  - Chutes (DeepSeek V3 free) SECONDARY — always available backup
-  - GitHub Models TERTIARY — DeepSeek V3/R1 via GitHub API
-  - Cloudflare QUATERNARY — DeepSeek R1 distill, Llama models
-  - Pollinations QUINARY — free but leaks ads (aggressively cleaned)
+Architecture v4.2:
+  - DeepSeek API as PRIMARY (when balance is topped up)
+  - Cloudflare Workers AI SECONDARY (free with credentials)
+  - GitHub Models TERTIARY (needs PAT with 'models' permission)
+  - Chutes QUATERNARY (free DeepSeek V3, rate-limited)
+  - Pollinations QUINARY (always free, always available, ads cleaned)
   - Expanded vocabulary: "Точняк!", "Офигеть!", "Кайф!", "Жесть!" etc. 30+ words
   - Knowledge injection by 10 topics: auto, zodiac, psychology, facts, Moscow,
     cinema, cooking, relationships, fashion, travel
@@ -16,6 +16,7 @@ Architecture v4.1:
   - MOSCOW TIMEZONE — Настя из Москвы!
   - Keep-alive chain via GH PAT trigger
   - NO "голова разболелась" — Nastya ALWAYS responds in character
+  - DeepSeek 402 (Insufficient Balance) handled as non-retryable — instant fallback
 """
 import asyncio
 import logging

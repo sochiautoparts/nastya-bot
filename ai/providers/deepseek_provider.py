@@ -118,6 +118,9 @@ class DeepSeekProvider(BaseProvider):
             status = exc.response.status_code
             if status in (401, 403):
                 raise ProviderError(self.name, f"Auth failed (HTTP {status})", retryable=False)
+            if status == 402:
+                # Insufficient balance — NOT retryable, skip to next provider
+                raise ProviderError(self.name, f"Insufficient balance (HTTP 402) — top up at platform.deepseek.com", retryable=False)
             retryable = status in (429, 500, 502, 503, 504)
             raise ProviderError(self.name, f"HTTP {status}: {exc.response.text[:200]}", retryable=retryable)
         except ProviderError:

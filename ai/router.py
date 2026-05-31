@@ -1,11 +1,11 @@
 """AI Router — BULLETPROOF routing with multi-phase fallback + caching.
 
-Architecture (v4.1 — DeepSeek API as PRIORITY #1):
-  - DeepSeek API FIRST (DeepSeek V3 — best Russian quality, direct API)
-  - Chutes SECOND (DeepSeek V3 — free, always available, excellent Russian)
-  - GitHub Models THIRD (DeepSeek V3/R1 via GitHub, reliable, has vision)
-  - Cloudflare FOURTH (DeepSeek R1 distill, Llama models, has vision)
-  - Pollinations fifth (free, always available, BUT leaks ads — cleaned)
+Architecture (v4.2 — resilient provider chain):
+  - DeepSeek API FIRST (best quality when balance is topped up)
+  - Cloudflare SECOND (free with credentials, multiple models, has vision)
+  - GitHub Models THIRD (free, needs PAT with 'models' permission)
+  - Chutes FOURTH (free DeepSeek V3, but rate-limited)
+  - Pollinations FIFTH (always free, always available, leaks ads — cleaned)
   - Other API-key providers as additional fallbacks
   - NEVER raises exceptions to caller — ALWAYS returns AIResponse
   - 30s timeouts with proper connect timeouts
@@ -16,11 +16,10 @@ Architecture (v4.1 — DeepSeek API as PRIORITY #1):
   - NO "голова разболелась" error messages EVER
   - Aggressive response cleaning: strips ads, markdown, artifacts
 
-CRITICAL v4.1: DeepSeek API (api.deepseek.com) as PRIMARY — best quality
-  for Russian conversation, excellent context memory, natural style.
-  Chutes provides free DeepSeek V3 access as backup.
-  GitHub Models also supports DeepSeek V3.
-  Aggressive response cleaning strips all AI artifacts/ads.
+CRITICAL v4.2: DeepSeek API returns 402 (Insufficient Balance) — handled as
+  non-retryable, falls through to next provider instantly.
+  GitHub Models PAT may not have 'models' permission — handled gracefully.
+  Pollinations is the ultimate safety net — always free, always works.
   image_base64 is NOT popped from kwargs — providers read it but
   don't consume it, so fallback providers can still access it.
 """
@@ -61,18 +60,19 @@ FALLBACK_RESPONSES = [
     "А? Настя считала звёздочки... Что? ⭐",
 ]
 
-# Provider chain v4.1: DeepSeek API FIRST (best Russian, direct),
-# then free DeepSeek via Chutes, then GitHub Models, Cloudflare, etc.
+# Provider chain v4.2: Prioritize working providers!
+# DeepSeek API needs balance top-up (402), GitHub Models PAT needs 'models' permission.
+# Working providers: Chutes (free, rate-limited), Cloudflare (free with creds), Pollinations (always free)
 PROVIDER_CHAIN = [
-    # DeepSeek API — PRIORITY #1, best Russian quality
+    # DeepSeek API — PRIORITY #1 when balance is topped up
     "deepseek",
-    # DeepSeek V3 via Chutes — FREE, excellent Russian, always available
-    "chutes",
-    # GitHub Models — DeepSeek V3 / R1 via GitHub, reliable
-    "github_models",
-    # Cloudflare — DeepSeek R1 distill, Llama models, free with creds
+    # Cloudflare — FREE with credentials, reliable, multiple models
     "cloudflare",
-    # Pollinations — always free but leaks ads (cleaned)
+    # GitHub Models — FREE, needs PAT with 'models' permission
+    "github_models",
+    # DeepSeek V3 via Chutes — FREE, excellent Russian, but rate-limited
+    "chutes",
+    # Pollinations — ALWAYS free, works reliably, but may leak ads (cleaned)
     "pollinations",
     # Other API-key providers as additional fallbacks
     "sambanova", "cerebras", "mistral", "openrouter", "gemini",
