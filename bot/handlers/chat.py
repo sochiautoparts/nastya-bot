@@ -822,20 +822,32 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     # Detect topics in user message and inject relevant knowledge
     text_lower_for_knowledge = text.lower()
     knowledge_injected = False
+    topic_keywords = {
+        "auto": ["авто", "машин", "запчаст", "ремонт", "двигател", "масл", "фильтр", "тормоз",
+                  "шин", "колёс", "toyota", "honda", "nissan", "сервис", "сто", "тачк", "кузов",
+                  "бензин", "карбюрат", "инжектор", "свеч", "акпп", "мкпп", "привод"],
+        "zodiac": ["гороскоп", "зодиак", "знак", "овен", "телец", "близнецы", "рак", "лев",
+                   "дева", "весы", "скорпион", "стрелец", "козерог", "водолей", "рыбы", "астролог",
+                   "совместимост", "ретроград", "меркури"],
+        "psychology": ["психолог", "мозг", "эмоци", "стресс", "тревог", "депресс", "характер", "личност",
+                       "самооцен", "дофамин", "привычк", "мотивац", "осознан"],
+        "fun_facts": ["факт", "интересн", "знаешь ли", "прикинь", "удив", "не знал", "правда что",
+                      "миф", "подтверд", "опровергн"],
+        "moscow": ["москва", "москв", "метро", "пробк", "москве", "цум", "москвы", "москвой"],
+        "cinema": ["фильм", "сериал", "кино", "нетфликс", "netflix", "смотр", "актрис", "актёр",
+                   "режисс", "премьер", "оскар", "трейлер", "попкорн"],
+        "cooking": ["готов", "рецепт", "еда", "суши", "пицц", "кофе", "торт", "шоколад", "матча",
+                    "вкусн", "ресторан", "доставк", "завтрак", "обед", "ужин", "кулинар"],
+        "relationships": ["отношени", "люблю", "влюб", "свидан", "романти", "бывш", "парень",
+                          "девушк", "измен", "расставан", "свадьб", "ревность", "доверие"],
+        "fashion": ["мод", "стил", "зара", "zara", "платье", "сумочк", "маникюр", "макияж",
+                    "коллекц", "тренд", "шопинг", "распродаж", "оверсайз", "винтаж", "стритстайл"],
+        "travel": ["путешеств", "отпуск", "море", "стамбул", "дубай", "бали", "сочи", "самолёт",
+                   "отель", "виз", "перелёт", "пляж", "курорт", "турци"],
+    }
     for topic_key, topic_data in KNOWLEDGE_TOPICS.items():
-        topic_name = topic_data["name"].lower()
         topic_facts = topic_data.get("facts", [])
-        # Check if user message relates to this topic
-        topic_keywords = {
-            "auto": ["авто", "машин", "запчаст", "ремонт", "двигател", "масл", "фильтр", "тормоз",
-                      "шин", "колёс", "toyota", "honda", "nissan", "сервис", "сто", "тачк"],
-            "zodiac": ["гороскоп", "зодиак", "знак", "овен", "телец", "близнецы", "рак", "лев",
-                       "дева", "весы", "скорпион", "стрелец", "козерог", "водолей", "рыбы", "астролог"],
-            "psychology": ["психолог", "мозг", "эмоци", "стресс", "тревог", "депресс", "характер", "личност"],
-            "fun_facts": ["факт", "интересн", "знаешь ли", "прикинь", "удив", "не знал"],
-            "moscow": ["москва", "москв", "метро", "пробк", "москве"],
-        }
-        keywords = topic_keywords.get(topic_key, [topic_name])
+        keywords = topic_keywords.get(topic_key, [topic_data["name"].lower()])
         if any(kw in text_lower_for_knowledge for kw in keywords) and topic_facts and not knowledge_injected:
             # Inject 2-3 relevant facts
             facts_to_inject = random.sample(topic_facts, min(3, len(topic_facts)))
@@ -843,28 +855,52 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
             system_prompt += f"\n\nЗНАНИЯ ПО ТЕМЕ '{topic_data['name']}' (используй естественно, как будто ты это знала!):\n{knowledge_str}"
             knowledge_injected = True
 
-    # Also inject a random knowledge fact 20% of the time for variety
-    if not knowledge_injected and random.random() < 0.20:
+    # Also inject a random knowledge fact 25% of the time for variety
+    if not knowledge_injected and random.random() < 0.25:
         random_topic = random.choice(list(KNOWLEDGE_TOPICS.keys()))
         topic_data = KNOWLEDGE_TOPICS[random_topic]
         random_fact = random.choice(topic_data["facts"])
         system_prompt += f"\n\nКСТАТИ, Настя знает: {random_fact} (можешь упомянуть если к месту!)"
 
-    # ── MEMORY EXTRACTION — remember key facts from conversation ──
-    # Extract important info from recent history (names, zodiac, preferences)
+    # ── MEMORY EXTRACTION — remember key facts about the user ──
+    # Extract important info from recent history (names, zodiac, preferences, city, etc.)
     memory_facts = []
-    for msg in history[-15:]:
+    zodiac_signs = ["овен", "телец", "близнецы", "рак", "лев", "дева",
+                    "весы", "скорпион", "стрелец", "козерог", "водолей", "рыбы"]
+    for msg in history[-20:]:
         content = msg.get("content", "")
         role = msg.get("role", "")
         if role == "user":
+            content_lower = content.lower()
             # Detect name mentions
-            name_patterns = ["меня зовут", "я —", "я — это", "моё имя", "я это"]
+            name_patterns = ["меня зовут", "я —", "я — это", "моё имя", "я это", "называй меня"]
             for pattern in name_patterns:
-                if pattern in content.lower():
+                if pattern in content_lower:
                     memory_facts.append(f"Собеседник говорил: '{content[:100]}'")
                     break
+            # Detect zodiac sign
+            for sign in zodiac_signs:
+                if sign in content_lower and "знак" in content_lower or sign in content_lower and ("я " in content_lower or "мой " in content_lower):
+                    if not any(sign in f.lower() for f in memory_facts):
+                        memory_facts.append(f"Знак собеседника — {sign.capitalize()}")
+                    break
+            # Detect city/location
+            city_patterns = ["я из ", "живу в ", "я в ", "город ", "из города"]
+            for pattern in city_patterns:
+                if pattern in content_lower:
+                    if not any("из " in f.lower() or "живёт" in f.lower() for f in memory_facts):
+                        memory_facts.append(f"Собеседник о месте: '{content[:100]}'")
+                    break
+            # Detect preferences
+            pref_patterns = ["люблю ", "обожаю ", "ненавижу ", "не люблю ", "фаворит", "любимый "]
+            for pattern in pref_patterns:
+                if pattern in content_lower:
+                    if not any(pattern.strip() in f.lower() for f in memory_facts):
+                        memory_facts.append(f"Предпочтение: '{content[:100]}'")
+                    break
+
     if memory_facts:
-        unique_facts = list(set(memory_facts))[-3:]  # Max 3, deduplicated
+        unique_facts = list(set(memory_facts))[-5:]  # Max 5, deduplicated
         system_prompt += f"\n\nПАМЯТЬ НАСТИ (НЕ переспрашивай про это!):\n" + "\n".join(f"- {f}" for f in unique_facts)
 
     # NOW save the user message to DB

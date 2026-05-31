@@ -1,10 +1,11 @@
 """AI Router — BULLETPROOF routing with multi-phase fallback + caching.
 
-Architecture (v4.0 — DeepSeek FIRST for best Russian conversation quality):
-  - Chutes FIRST (DeepSeek V3 — free, always available, excellent Russian)
-  - GitHub Models SECOND (DeepSeek V3/R1 via GitHub, reliable, has vision)
-  - Cloudflare THIRD (DeepSeek R1 distill, Llama models, has vision)
-  - Pollinations fourth (free, always available, BUT leaks ads — cleaned)
+Architecture (v4.1 — DeepSeek API as PRIORITY #1):
+  - DeepSeek API FIRST (DeepSeek V3 — best Russian quality, direct API)
+  - Chutes SECOND (DeepSeek V3 — free, always available, excellent Russian)
+  - GitHub Models THIRD (DeepSeek V3/R1 via GitHub, reliable, has vision)
+  - Cloudflare FOURTH (DeepSeek R1 distill, Llama models, has vision)
+  - Pollinations fifth (free, always available, BUT leaks ads — cleaned)
   - Other API-key providers as additional fallbacks
   - NEVER raises exceptions to caller — ALWAYS returns AIResponse
   - 30s timeouts with proper connect timeouts
@@ -15,9 +16,10 @@ Architecture (v4.0 — DeepSeek FIRST for best Russian conversation quality):
   - NO "голова разболелась" error messages EVER
   - Aggressive response cleaning: strips ads, markdown, artifacts
 
-CRITICAL v4.0: DeepSeek V3 as PRIMARY across all providers — best quality
+CRITICAL v4.1: DeepSeek API (api.deepseek.com) as PRIMARY — best quality
   for Russian conversation, excellent context memory, natural style.
-  Chutes provides free DeepSeek V3 access, GitHub Models also supports it.
+  Chutes provides free DeepSeek V3 access as backup.
+  GitHub Models also supports DeepSeek V3.
   Aggressive response cleaning strips all AI artifacts/ads.
   image_base64 is NOT popped from kwargs — providers read it but
   don't consume it, so fallback providers can still access it.
@@ -39,6 +41,7 @@ from bot.config import (
     SAMBANOVA_API_KEY, MISTRAL_API_KEY, GEMINI_API_KEY,
     CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
     GH_MODELS_TOKEN, GH_TOKEN_SECRET, GITHUB_TOKEN, GH_PAT_TOKEN,
+    DEEPSEEK_API_KEY,
     CACHE_TTL_TEXT, CACHE_MAX_MEMORY,
 )
 
@@ -58,10 +61,11 @@ FALLBACK_RESPONSES = [
     "А? Настя считала звёздочки... Что? ⭐",
 ]
 
-# Provider chain v3.0: GitHub Models FIRST (reliable, fast, free with PAT),
-# then Cloudflare (reliable, free with creds), then free providers,
-# then other API-key providers as additional fallbacks
+# Provider chain v4.1: DeepSeek API FIRST (best Russian, direct),
+# then free DeepSeek via Chutes, then GitHub Models, Cloudflare, etc.
 PROVIDER_CHAIN = [
+    # DeepSeek API — PRIORITY #1, best Russian quality
+    "deepseek",
     # DeepSeek V3 via Chutes — FREE, excellent Russian, always available
     "chutes",
     # GitHub Models — DeepSeek V3 / R1 via GitHub, reliable
@@ -78,6 +82,7 @@ PROVIDER_CHAIN = [
 # GitHub Models: try GH_MODELS_TOKEN first, then GH_PAT_TOKEN (PAT with 'models' permission),
 # then GH_TOKEN_SECRET, then auto-generated GITHUB_TOKEN
 PROVIDER_KEYS = {
+    "deepseek": DEEPSEEK_API_KEY,
     "cloudflare": CLOUDFLARE_API_TOKEN,
     "github_models": GH_MODELS_TOKEN or GH_PAT_TOKEN or GH_TOKEN_SECRET or GITHUB_TOKEN,
     "cerebras": CEREBRAS_API_KEY,

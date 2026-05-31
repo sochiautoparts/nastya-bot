@@ -1,13 +1,15 @@
-"""Nastya Bot 4.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 4.1 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v4.0:
-  - DeepSeek V3 as PRIMARY AI — best Russian quality, via Chutes (free)
-  - GitHub Models SECONDARY — DeepSeek V3/R1 via GitHub API (free with PAT)
-  - Cloudflare TERTIARY — DeepSeek R1 distill, Llama models
-  - Pollinations QUATERNARY — free but leaks ads (aggressively cleaned)
-  - Expanded vocabulary: "Точняк!", "Офигеть!", "Кайф!", "Жесть!" etc.
-  - Knowledge injection by topics: auto, zodiac, psychology, facts, Moscow
-  - Context memory: zodiac signs, names, preferences — NEVER forgets
+Architecture v4.1:
+  - DeepSeek API as PRIMARY — best Russian quality, direct API
+  - Chutes (DeepSeek V3 free) SECONDARY — always available backup
+  - GitHub Models TERTIARY — DeepSeek V3/R1 via GitHub API
+  - Cloudflare QUATERNARY — DeepSeek R1 distill, Llama models
+  - Pollinations QUINARY — free but leaks ads (aggressively cleaned)
+  - Expanded vocabulary: "Точняк!", "Офигеть!", "Кайф!", "Жесть!" etc. 30+ words
+  - Knowledge injection by 10 topics: auto, zodiac, psychology, facts, Moscow,
+    cinema, cooking, relationships, fashion, travel
+  - Context memory: zodiac signs, names, city, preferences — NEVER forgets
   - NEWS ENGINE: RSS + AI commentary + links (15 min cycle)
   - CHANNEL MANAGER: diverse posts, dedup, knowledge posts, quizzes (20 min)
   - Stars donations with ACTIVE Pay buttons

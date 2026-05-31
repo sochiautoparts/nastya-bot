@@ -52,7 +52,8 @@ jobs:
           OWNER_ID: ${{ secrets.OWNER_ID }}
           ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
           BOT_USERNAME: asnastya_bot
-          # AI Provider keys
+          # AI Provider keys — DeepSeek PRIORITY #1!
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           SAMBANOVA_API_KEY: ${{ secrets.SAMBANOVA_API_KEY }}
@@ -61,8 +62,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
-          # GitHub Models — PRIMARY provider (GPT-4o-mini, free, reliable)
-          # GH_PAT_TOKEN has 'models' permission — primary for GitHub Models API
+          # GitHub Models — secondary provider (DeepSeek V3 / GPT-4o-mini)
+          # GH_PAT_TOKEN has 'models' permission — for GitHub Models API
           GH_MODELS_TOKEN: ${{ secrets.GH_MODELS_TOKEN }}
           GH_TOKEN_SECRET: ${{ secrets.GH_TOKEN_SECRET }}
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
