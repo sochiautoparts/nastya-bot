@@ -266,13 +266,19 @@ async def _ask_for_stars(chat_id: int, user_id: int, bot, want: str = ""):
 # ════════════════════════════════════════════════════════════
 
 async def _build_news_context(db) -> str:
-    """Build news context string for system prompt."""
+    """Build news context string for system prompt. INCLUDES LINKS."""
     try:
         from news import format_news_for_context
-        recent_news = await db.get_recent_news(limit=3, max_age_hours=12)
+        recent_news = await db.get_recent_news_with_links(limit=3, max_age_hours=12)
         return format_news_for_context(recent_news)
     except Exception:
-        return ""
+        # Fallback: try without links
+        try:
+            from news import format_news_for_context
+            recent_news = await db.get_recent_news(limit=3, max_age_hours=12)
+            return format_news_for_context(recent_news)
+        except Exception:
+            return ""
 
 
 async def _maybe_news_opener(db, ai_router, user_id: int) -> str:
@@ -355,12 +361,14 @@ async def cmd_donate(message: Message, db=None, ai_router=None) -> None:
 
 @router.message(Command("news"))
 async def cmd_news(message: Message, db=None, ai_router=None) -> None:
-    """Show recent news that Nastya found interesting."""
+    """Show recent news that Nastya found interesting — WITH LINKS."""
     if not db:
         await message.answer("Настя пока не в курсе новостей... 💅")
         return
 
-    recent = await db.get_recent_news(limit=3, max_age_hours=24)
+    recent = await db.get_recent_news_with_links(limit=3, max_age_hours=24)
+    if not recent:
+        recent = await db.get_recent_news(limit=3, max_age_hours=24)
     if not recent:
         await message.answer("Настя ещё ничего не нашла... Проверь позже! 🔍💅")
         return
@@ -368,8 +376,12 @@ async def cmd_news(message: Message, db=None, ai_router=None) -> None:
     lines = ["📰 Что Настя нашла:\n"]
     for item in recent:
         comment = item.get("nastya_comment", "Интересно...")
+        link = item.get("link", "")
         lines.append(f"• {item['title']}")
-        lines.append(f"  💬 {comment}\n")
+        lines.append(f"  💬 {comment}")
+        if link:
+            lines.append(f"  🔗 {link}")
+        lines.append("")
 
     if CHANNEL_USERNAME:
         lines.append(f"Больше в канале: t.me/{CHANNEL_USERNAME.replace('@', '')} 💅")
@@ -596,6 +608,12 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         await _save_simple_exchange(message, text, answer, db)
         return
 
+    # Zodiac/horoscope — MUST go to AI with context (remember the sign!)
+    if any(t in text_lower for t in ["гороскоп", "зодиак", "знак зодиака", "предсказание", "астролог"]):
+        # Don't intercept — let it go to AI with full context memory
+        # The AI will remember the user's zodiac sign from previous messages
+        pass  # Fall through to normal AI chat
+
     # Channel question
     if any(t in text_lower for t in ["канал", "где канал", "твой канал", "подписаться"]):
         if CHANNEL_USERNAME:
@@ -609,13 +627,21 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
 
     # News question
     if any(t in text_lower for t in ["новости", "что нового", "что случилось", "что происходит"]):
-        recent = await db.get_recent_news(limit=2, max_age_hours=24)
+        recent = await db.get_recent_news_with_links(limit=2, max_age_hours=24)
+        if not recent:
+            recent = await db.get_recent_news(limit=2, max_age_hours=24)
         if recent:
             from channel import get_news_discussion
             comments = []
             for item in recent:
                 comment = item.get("nastya_comment", "Интересно...")
-                comments.append(f"Ты слышал про {item['title']}? {comment}")
+                link = item.get("link", "")
+                news_text = f"Ты слышал про {item['title']}? {comment}"
+                if link:
+                    news_text += f"\n🔗 {link}"
+                else:
+                    news_text += f"\n📺 Подробнее в @chasnastya"
+                comments.append(news_text)
             answer = random.choice(comments)
         else:
             answer = "Настя пока ничего интересного не нашла... Но ищу! 🔍"
@@ -771,9 +797,19 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     # CRITICAL FIX: Get history BEFORE saving user message
     history = []
     try:
-        history = await db.get_history(user_id, limit=50)
+        history = await db.get_history(user_id, limit=20)
     except Exception:
         pass
+
+    # Check if user mentioned their zodiac sign in history — add reminder
+    zodiac_signs = ["овен", "телец", "близнецы", "рак", "лев", "дева",
+                    "весы", "скорпион", "стрелец", "козерог", "водолей", "рыбы"]
+    for msg in history[-10:]:  # Check last 10 messages
+        content_lower = msg.get("content", "").lower()
+        for sign in zodiac_signs:
+            if sign in content_lower and msg.get("role") == "user":
+                system_prompt += f"\n\nВАЖНО: Собеседник говорил что его знак — {sign.capitalize()}. Запомни это и используй! Не переспрашивай!"
+                break
 
     # NOW save the user message to DB
     prefix = "[Голосовое] " if is_voice else ""
@@ -860,23 +896,14 @@ async def _maybe_ask_stars_check(user_id: int, msg_count: int, db, message: Mess
 def _clean_response(text: str) -> str:
     if not text:
         return "Ммм... Настя задумалась... 🤔"
-    # Remove common AI artifacts
-    for prefix in ["Настя:", "Nastya:", "НАСТЯ:", "Assistant:", "Настя отвечает:", "Ответ Насти:"]:
-        if text.startswith(prefix):
-            text = text[len(prefix):].strip()
-    if text.startswith('"') and text.endswith('"'):
-        text = text[1:-1]
-    if text.startswith("'") and text.endswith("'"):
-        text = text[1:-1]
-    text = text.strip("*").strip()
-    # Remove Markdown formatting
-    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
-    text = re.sub(r'\*([^*]+)\*', r'\1', text)
-    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    # Remove numbered lists (1. 2. etc)
-    text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
-    # Remove bullet points
-    text = re.sub(r'^[-•]\s+', '', text, flags=re.MULTILINE)
+
+    # Use AIRouter's aggressive cleaning first
+    from ai.router import AIRouter
+    text = AIRouter.clean_ai_response(text)
+
+    if not text:
+        return "Ммм... Настя задумалась... 🤔"
+
     # Forbidden words — Настя ТРЕБУЕТ, не просит!
     forbidden = {
         r'\bпобалуешь\b': 'давай', r'\bпобалуешь\?': 'давай!',
@@ -891,12 +918,18 @@ def _clean_response(text: str) -> str:
     }
     for pattern, replacement in forbidden.items():
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+    # Truncate long responses
     if len(text) > 800:
-        sentences = text[:800].rsplit('。' if '。' in text else '.', 1)
-        if len(sentences) > 1:
-            text = sentences[0] + '.'
+        # Try to cut at sentence boundary
+        for sep in ['. ', '! ', '? ', '। ', '。']:
+            idx = text[:800].rfind(sep)
+            if idx > 200:
+                text = text[:idx + len(sep)].strip()
+                break
         else:
             text = text[:800]
+
     return text.strip()
 
 

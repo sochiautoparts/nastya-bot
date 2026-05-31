@@ -1,10 +1,10 @@
 """AI Router — BULLETPROOF routing with multi-phase fallback + caching.
 
-Architecture (v2.3 — Pollinations-first for reliability):
-  - Pollinations FIRST (free, always available, reliable, has vision)
-  - Chutes second (free, always available, DeepSeek V3)
-  - Cloudflare third (free with credentials, has vision)
-  - GitHub Models fourth (free with PAT + 'models' permission)
+Architecture (v3.0 — GitHub Models first for reliability + quality):
+  - GitHub Models FIRST (free with PAT, GPT-4o-mini, reliable, has vision)
+  - Cloudflare second (free with credentials, Llama models, has vision)
+  - Chutes third (free, always available, DeepSeek V3)
+  - Pollinations fourth (free, always available, BUT leaks ads — cleaned)
   - Other API-key providers as additional fallbacks
   - NEVER raises exceptions to caller — ALWAYS returns AIResponse
   - 30s timeouts with proper connect timeouts
@@ -13,16 +13,19 @@ Architecture (v2.3 — Pollinations-first for reliability):
   - AI Response caching (from ai-mega-bot)
   - Fallback responses as LAST resort — bot ALWAYS responds
   - NO "голова разболелась" error messages EVER
+  - Aggressive response cleaning: strips ads, markdown, artifacts
 
-CRITICAL FIX v2.3: image_base64 is NOT popped from kwargs —
-  providers read it but don't consume it, so fallback providers
-  can still access it. This fixes vision requests failing when
-  the first vision provider is down.
+CRITICAL FIX v3.0: GitHub Models as PRIMARY provider — reliable, fast,
+  free with PAT. Pollinations moved down — it leaks ads into responses.
+  Aggressive response cleaning strips all AI artifacts/ads.
+  image_base64 is NOT popped from kwargs — providers read it but
+  don't consume it, so fallback providers can still access it.
 """
 import logging
 import asyncio
 import hashlib
 import json
+import re
 import time
 import random
 from typing import Any, Dict, List, Optional
@@ -34,7 +37,7 @@ from bot.config import (
     OPENROUTER_API_KEY, CEREBRAS_API_KEY,
     SAMBANOVA_API_KEY, MISTRAL_API_KEY, GEMINI_API_KEY,
     CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
-    GH_MODELS_TOKEN, GH_TOKEN_SECRET, GITHUB_TOKEN,
+    GH_MODELS_TOKEN, GH_TOKEN_SECRET, GITHUB_TOKEN, GH_PAT_TOKEN,
     CACHE_TTL_TEXT, CACHE_MAX_MEMORY,
 )
 
@@ -54,18 +57,20 @@ FALLBACK_RESPONSES = [
     "А? Настя считала звёздочки... Что? ⭐",
 ]
 
-# Provider chain v2.3: Pollinations FIRST (always free + reliable),
-# then Chutes (always free), then Cloudflare (free with creds),
-# then GitHub Models (free with PAT), then other key-based providers
+# Provider chain v3.0: GitHub Models FIRST (reliable, fast, free with PAT),
+# then Cloudflare (reliable, free with creds), then free providers,
+# then other API-key providers as additional fallbacks
 PROVIDER_CHAIN = [
-    "pollinations", "chutes", "cloudflare", "github_models",
+    "github_models", "cloudflare", "chutes", "pollinations",
     "sambanova", "cerebras", "mistral", "openrouter", "gemini",
 ]
 
 # Map env vars to provider configs
+# GitHub Models: try GH_MODELS_TOKEN first, then GH_PAT_TOKEN (PAT with 'models' permission),
+# then GH_TOKEN_SECRET, then auto-generated GITHUB_TOKEN
 PROVIDER_KEYS = {
     "cloudflare": CLOUDFLARE_API_TOKEN,
-    "github_models": GH_MODELS_TOKEN or GH_TOKEN_SECRET or GITHUB_TOKEN,
+    "github_models": GH_MODELS_TOKEN or GH_PAT_TOKEN or GH_TOKEN_SECRET or GITHUB_TOKEN,
     "cerebras": CEREBRAS_API_KEY,
     "openrouter": OPENROUTER_API_KEY,
     "sambanova": SAMBANOVA_API_KEY,
@@ -361,6 +366,71 @@ class AIRouter:
 
     async def transcribe_voice(self, ogg_bytes: bytes) -> Optional[str]:
         return await transcribe_voice_ogg(ogg_bytes)
+
+    @staticmethod
+    def clean_ai_response(text: str) -> str:
+        """Aggressively strip AI artifacts, ads, and garbage from responses.
+
+        Pollinations leaks ads like 'Support Pollinations.AI', '🌸 Ad 🌸', etc.
+        Other providers may add markdown, self-references, or other junk.
+        This is the LAST line of defense before text reaches the user.
+        """
+        if not text:
+            return ""
+
+        # ── Strip known ad/artifact patterns ──
+        # Pollinations ads
+        ad_patterns = [
+            r'Support Pollinations\.AI.*',
+            r'🌸\s*Ad\s*🌸.*',
+            r'Powered by Pollinations\.AI.*',
+            r'Pollinations\.AI free text APIs.*',
+            r'Support our mission.*',
+            r'keep AI accessible for everyone.*',
+            r'---\s*\n\s*\*\*Support Pollinations',
+            r'---\s*\n\s*🌸\s*\*\*Ad\*\*',
+        ]
+        for pattern in ad_patterns:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE | re.DOTALL)
+
+        # Remove separator lines with ads after them
+        text = re.sub(r'\n---\s*$', '', text)
+        text = re.sub(r'^---\s*$', '', text, flags=re.MULTILINE)
+
+        # Strip "As an AI" type disclaimers
+        text = re.sub(r'(?:As an AI|Как AI|Как искусственный интеллект|I am an AI|Я искусственный интеллект)[^.]*\.', '', text, flags=re.IGNORECASE)
+
+        # Strip model self-references
+        for prefix in [
+            "Настя:", "Nastya:", "НАСТЯ:", "Assistant:", "Настя отвечает:",
+            "Ответ Насти:", "Response:", "Answer:", "Настя говорит:",
+        ]:
+            if text.startswith(prefix):
+                text = text[len(prefix):].strip()
+
+        # Remove surrounding quotes
+        if text.startswith('"') and text.endswith('"'):
+            text = text[1:-1]
+        if text.startswith("'") and text.endswith("'"):
+            text = text[1:-1]
+
+        # Strip leading/trailing asterisks (markdown bold)
+        text = text.strip("*").strip()
+
+        # Remove markdown formatting
+        text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)
+        text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^[-•]\s+', '', text, flags=re.MULTILINE)
+
+        # Clean up multiple newlines
+        text = re.sub(r'\n{3,}', '\n\n', text)
+
+        # Remove trailing/leading whitespace
+        text = text.strip()
+
+        return text
 
     def get_fallback_response(self) -> str:
         return random.choice(FALLBACK_RESPONSES)

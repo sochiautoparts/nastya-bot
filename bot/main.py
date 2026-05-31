@@ -1,25 +1,27 @@
-"""Nastya Bot 2.3 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 3.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v2.3:
+Architecture v3.0:
   - ErrorHandlingMiddleware as OUTER middleware — catches ALL exceptions
   - LoggingMiddleware — logs all messages for monitoring
   - RateLimitMiddleware — prevents spam/abuse
   - AI Router: 9 providers + caching, NEVER crashes, ALWAYS responds
-  - Pollinations FIRST in provider chain (always free + reliable + vision)
-  - Chutes second (always free + reliable)
-  - Cloudflare third (free with credentials, has vision)
-  - GitHub Models fourth (free with PAT + 'models' permission)
-  - Other key-based providers as additional fallbacks
+  - GitHub Models FIRST (free with PAT, GPT-4o-mini, reliable, has vision)
+  - Cloudflare second (free with credentials, Llama models, has vision)
+  - Chutes third (free, always available, DeepSeek V3)
+  - Pollinations fourth (free, always available, BUT leaks ads — cleaned)
+  - Aggressive response cleaning: strips ads, markdown, AI artifacts
   - Shared persistent DB connection with write lock — concurrent-safe
   - Stars donations with ACTIVE Pay buttons via send_invoice
   - NEWS ENGINE: RSS fetching + AI commentary (concurrent fetching)
   - CHANNEL MANAGER: auto-posting to @chasnastya with personality posts
   - Cross-linking: channel content ↔ user conversations
+  - NEWS WITH LINKS: news context includes links for references
+  - CONTEXT MEMORY: Nastya remembers zodiac signs, names, details
   - MOSCOW TIMEZONE — Настя из Москвы!
   - Keep-alive chain via GH PAT trigger
   - Memory leak prevention: periodic tracker cleanup
   - NO "голова разболелась" error messages — Nastya ALWAYS responds in character
-  - CRITICAL FIX: image_base64 no longer popped from kwargs (fixes vision fallback)
+  - COMPACT system prompt for better context utilization
 """
 import asyncio
 import logging

@@ -369,16 +369,26 @@ async def run_news_cycle(db, ai_router) -> int:
 
 
 def format_news_for_context(news_items: List[Dict]) -> str:
-    """Format recent news for injection into system prompt."""
+    """Format recent news for injection into system prompt.
+
+    INCLUDES LINKS so Nastya can reference them in conversation.
+    When she mentions news, she should include the link.
+    """
     if not news_items:
         return ""
 
-    lines = ["Свежие новости, которые Настя видела (можешь упомянуть естественно в разговоре):"]
+    lines = ["Свежие новости, которые Настя видела (упоминай естественно, ОБЯЗАТЕЛЬНО давай ссылку!):"]
     for item in news_items[:3]:
         comment = item.get("nastya_comment", "")
+        link = item.get("link", "")
         if comment:
-            lines.append(f"- {item['title']} (Моя реакция: {comment})")
+            entry = f"- {item['title']} (Моя реакция: {comment})"
         else:
-            lines.append(f"- {item['title']}")
+            entry = f"- {item['title']}"
+        if link:
+            entry += f" [Ссылка: {link}]"
+        lines.append(entry)
+
+    lines.append("Когда упоминаешь новость, ОБЯЗАТЕЛЬНО давай ссылку или скажи 'подробнее в @chasnastya'!")
 
     return "\n".join(lines)

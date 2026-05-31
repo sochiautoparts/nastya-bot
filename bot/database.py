@@ -526,6 +526,28 @@ class Database:
         except Exception:
             return []
 
+    async def get_recent_news_with_links(self, limit: int = 5, max_age_hours: int = 24) -> List[Dict]:
+        """Get recent news for conversation context WITH LINKS for referencing."""
+        conn = await self._get_conn()
+        try:
+            cutoff = time.time() - (max_age_hours * 3600)
+            items = []
+            async with conn.execute(
+                """SELECT id, source, title, link, summary, nastya_comment, category
+                FROM news_items WHERE created_at > ?
+                ORDER BY created_at DESC LIMIT ?""",
+                (cutoff, limit),
+            ) as cur:
+                async for row in cur:
+                    items.append({
+                        "id": row[0], "source": row[1], "title": row[2],
+                        "link": row[3], "summary": row[4], "nastya_comment": row[5],
+                        "category": row[6],
+                    })
+            return items
+        except Exception:
+            return []
+
     async def cleanup_old_news(self, max_items: int = 200) -> int:
         """Remove old news items to keep DB manageable."""
         conn = await self._get_conn()
