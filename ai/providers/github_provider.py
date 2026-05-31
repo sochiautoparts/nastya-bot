@@ -87,7 +87,7 @@ class GitHubModelsProvider(BaseProvider):
         }
 
         try:
-            response = await self._client.post("/v1/chat/completions", json=payload)
+            response = await self._client.post("/chat/completions", json=payload)
             response.raise_for_status()
             data = response.json()
 

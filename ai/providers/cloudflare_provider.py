@@ -188,8 +188,8 @@ class CloudflareProvider(BaseProvider):
                     continue
                 last_error = ProviderError(self.name, f"HTTP {status}: {exc.response.text[:200]}", retryable=status in (500, 502, 504))
                 continue
-            except ProviderError:
-                last_error = _
+            except ProviderError as exc:
+                last_error = exc
                 continue
             except Exception as exc:
                 last_error = ProviderError(self.name, f"Unexpected error with {try_model}: {exc}", retryable=True)

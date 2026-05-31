@@ -29,7 +29,8 @@ from bot.config import (
     OPENROUTER_API_KEY, CEREBRAS_API_KEY,
     SAMBANOVA_API_KEY, MISTRAL_API_KEY, GEMINI_API_KEY,
     CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
-    GH_MODELS_TOKEN, CACHE_TTL_TEXT, CACHE_MAX_MEMORY,
+    GH_MODELS_TOKEN, GH_TOKEN_SECRET, GITHUB_TOKEN,
+    CACHE_TTL_TEXT, CACHE_MAX_MEMORY,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ PROVIDER_CHAIN = [
 # Map env vars to provider configs — NO Grok!
 PROVIDER_KEYS = {
     "cloudflare": CLOUDFLARE_API_TOKEN,
-    "github_models": GH_MODELS_TOKEN,
+    "github_models": GH_MODELS_TOKEN or GH_TOKEN_SECRET or GITHUB_TOKEN,
     "cerebras": CEREBRAS_API_KEY,
     "openrouter": OPENROUTER_API_KEY,
     "sambanova": SAMBANOVA_API_KEY,

@@ -10,6 +10,7 @@ Architecture:
   - Picks interesting items by category priority
   - v2.1: More reliable RSS sources, better error handling, Moscow time
 """
+import asyncio
 import logging
 import time
 import random
@@ -207,8 +208,6 @@ async def _fetch_single_source(client: httpx.AsyncClient, source: Dict) -> List[
         logger.warning(f"RSS fetch error {source['name']}: {e}")
         return []
 
-
-import asyncio  # needed for gather
 
 
 async def store_news_items(db, items: List[Dict]) -> int:
