@@ -40,7 +40,8 @@ logger = logging.getLogger(__name__)
 # Основная модель — Qwen3-4B: умная, thinking mode, 119 языков
 PRIMARY_MODEL = "qwen3:4b-instruct"
 # Резервная модель — Vikhr-Llama-1B: быстрая, русский оптимизирован
-RESERVE_MODEL = "lakomoor/vikhr-llama-3.2-1b-instruct"
+# ВАЖНО: Тег :1b ОБЯЗАТЕЛЕН! Без него Ollama выдаёт "file does not exist"
+RESERVE_MODEL = "lakomoor/vikhr-llama-3.2-1b-instruct:1b"
 
 # Таймауты
 PRIMARY_TIMEOUT_SECONDS = 45.0   # Qwen3-4B-instruct на CPU — быстрее без thinking
@@ -84,15 +85,12 @@ class ResponseCache:
 
 
 class OllamaClusterProvider(BaseProvider):
-    """Провайдер для Ollama — v29.0 PURE TEXT BOT.
+    """Провайдер для Ollama — v30.0 PURE TEXT BOT.
 
-    v29.0 CHANGES vs v28.0:
-    - Переключение на qwen3:4b-instruct (БЕЗ thinking = быстрее ответы!)
-    - Уменьшен текстовый семафор до 1 (CPU не тянет больше)
-    - История уменьшена до 12 сообщений для скорости
+    v30.0 CHANGES vs v29.0:
+    - FIX: Vikhr model tag — :1b обязателен! (иначе pull error)
+    - История уменьшена до 10 сообщений для скорости на CPU
     - num_ctx=4096 — оптимально для CPU
-    - Глубокая ссылка 'Обсудить с Настей' для канала
-    - Живое общение, минимум ограничений
     """
 
     name: str = "ollama_cluster"
@@ -173,7 +171,7 @@ class OllamaClusterProvider(BaseProvider):
         self._detect_models()
 
         logger.info(
-            f"OllamaClusterProvider v29.0 (TEXT ONLY): url={self._active_url} | "
+            f"OllamaClusterProvider v30.0 (TEXT ONLY): url={self._active_url} | "
             f"primary={self._primary_model} | reserve={self._reserve_model}"
         )
 

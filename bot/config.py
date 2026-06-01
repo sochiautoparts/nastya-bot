@@ -1,8 +1,8 @@
-"""Nastya Bot 29.0 — Configuration (PURE TEXT BOT — NO VISION)
+"""Nastya Bot 30.0 — Configuration (PURE TEXT BOT — NO VISION)
 
-v29.0: Чисто текстовый бот!
+v30.0: Чисто текстовый бот!
 - Qwen3-4B-instruct для текста (PRIMARY — БЕЗ thinking, быстрые ответы)
-- Vikhr-Llama-1B для текста (RESERVE — быстрая, русский оптимизирован)
+- Vikhr-Llama-1B:1b для текста (RESERVE — быстрая, русский оптимизирован)
 - Pollinations как fallback (бесплатный, без API ключа)
 - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
 - Глубокая ссылка 'Обсудить с Настей' для канала

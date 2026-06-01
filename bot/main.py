@@ -1,23 +1,21 @@
-"""Nastya Bot 29.0 — PURE TEXT BOT. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 30.0 — PURE TEXT BOT. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v29.0 (PURE TEXT BOT):
+Architecture v30.0 (PURE TEXT BOT):
   - SINGLE INSTANCE: file lock + conflict tracker prevents multiple bot instances
   - SINGLE WORKFLOW: one bot.yml with concurrency group (no duplicate runs)
   - LOCAL OLLAMA as PRIMARY AI provider
   - POLLINATIONS as FALLBACK (text fallback при недоступности Ollama)
-  - Models: Qwen3-4B (PRIMARY) + Vikhr-Llama-1B (RESERVE)
+  - Models: Qwen3-4B (PRIMARY) + Vikhr-Llama-1B:1b (RESERVE)
   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
   - HEALTH WATCHDOG: monitors Telegram API + Ollama, auto-restarts on failure
   - АПОЛИТИЧНОСТЬ: Настя не обсуждает политику, религию, войну
   - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ
   - MOSCOW TIMEZONE — Настя из Москвы!
 
-v29.0 CHANGES vs v28.0:
-  1. ВСЯ ОБРАБОТКА ФОТО УДАЛЕНА — бот чисто текстовый!
-  2. Модели: Qwen3-4B + Vikhr-Llama-1B (вместо phi4-mini + moondream)
-  3. Две текстовые модели: основная + быстрая резервная
-  4. Авто-фоллбэк с основной на резервную при таймауте/ошибке
-  5. Нет vision семафоров, нет moondream, нет image_base64
+v30.0 CHANGES vs v29.0:
+  1. FIX: Vikhr model tag — :1b обязателен! (pull error fix)
+  2. FIX: io import для voice handler
+  3. Обновлён кэш-ключ для моделей
 """
 import asyncio
 import fcntl
@@ -477,7 +475,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 29.0 Starting (PURE TEXT BOT — v29) ===")
+    logger.info("=== Nastya Bot 30.0 Starting (PURE TEXT BOT — v30) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -524,7 +522,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 29.0 Ready (PURE TEXT BOT — v29) ===")
+    logger.info("=== Nastya Bot 30.0 Ready (PURE TEXT BOT — v30) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

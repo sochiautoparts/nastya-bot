@@ -1,17 +1,16 @@
-"""AI Router v29.0 — PURE TEXT BOT Edition.
+"""AI Router v30.0 — PURE TEXT BOT Edition.
 
 АРХИТЕКТУРА: Локальный Ollama (2 модели) + Pollinations fallback!
   - PRIMARY провайдер: OllamaClusterProvider (локальный inference)
   - FALLBACK провайдер: PollinationsProvider (текст при недоступности Ollama)
   - Основная модель: Qwen3-4B-instruct (БЕЗ thinking = быстрые ответы)
-  - Резервная модель: Vikhr-Llama-1B (быстрая, русский оптимизирован)
+  - Резервная модель: Vikhr-Llama-1B:1b (быстрая, русский оптимизирован)
   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
   - Глубокая ссылка 'Обсудить с Настей' — передача постов канала в чат
   - Живое общение — минимум ограничений
 
-v29.0 CHANGES vs v28.0:
-  - qwen3:4b-instruct вместо qwen3:4b (БЕЗ thinking = быстрее!)
-  - Семфор = 1 (CPU не тянет больше)
+v30.0 CHANGES vs v29.0:
+  - FIX: Vikhr model tag — :1b обязателен!
   - Живое и естественное общение
   - Deep link для канала
 """
@@ -74,9 +73,9 @@ class AICache:
 
 
 class AIRouter:
-    """Центральный AI-маршрутизатор — v29.0 PURE TEXT BOT.
+    """Центральный AI-маршрутизатор — v30.0 PURE TEXT BOT.
 
-    Primary: OllamaClusterProvider (Qwen3-4B-instruct + Vikhr-Llama-1B).
+    Primary: OllamaClusterProvider (Qwen3-4B-instruct + Vikhr-Llama-1B:1b).
     Fallback: PollinationsProvider (текст при недоступности Ollama).
     NO VISION — только текст!
     """
@@ -112,7 +111,7 @@ class AIRouter:
         stats = self.provider.get_stats()
         pollinations_status = "active" if self._pollinations else "unavailable"
         logger.info(
-            f"AI Router v29.0 (TEXT ONLY) initialized: "
+            f"AI Router v30.0 (TEXT ONLY) initialized: "
             f"url={stats['active_url']}, "
             f"primary_model={stats['primary_model']}, "
             f"reserve_model={stats['reserve_model']}, "

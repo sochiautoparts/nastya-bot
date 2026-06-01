@@ -25,6 +25,7 @@ import random
 import re
 import time
 import datetime
+import io
 from zoneinfo import ZoneInfo
 from aiogram import Router, F
 from aiogram.types import (
