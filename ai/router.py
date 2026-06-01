@@ -1,24 +1,18 @@
-"""AI Router — BULLETPROOF routing with multi-phase fallback + caching.
+"""AI Router — BULLETPROOF routing with local model PRIMARY + cloud fallback.
 
-Architecture (v14.0 — Apolitical, 4 FREE UNLIMITED providers as PRIMARY):
-  - Pollinations FIRST (always free, always available, vision support)
-  - Chutes SECOND (free DeepSeek V3, no key, vision support)
-  - Blackbox THIRD (free, unlimited, multiple models, vision support)
-  - HuggingFace FOURTH (free tier, optional key, many models, vision)
-  - OpenRouter FIFTH (50 free req/day — demoted, too greedy!)
-  - Cloudflare SIXTH (free if credentials available)
-  - Groq SEVENTH (free, ultra-fast LPU, excellent Russian, 30 RPM)
-  - GitHub Models EIGHTH (free, needs PAT with 'models' permission)
+Architecture (v15.0 — Local Qwen3-VL as PRIMARY):
+  - Ollama FIRST (local Qwen3-VL-2B — free, unlimited, no external API!)
+  - GitHub Models SECOND (free DeepSeek-V3 via PAT, reliable backup)
+  - Pollinations THIRD (free, no key, vision)
+  - Chutes FOURTH (free DeepSeek V3, no key, vision)
+  - Blackbox FIFTH (free, unlimited, vision)
+  - HuggingFace SIXTH (free tier, optional key, vision)
+  - OpenRouter SEVENTH (50 free req/day — demoted)
   - Other API-key providers as additional fallbacks
   - NEVER raises exceptions to caller — ALWAYS returns AIResponse
-  - 30s timeouts with proper connect timeouts
-  - Circuit breaker: skip providers that failed recently
-  - Cache last working provider for faster retry
-  - AI Response caching (disabled for conversations to prevent context amnesia)
-  - Fallback responses as LAST resort — bot ALWAYS responds
   - Political content filtering — responses with political keywords are replaced
+  - Aggressive response cleaning: strips ads, markdown, artifacts, SSE garbage
   - NO "голова разболелась" error messages EVER
-  - Aggressive response cleaning: strips ads, markdown, artifacts
 """
 import logging
 import asyncio
@@ -39,10 +33,11 @@ from bot.config import (
     GH_MODELS_TOKEN, GH_TOKEN_SECRET, GITHUB_TOKEN, GH_PAT_TOKEN,
     HUGGINGFACE_API_KEY,
     CACHE_TTL_TEXT, CACHE_MAX_MEMORY,
+    OLLAMA_BASE_URL,
 )
 
-# 4 FREE UNLIMITED providers — no API key needed, no rate limits
-FREE_PROVIDERS = {"pollinations", "chutes", "blackbox", "huggingface"}
+# Free providers that don't need API keys
+FREE_PROVIDERS = {"ollama", "pollinations", "chutes", "blackbox", "huggingface"}
 
 logger = logging.getLogger(__name__)
 
@@ -56,32 +51,34 @@ FALLBACK_RESPONSES = [
     "Кстати, заходи на мой канал @chasnastya! 💅 А ты что сказал?",
 ]
 
-# Provider chain v13.0: 4 FREE UNLIMITED providers FIRST, then limited ones
+# Provider chain v15.0: LOCAL model FIRST, then free cloud, then limited
 PROVIDER_CHAIN = [
-    # ── 4 FREE UNLIMITED providers (no key, no limits, vision) ──
-    # Pollinations — always free, always available, vision support
+    # ── LOCAL model (PRIMARY — free, unlimited, no external dependency!) ──
+    "ollama",
+    # ── Free cloud providers ──
+    # GitHub Models — free DeepSeek-V3 via PAT, reliable
+    "github_models",
+    # Pollinations — always free, always available, vision
     "pollinations",
-    # Chutes — free DeepSeek V3, no key, vision support
+    # Chutes — free DeepSeek V3, no key, vision
     "chutes",
-    # Blackbox — free, unlimited, multiple models (GPT-4o, Gemini, Claude), vision
+    # Blackbox — free, unlimited, multiple models, vision
     "blackbox",
-    # HuggingFace — free tier, optional key, many models, vision support
+    # HuggingFace — free tier, optional key, many models, vision
     "huggingface",
-    # ── Limited free providers (demoted — too greedy!) ──
-    # OpenRouter — only 50 free req/day, demoted from PRIMARY
+    # ── Limited free providers (demoted) ──
     "openrouter",
-    # Cloudflare — free if credentials available, reliable, vision
+    # Cloudflare — free if credentials available
     "cloudflare",
     # Groq — free, ultra-fast LPU, great Russian, 30 RPM
     "groq",
-    # GitHub Models — free, needs PAT with 'models' permission
-    "github_models",
     # Other API-key providers as additional fallbacks
     "sambanova", "cerebras", "mistral", "gemini",
 ]
 
 # Map env vars to provider configs
 PROVIDER_KEYS = {
+    "ollama": "",  # No key needed — local!
     "cloudflare": CLOUDFLARE_API_TOKEN,
     "groq": GROQ_API_KEY,
     "huggingface": HUGGINGFACE_API_KEY,
@@ -129,7 +126,7 @@ class AICache:
 class AIRouter:
     """Central AI request router — NEVER crashes, ALWAYS responds.
 
-    v6.0: Cloudflare-first + Groq-second for maximum reliability and speed.
+    v15.0: Ollama (local Qwen3-VL) as PRIMARY, GitHub Models as reliable backup.
     """
 
     def __init__(self, db=None):
@@ -151,8 +148,14 @@ class AIRouter:
             try:
                 api_key = PROVIDER_KEYS.get(name, "")
 
-                if name in ("pollinations", "chutes", "blackbox"):
-                    # Always-free providers — no key needed
+                if name == "ollama":
+                    # Ollama — local model, no key needed, configurable URL
+                    provider = provider_cls(
+                        timeout=60.0,
+                        base_url=OLLAMA_BASE_URL,
+                    )
+                elif name in ("pollinations", "chutes", "blackbox"):
+                    # Always-free cloud providers — no key needed
                     provider = provider_cls(timeout=30.0)
                 elif name == "huggingface":
                     # HuggingFace works with or without key
@@ -172,7 +175,8 @@ class AIRouter:
                     await provider.init()
                     self.providers[name] = provider
                     vision = " (vision)" if getattr(provider, 'supports_vision', False) else ""
-                    logger.info(f"Provider: {name} ✓{vision}")
+                    local = " [LOCAL]" if name == "ollama" else ""
+                    logger.info(f"Provider: {name} ✓{vision}{local}")
                 else:
                     logger.warning(f"Provider: {name} — not available")
 
@@ -190,6 +194,13 @@ class AIRouter:
         logger.info(f"AI chain ({len(self._chain)}): {' → '.join(self._chain)}")
         if self._vision_providers:
             logger.info(f"Vision providers: {', '.join(self._vision_providers)}")
+
+        # Warm up Ollama model (pre-load into memory for faster first response)
+        if "ollama" in self.providers:
+            try:
+                await self.providers["ollama"]._warm_up()
+            except Exception as e:
+                logger.warning(f"Ollama warm-up failed: {e}")
 
     async def close(self) -> None:
         for p in self.providers.values():
@@ -227,16 +238,11 @@ class AIRouter:
 
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
-        """Route text chat. NEVER raises exceptions. ALWAYS returns a response.
-
-        v7.1: Caching DISABLED for conversations with history — prevents context loss
-        and garbage responses. Cache only used for no-history requests (commentary, etc).
-        """
+        """Route text chat. NEVER raises exceptions. ALWAYS returns a response."""
         image_base64 = kwargs.get("image_base64")
         self._total_requests += 1
 
         # ── PHASE 0: Check memory cache ONLY for no-history requests ──
-        # CRITICAL FIX: Never cache conversations with history — causes context amnesia!
         has_conversation = bool(messages and len(messages) > 0)
         if not has_conversation and not image_base64:
             cached = self._cache.get(prompt, system_prompt)
@@ -276,7 +282,6 @@ class AIRouter:
                         messages=messages, image_base64=image_base64, **kwargs,
                     )
                     if result and result.text:
-                        # CRITICAL: Clean response before returning (SSE artifacts, API errors)
                         cleaned = self.clean_ai_response(result.text)
                         if not cleaned:
                             logger.warning(f"Vision provider {vp_name} returned garbage after cleaning")
@@ -301,9 +306,6 @@ class AIRouter:
         # ── PHASE 1: Try configured providers ──
         chain = self._get_ordered_chain()
 
-        # Strip image_base64 from kwargs for non-vision fallback providers.
-        # Non-vision providers receiving image_base64 can create invalid message
-        # formats (list content) that get rejected by the API.
         safe_kwargs = {k: v for k, v in kwargs.items() if k != "image_base64"}
 
         for provider_name in chain:
@@ -311,10 +313,9 @@ class AIRouter:
             if not provider:
                 continue
 
-            # Only pass image_base64 to vision-capable providers
             provider_kwargs = safe_kwargs
             if image_base64 and getattr(provider, 'supports_vision', False):
-                provider_kwargs = kwargs  # includes image_base64
+                provider_kwargs = kwargs
 
             try:
                 result = await provider.generate(
@@ -322,15 +323,13 @@ class AIRouter:
                     messages=messages, **provider_kwargs,
                 )
                 if result and result.text:
-                    # CRITICAL: Clean response before returning (SSE artifacts, API errors)
                     cleaned = self.clean_ai_response(result.text)
                     if not cleaned:
                         logger.warning(f"Provider {provider_name} returned garbage after cleaning")
-                        continue  # Treat as failed — don't return garbage
+                        continue
 
                     self._mark_success(provider_name)
 
-                    # Update result with cleaned text
                     result = AIResponse(
                         text=cleaned,
                         provider=result.provider,
@@ -339,7 +338,6 @@ class AIRouter:
                         metadata=result.metadata,
                     )
 
-                    # Only cache responses without conversation history
                     if not has_conversation and not image_base64:
                         self._cache.put(prompt, system_prompt, cleaned)
                         if self._db:
@@ -368,7 +366,6 @@ class AIRouter:
             provider = self.providers.get(provider_name)
             if not provider:
                 continue
-            # Only pass image_base64 to vision-capable providers
             provider_kwargs = safe_kwargs
             if image_base64 and getattr(provider, 'supports_vision', False):
                 provider_kwargs = kwargs
@@ -378,7 +375,6 @@ class AIRouter:
                     messages=messages, **provider_kwargs,
                 )
                 if result and result.text:
-                    # CRITICAL: Clean response before returning (SSE artifacts, API errors)
                     cleaned = self.clean_ai_response(result.text)
                     if not cleaned:
                         continue
@@ -393,8 +389,8 @@ class AIRouter:
             except Exception:
                 pass
 
-        # ── PHASE 3: Try free providers with simplified prompt (no history) ──
-        for free_name in ["pollinations", "chutes", "blackbox"]:
+        # ── PHASE 3: Try free providers with simplified prompt ──
+        for free_name in ["ollama", "pollinations", "chutes", "blackbox"]:
             if free_name in self.providers:
                 try:
                     provider = self.providers[free_name]
@@ -403,7 +399,6 @@ class AIRouter:
                         messages=None,
                     )
                     if result and result.text:
-                        # CRITICAL: Clean response before returning (SSE artifacts, API errors)
                         cleaned = self.clean_ai_response(result.text)
                         if not cleaned:
                             continue
@@ -442,17 +437,11 @@ class AIRouter:
         """Aggressively strip AI artifacts, ads, and garbage from responses.
 
         CRITICAL: This is the LAST line of defense before text reaches the user.
-        Handles: SSE artifacts, Pollinations ads, DeepSeek think tags, markdown,
-        API error leaks, and any other garbage that should NEVER be shown to users.
         """
         if not text:
             return ""
 
-        # ── PHASE 1: Strip SSE/streaming artifacts (CRITICAL FIX!) ──
-        # These patterns come from providers returning streaming responses:
-        #   data: {"type":"start"}
-        #   data: {"type":"error","errorText":"..."}
-        #   data: [DONE]
+        # ── PHASE 1: Strip SSE/streaming artifacts ──
         sse_patterns = [
             r'data:\s*\{"type"\s*:\s*"start"\s*\}\s*',
             r'data:\s*\{"type"\s*:\s*"error"[^}]*\}\s*',
@@ -463,9 +452,7 @@ class AIRouter:
         for pattern in sse_patterns:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-        # If the ENTIRE text is SSE format, try to extract content
         if text.strip().startswith('data:'):
-            # Try to extract useful content from SSE lines
             content_parts = []
             for line in text.split('\n'):
                 line = line.strip()
@@ -478,7 +465,6 @@ class AIRouter:
                     continue
                 if '"type":"start"' in data_str:
                     continue
-                # Try to extract content
                 try:
                     import json
                     d = json.loads(data_str)
@@ -491,10 +477,9 @@ class AIRouter:
             if content_parts:
                 text = ''.join(content_parts)
             else:
-                # Entire response is SSE garbage — return empty
                 return ""
 
-        # ── PHASE 2: Strip API error messages that leaked through ──
+        # ── PHASE 2: Strip API error messages ──
         error_patterns = [
             r'Invalid prompt:.*',
             r'Authentication Error.*',
@@ -535,21 +520,19 @@ class AIRouter:
         for pattern in ad_patterns:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE | re.DOTALL)
 
-        # Strip DeepSeek R1 "think" tags
+        # Strip think tags (DeepSeek R1, Qwen3)
         text = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<thinking\b[^>]*>.*?</thinking\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
 
-        # Strip "ad" sections with various emoji markers
+        # Strip "ad" sections
         text = re.sub(r'[\U0001f33f\U0001f331\U0001f31f].{0,5}(?:Ad|Support|Visit|Check).{0,100}', '', text, flags=re.IGNORECASE)
 
-        # Remove separator lines with ads after them
         text = re.sub(r'\n---\s*$', '', text)
         text = re.sub(r'^---\s*$', '', text, flags=re.MULTILINE)
 
         # ── PHASE 4: Strip AI disclaimers ──
         text = re.sub(r'(?:As an AI|Как AI|Как искусственный интеллект|I am an AI|Я искусственный интеллект)[^.]*\.', '', text, flags=re.IGNORECASE)
 
-        # Strip model self-references
         for prefix in [
             "Настя:", "Nastya:", "НАСТЯ:", "Assistant:", "Настя отвечает:",
             "Ответ Насти:", "Response:", "Answer:", "Настя говорит:",
@@ -557,28 +540,22 @@ class AIRouter:
             if text.startswith(prefix):
                 text = text[len(prefix):].strip()
 
-        # Remove surrounding quotes
         if text.startswith('"') and text.endswith('"'):
             text = text[1:-1]
         if text.startswith("'") and text.endswith("'"):
             text = text[1:-1]
 
-        # Strip leading/trailing asterisks (markdown bold)
         text = text.strip("*").strip()
 
-        # Remove markdown formatting — but keep it readable
+        # Remove markdown
         text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
         text = re.sub(r'\*([^*]+)\*', r'\1', text)
         text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
 
-        # Clean up multiple newlines
         text = re.sub(r'\n{3,}', '\n\n', text)
-
-        # Remove trailing/leading whitespace
         text = text.strip()
 
-        # ── FINAL CHECK: If text is empty or only garbage, return empty ──
-        # This prevents sending "data:" or similar garbage to users
+        # FINAL CHECK
         if text and all(c in ' \t\n\r' or c in 'data:[DONE]{}"\'`' for c in text):
             return ""
 
@@ -596,6 +573,7 @@ class AIRouter:
                 "healthy": self._is_provider_healthy(name),
                 "fail_count": self._fail_counts.get(name, 0),
                 "vision": getattr(provider, 'supports_vision', False) if provider else False,
+                "local": name == "ollama",
             }
         status["_stats"] = {
             "total_requests": self._total_requests,

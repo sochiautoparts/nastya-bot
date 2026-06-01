@@ -1,20 +1,13 @@
-"""Nastya Bot 14.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 15.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
 
-Architecture v14.0:
-  - 4 FREE UNLIMITED providers as PRIMARY!
-  - Pollinations FIRST (always free, always available, vision)
-  - Chutes SECOND (free DeepSeek V3, no key, vision)
-  - Blackbox THIRD (free, unlimited, multiple models, vision)
-  - HuggingFace FOURTH (free tier, optional key, many models, vision)
-  - OpenRouter DEMOTED to FIFTH (only 50 free req/day — too greedy!)
+Architecture v15.0:
+  - LOCAL Qwen3-VL-2B via Ollama as PRIMARY!
+  - GitHub Models SECOND (free DeepSeek-V3 via PAT)
+  - Pollinations, Chutes, Blackbox, HuggingFace as cloud fallbacks
+  - НИКАКИХ SSE артефактов — локальная модель возвращает чистый JSON
+  - НИКАКИХ Authentication Error — локальный inference
   - АПОЛИТИЧНОСТЬ: Настя не обсуждает политику, религию, войну
-  - ГЕНДЕРНАЯ АДАПТАЦИЯ: Настя понимает с кем общается (мужчина/женщина)
-  - МАКСИМАЛЬНО ЖИВАЯ РЕЧЬ: ещё более человечное общение
-  - КОНТЕКСТ ПАМЯТИ: запоминает имена, предпочтения, факты
-  - OPTIMIZED VISION: фото понимаются через vision-модели
-  - Web search, knowledge injection, channel management
-  - Context memory: 40 messages, 30 days
-  - Stars donations, proactive messages (reduced frequency)
+  - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ + VISION
   - MOSCOW TIMEZONE — Настя из Москвы!
 """
 import asyncio
@@ -259,7 +252,7 @@ async def memory_cleanup() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 14.0 Starting (Apolitical, Vision-optimized, More human, Context memory) ===")
+    logger.info("=== Nastya Bot 15.0 Starting (Local Qwen3-VL, Apolitical, Vision, Context memory) ===")
 
     db = Database(DB_PATH)
     await db.init()
@@ -301,7 +294,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 14.0 Ready ===")
+    logger.info("=== Nastya Bot 15.0 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:

@@ -1,20 +1,17 @@
-"""Nastya Bot 14.0 — Configuration
+"""Nastya Bot 15.0 — Configuration
 All secrets from environment variables only.
 
-v14.0: АПОЛИТИЧНОСТЬ — Настя не обсуждает политику, религию, войну!
-      4 FREE UNLIMITED providers as PRIMARY!
-      Pollinations FIRST (always free, always available, vision)
-      Chutes SECOND (free DeepSeek V3, no key, vision)
-      Blackbox THIRD (free, unlimited, multiple models, vision)
-      HuggingFace FOURTH (free tier, optional key, many models, vision)
-      OpenRouter DEMOTED to FIFTH (only 50 free req/day — too greedy!)
-      DeepSeek REMOVED ENTIRELY (was returning 402 Insufficient Balance),
-      Enhanced gender awareness — Настя понимает мужчина/женщина,
-      Context memory — запоминает имена, предпочтения, факты,
-      Political content filter in news, channel, and chat,
-      News links MANDATORY in every news-related response,
-      More diverse channel posts — events, facts, reactions,
-      Substantive posts with context and opinion.
+v15.0: ЛОКАЛЬНАЯ МОДЕЛЬ Qwen3-VL-2B через Ollama!
+      Ollama PRIMARY (локальный Qwen3-VL-2B — бесплатно, безлимит, без внешних API!)
+      GitHub Models SECOND (бесплатный DeepSeek-V3 через PAT — надёжный backup)
+      Pollinations THIRD (всегда бесплатно, vision)
+      Chutes FOURTH (бесплатный DeepSeek V3, vision)
+      Blackbox FIFTH (бесплатно, безлимит, vision)
+      HuggingFace SIXTH (бесплатный tier, vision)
+      НИКАКИХ SSE артефактов — локальная модель возвращает чистый JSON!
+      НИКАКИХ Authentication Error — локальный inference!
+      АПОЛИТИЧНОСТЬ — Настя не обсуждает политику, религию, войну!
+      Гендерная адаптация, контекст памяти, фильтр политического контента.
 """
 import os
 from typing import Dict, List
@@ -37,6 +34,11 @@ def _env_int(name: str, default: int = 0) -> int:
 
 # ── Bot Core ────────────────────────────────────────────────
 BOT_TOKEN: str = _env("BOT_TOKEN")
+
+# ── Ollama Local Model ─────────────────────────────────────
+# Qwen3-VL-2B running locally via Ollama — PRIMARY provider!
+# Free, unlimited, no external API dependency, no auth errors!
+OLLAMA_BASE_URL: str = _env("OLLAMA_BASE_URL", "http://localhost:11434")
 OWNER_ID: int = _env_int("OWNER_ID", 0)
 ADMIN_IDS: List[int] = list(set(
     [OWNER_ID] + [int(x) for x in _env("ADMIN_IDS", str(OWNER_ID) if OWNER_ID else "").split(",") if x.strip().isdigit()]
