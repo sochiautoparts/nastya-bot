@@ -21,6 +21,7 @@ fi
 
 # Pull required models
 echo "Pulling models (if not cached)..."
+ollama pull phi4-mini:3.8b || true
 ollama pull qwen3-vl:2b
 ollama pull qwen3:1.7b || true
 
