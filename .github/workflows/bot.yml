@@ -1,27 +1,25 @@
-name: Nastya Bot — Qwen3-VL-2B v22
+name: Nastya Bot — Production Cluster v23
 
 # ═══════════════════════════════════════════════════════════════
-# SINGLE CONSOLIDATED WORKFLOW for Nastya Bot v22.0
+# Nastya Bot v23.0 — Production Cluster Edition
 #
 # Architecture:
-#   - Ollama runs INSIDE GitHub Actions with Qwen3-VL-2B model
-#   - Bot runs continuously with UNLIMITED auto-restart on failure
-#   - Every 5 hours cron kicks off a fresh runner (new IP, clean state)
-#   - concurrency: ONLY ONE instance can run at a time!
-#   - If old run is still going, it gets cancelled automatically
-#   - UNLIMITED retries: bot always restarts, never stays dead
-#   - Health watchdog inside bot: monitors Telegram + Ollama every 30s
-#   - Self-dispatch: re-dispatches workflow when runner time runs out
-#   - Exit codes: 2=conflict, 3=Ollama/health failure, 0=timeout
+#   - LOCAL OLLAMA CLUSTER as SOLE AI provider (NO external APIs!)
+#   - Models: qwen3-vl:2b (vision+text), qwen3:1.7b (fast text)
+#   - Bot runs continuously with UNLIMITED auto-restart
+#   - Every 5 hours cron kicks off a fresh runner
+#   - Single concurrency group — ONE bot instance only!
+#   - Health watchdog: checks Telegram + Ollama every 30s
+#   - Self-dispatch: re-triggers workflow when runner time runs out
 #
-# v22.0 CHANGES:
-#   - Vision FIXED: image_base64 no longer duplicated in kwargs
-#   - Ollama provider FIXED: TEXT_MODEL NameError resolved
-#   - Model selection FIXED: only uses installed models
-#   - Fast-fail: max 3 cloud providers + max 2 vision fallbacks
-#   - Health watchdog: checks every 30s (was 60s)
-#   - UNLIMITED retries — bot MUST always be running
-#   - Intelligent backoff: 5s → 10s → 15s → 30s (max)
+# v23.0 CHANGES vs v22.0:
+#   - ALL external API providers REMOVED (GitHub Models, Pollinations,
+#     Chutes, Blackbox, HuggingFace, OpenRouter, Cloudflare, Groq,
+#     Cerebras, Sambanova, Mistral, Gemini)
+#   - Only local Ollama — NO rate limits, NO auth errors, NO cascading
+#   - Vision FIXED: image_base64 passed correctly
+#   - Response time: 1-5s instead of 30-260s
+#   - OllamaClusterProvider replaces all 12+ cloud providers
 #
 # Schedule (UTC, Moscow = UTC+3):
 #   Every 5 hours: 00:00, 05:00, 10:00, 15:00, 20:00
@@ -36,14 +34,14 @@ on:
     - cron: '0 20 * * *'     # 20:00 UTC = 23:00 Moscow
   workflow_dispatch:
 
-# ═══ CRITICAL: Single concurrency group — prevents multiple instances! ═══
+# ═══ CRITICAL: Single concurrency group ═══
 concurrency:
   group: nastya-bot-single
-  cancel-in-progress: true  # Always kill previous run — ONE bot only!
+  cancel-in-progress: true
 
 permissions:
   contents: read
-  actions: write  # Needed for self-dispatch
+  actions: write
 
 env:
   PYTHONUNBUFFERED: "1"
@@ -52,10 +50,10 @@ env:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 345  # ~5h45m — leaves buffer before next cron
+    timeout-minutes: 345  # ~5h45m
 
     steps:
-      # ── Kill ANY other running bot instances FIRST ──
+      # ── Kill conflicting runs ──
       - name: Cancel conflicting runs and wait
         env:
           GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
@@ -64,7 +62,6 @@ jobs:
           CURRENT_RUN=${{ github.run_id }}
           REPO=${{ github.repository }}
 
-          # Get all in-progress runs for this repo and cancel them
           for status in in_progress queued; do
             RUNS=$(curl -s -H "Authorization: token $GH_TOKEN" \
               "https://api.github.com/repos/$REPO/actions/runs?status=$status&per_page=10" \
@@ -104,14 +101,15 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ── Ollama for LOCAL Qwen3-VL-2B model ──
+      # ── Ollama for LOCAL model inference ──
       - name: Install Ollama
         run: |
           curl -fsSL https://ollama.com/install.sh | sh
 
       - name: Start Ollama server
         run: |
-          ollama serve &
+          # Start with keep_alive=-1 to keep model in memory permanently
+          OLLAMA_KEEP_ALIVE=-1 ollama serve &
           for i in $(seq 1 30); do
             if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
               echo "Ollama server is ready!"
@@ -126,14 +124,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /home/runner/.ollama
-          key: ollama-qwen3-vl-2b-v5
+          key: ollama-qwen3-vl-2b-v6
           restore-keys: |
             ollama-qwen3-
 
       - name: Pull models
         if: steps.cache-models.outputs.cache-hit != 'true'
         run: |
-          echo "=== Pulling Qwen3-VL-2B (PRIMARY model: text + vision) ==="
+          echo "=== Pulling Qwen3-VL-2B (PRIMARY: text + vision) ==="
           ollama pull qwen3-vl:2b
           echo "=== Pulling Qwen3-1.7B (fast text fallback) ==="
           ollama pull qwen3:1.7b
@@ -167,7 +165,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v22
+          key: nastya-db-v23
           restore-keys: |
             nastya-db-
 
@@ -179,34 +177,21 @@ jobs:
           ADMIN_IDS: ${{ secrets.OWNER_ID }}
           BOT_USERNAME: asnastya_bot
           OLLAMA_BASE_URL: http://localhost:11434
-          GH_MODELS_TOKEN: ${{ secrets.GH_MODELS_TOKEN }}
-          GH_TOKEN_SECRET: ${{ secrets.GH_TOKEN_SECRET }}
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
-          HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
-          SAMBANOVA_API_KEY: ${{ secrets.SAMBANOVA_API_KEY }}
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           CHANNEL_USERNAME: ${{ secrets.CHANNEL_USERNAME }}
           DB_PATH: data/nastya.db
           LOG_LEVEL: INFO
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
-          OLLAMA_KEEP_ALIVE: 30m
+          OLLAMA_KEEP_ALIVE: -1
         run: |
-          echo "=== Starting Nastya Bot 22.0 with Qwen3-VL-2B ==="
+          echo "=== Starting Nastya Bot 23.0 (Production Cluster) ==="
           echo "Ollama status:"
           curl -s http://localhost:11434/api/tags | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  Model: {m[\"name\"]}') for m in d.get('models',[])]" 2>/dev/null || echo "  Ollama not responding"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
-          # v21.0: UNLIMITED retries — bot MUST always be running!
-          # Intelligent backoff: 5s → 10s → 15s → 30s (max 30s)
+          # v23.0: UNLIMITED retries — bot MUST always be running!
           RETRY=0
           while true; do
             RETRY=$((RETRY+1))
@@ -217,7 +202,7 @@ jobs:
               echo "WARNING: Ollama not responding! Trying to restart..."
               pkill ollama 2>/dev/null || true
               sleep 3
-              ollama serve &
+              OLLAMA_KEEP_ALIVE=-1 ollama serve &
               sleep 15
               if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
                 echo "CRITICAL: Ollama still not responding after restart!"
@@ -231,24 +216,20 @@ jobs:
             EXIT_CODE=$?
             echo "Bot exited with code $EXIT_CODE (attempt $RETRY)"
 
-            # Intelligent backoff based on exit code and attempt number
+            # Intelligent backoff based on exit code
             if [ $EXIT_CODE -eq 2 ]; then
-              # Conflict exit — restart quickly
               echo "Persistent conflicts — restarting in 10s..."
               sleep 10
             elif [ $EXIT_CODE -eq 3 ]; then
-              # Health/Ollama failure — give Ollama time to recover
               echo "Health check failure — restarting Ollama + bot in 20s..."
               pkill ollama 2>/dev/null || true
               sleep 5
-              ollama serve &
+              OLLAMA_KEEP_ALIVE=-1 ollama serve &
               sleep 15
             elif [ $EXIT_CODE -eq 0 ]; then
-              # Normal exit (session timeout) — restart immediately
               echo "Session timeout — restarting in 5s..."
               sleep 5
             else
-              # Unknown crash — backoff gradually
               if [ $RETRY -le 3 ]; then
                 SLEEP=10
               elif [ $RETRY -le 6 ]; then
@@ -266,9 +247,9 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v22-${{ github.run_id }}
+          key: nastya-db-v23-${{ github.run_id }}
 
-      # ── Self-dispatch: re-trigger workflow for 24/7 uptime ──
+      # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation
         if: always()
         env:

@@ -47,23 +47,28 @@ async def cmd_providers(message: Message, db=None, ai_router=None) -> None:
         return
 
     status = ai_router.get_status()
-    lines = ["🤖 AI провайдеры Насти:\n"]
+    lines = ["🤖 Ollama Cluster Насти:\n"]
 
     for name, info in status.items():
         if name == "_stats":
             continue
-        available = "✅" if info["available"] else "❌"
-        healthy = "💚" if info["healthy"] else "💔"
-        vision = " 👁" if info.get("vision") else ""
-        fails = info["fail_count"]
-        fail_str = f" (fails: {fails})" if fails > 0 else ""
-        lines.append(f"  {available}{healthy} {name}{vision}{fail_str}")
+        if isinstance(info, dict):
+            available = "✅" if info.get("available") else "❌"
+            healthy = "💚" if info.get("healthy") else "💔"
+            url = info.get('active_url', '?')
+            text_model = info.get('text_model', '?')
+            vision_model = info.get('vision_model', '?')
+            vision = "👁" if info.get('vision_available') else ""
+            warm = "🔥" if info.get('warm') else "❄️"
+            lines.append(f"  {available}{healthy} {name} {vision}{warm}")
+            lines.append(f"    URL: {url}")
+            lines.append(f"    Text: {text_model} | Vision: {vision_model}")
+            lines.append(f"    Requests: {info.get('request_count', 0)} | Errors: {info.get('error_count', 0)}")
 
     stats = status.get("_stats", {})
     lines.append(f"\n📊 Запросов: {stats.get('total_requests', 0)}")
     lines.append(f"🔄 Фоллбэков: {stats.get('total_fallbacks', 0)}")
     lines.append(f"💾 Кеш-хитов: {stats.get('cache_hits', 0)}")
-    lines.append(f"✨ Последний рабочий: {stats.get('last_good_provider', 'нет')}")
 
     await message.answer("\n".join(lines))
 
@@ -77,9 +82,10 @@ async def cmd_reset(message: Message, db=None, ai_router=None) -> None:
     if not ai_router:
         return
 
-    ai_router._fail_counts.clear()
-    ai_router._last_fail.clear()
-    await message.answer("🔄 Circuit breaker сброшен! Все провайдеры снова доступны.")
+    # Очистка кэша провайдера
+    if ai_router.provider:
+        ai_router.provider._cache.clear()
+    await message.answer("🔄 Кэш AI сброшен!")
 
 
 @router.message(Command("fetchnews"))
