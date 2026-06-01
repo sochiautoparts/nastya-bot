@@ -3,6 +3,7 @@ __pycache__/
 *.pyo
 .env
 .env.*
+!.env.example
 data/
 *.db
 *.sqlite
@@ -16,3 +17,5 @@ credentials.json
 service-account*.json
 .venv/
 venv/
+# Ollama model cache (too large for git)
+.ollama/

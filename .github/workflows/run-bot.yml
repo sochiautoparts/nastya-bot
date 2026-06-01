@@ -1,4 +1,4 @@
-name: Run Nastya Bot 15.0 🎀🧠
+name: Nastya Bot 15.0 — Run Qwen3-VL + Bot 🧠🎀
 
 on:
   workflow_dispatch:
@@ -35,22 +35,43 @@ jobs:
           ollama serve &
           sleep 5
           # Verify server is running
-          curl -s http://localhost:11434/api/tags || echo "Ollama server starting..."
-          sleep 5
-          curl -s http://localhost:11434/api/tags || echo "Ollama server still starting..."
+          for i in 1 2 3 4 5; do
+            if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+              echo "Ollama server is running!"
+              break
+            fi
+            echo "Waiting for Ollama server... attempt $i"
+            sleep 3
+          done
+          curl -s http://localhost:11434/api/tags || echo "Ollama still starting..."
+
+      # ── Cache Ollama models (saves ~2GB download each run!) ──
+      - name: Cache Ollama Models
+        id: cache-models
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.ollama
+          key: ollama-qwen3-vl-2b-v1
+          restore-keys: |
+            ollama-qwen3-
 
       - name: Pull Qwen3-VL-2B Model
+        if: steps.cache-models.outputs.cache-hit != 'true'
         run: |
-          echo "Pulling Qwen3-VL-2B model (quantized, ~1.5GB)..."
-          ollama pull qwen3-vl:2b 2>&1 || echo "qwen3-vl:2b pull failed, trying alternatives..."
+          echo "=== Pulling Qwen3-VL-2B model (quantized, ~1.5GB) ==="
+          ollama pull qwen3-vl:2b 2>&1
+          echo "=== Pulling Qwen3:1.7B as fast text backup ==="
+          ollama pull qwen3:1.7b 2>&1
+          echo "=== All models pulled ==="
 
-          # Also pull a fast text-only model as backup
-          echo "Pulling Qwen3:1.7B as fast text backup..."
-          ollama pull qwen3:1.7b 2>&1 || echo "qwen3:1.7b pull failed"
-
-          # List installed models
+      - name: Verify Ollama Models
+        run: |
           echo "=== Installed Ollama Models ==="
           ollama list
+          echo ""
+          echo "=== Testing qwen3-vl:2b with simple prompt ==="
+          ollama run qwen3-vl:2b "Привет, ответь одним словом" --nowordwrap 2>&1 | head -5 || true
+          echo "=== Model verification done ==="
 
       # ── Python Setup ──
       - name: Set up Python
@@ -75,14 +96,14 @@ jobs:
           restore-keys: |
             nastya-db-
 
-      # ── Run the Bot ──
-      - name: Run Nastya Bot 15.0 💅🧠
+      # ── Run the Bot with Qwen3-VL model ──
+      - name: Run Nastya Bot 15.0 (Qwen3-VL + Bot) 🧠💅
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           OWNER_ID: ${{ secrets.OWNER_ID }}
-          ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
+          ADMIN_IDS: ${{ secrets.OWNER_ID }}
           BOT_USERNAME: asnastya_bot
-          # LOCAL model — Ollama on localhost (PRIMARY!)
+          # LOCAL model — Qwen3-VL-2B via Ollama (PRIMARY!)
           OLLAMA_BASE_URL: http://localhost:11434
           # GitHub Models — reliable backup via PAT
           GH_MODELS_TOKEN: ${{ secrets.GH_MODELS_TOKEN }}
@@ -109,7 +130,12 @@ jobs:
           # News settings
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
-        run: python -m bot.main || true
+        run: |
+          echo "=== Starting Nastya Bot 15.0 with Qwen3-VL-2B ==="
+          echo "Ollama status:"
+          curl -s http://localhost:11434/api/tags | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  Model: {m[\"name\"]}') for m in d.get('models',[])]" 2>/dev/null || echo "  Ollama not responding"
+          echo "=== Launching bot ==="
+          python -m bot.main || true
 
       - name: Save database cache
         uses: actions/cache/save@v4
@@ -118,18 +144,21 @@ jobs:
           path: data/nastya.db
           key: nastya-db-v15-${{ github.run_id }}
 
-      - name: Trigger next session (keep-alive chain)
+      # ── Keep-alive: trigger next session automatically ──
+      - name: Wake up next session (alarm clock)
         if: always()
         run: |
+          echo "=== Session ended, waking up next session ==="
           sleep 30
+          # Trigger the next bot session to keep it running 24/7
           curl -s -X POST \
             -H "Authorization: token ${{ secrets.GH_PAT_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/actions/workflows/run-bot.yml/dispatches \
-            -d '{"ref":"main"}' || true
+            -d '{"ref":"main"}' || echo "Could not trigger next session (may be rate limited)"
         continue-on-error: true
 
-  # Keep-alive watchdog: restart if no active session
+  # ── Keep-alive watchdog: restart if no active session ──
   keep-alive-check:
     runs-on: ubuntu-latest
     needs: []
@@ -139,23 +168,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
         run: |
+          echo "=== Keep-alive check at $(date -u) ==="
+          
           ACTIVE_COUNT=$(curl -s -H "Authorization: token $GH_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=5" \
             | python3 -c "
           import sys, json
-          d = json.load(sys.stdin)
-          runs = [r for r in d.get('workflow_runs', []) if '15.0' in r.get('name','') or 'Bot' in r.get('name','') or 'Настя' in r.get('name','')]
-          print(len(runs))
+          try:
+              d = json.load(sys.stdin)
+              runs = [r for r in d.get('workflow_runs', []) if 'Qwen3' in r.get('name','') or 'Bot' in r.get('name','') or 'Nastya' in r.get('name','')]
+              print(len(runs))
+          except:
+              print(0)
           ")
-
+          
           echo "Active bot runs: $ACTIVE_COUNT"
-
+          
           if [ "$ACTIVE_COUNT" -eq 0 ]; then
-            echo "No active bot runs! Triggering restart..."
+            echo "No active bot runs! Waking up..."
             curl -s -X POST -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${{ github.repository }}/actions/workflows/run-bot.yml/dispatches" \
               -d '{"ref":"main"}' || true
-            echo "Restart triggered!"
+            echo "Wake-up triggered!"
           else
             echo "Bot is running, no action needed"
           fi

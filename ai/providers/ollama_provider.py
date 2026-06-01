@@ -2,22 +2,24 @@
 
 Architecture:
   - Runs a quantized model LOCALLY via Ollama (no external API dependency!)
-  - Model is downloaded during GitHub Actions setup
+  - Model is downloaded and cached during GitHub Actions setup
   - Ollama server runs on localhost:11434 during the bot session
   - PRIMARY provider: free, unlimited, no rate limits, no auth errors
-  - Vision support via multimodal models (qwen3-vl, llava, etc.)
+  - Vision support via multimodal models (qwen3-vl)
   - NEVER leaks SSE artifacts (Ollama returns clean JSON)
   - NEVER has authentication errors (local inference)
   - Perfect for channel posts, news commentary, basic chat
 
-v1.0: Initial implementation
-  - Qwen3-VL-2B as primary text+vision model
-  - Fallback to qwen2.5:3b if VL model unavailable
-  - Robust health check and warm-up
-  - OpenAI-compatible API via Ollama
+v2.0: Improved reliability
+  - Better model detection and auto-pull
+  - Longer timeouts for cold starts
+  - Qwen3 <think/> tag stripping
+  - Robust fallback chain: qwen3-vl:2b → qwen3:1.7b → qwen2.5:3b
+  - Model cache verification on startup
 """
 import logging
 import asyncio
+import re
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -54,14 +56,14 @@ class OllamaProvider(BaseProvider):
     - Full control over model behavior
 
     The model is 'woken up' when the GitHub Actions workflow starts.
-    Ollama automatically loads the model on first request (cold start ~10s).
+    Ollama automatically loads the model on first request (cold start ~10-30s).
     """
 
     name: str = "ollama"
     supports_streaming: bool = False
     supports_vision: bool = True
 
-    def __init__(self, api_key: str = "", timeout: float = 60.0, base_url: str = ""):
+    def __init__(self, api_key: str = "", timeout: float = 90.0, base_url: str = ""):
         super().__init__(api_key="", timeout=timeout)
         self.base_url = base_url or OLLAMA_BASE_URL
         self._available: bool = False
@@ -135,7 +137,7 @@ class OllamaProvider(BaseProvider):
     async def _warm_up(self) -> None:
         """Send a warm-up request to load the model into memory.
 
-        Ollama loads models lazily — the first request is slow (5-15s).
+        Ollama loads models lazily — the first request is slow (10-30s on CPU).
         This pre-loads the model so subsequent requests are fast.
         """
         if self._warm:
@@ -154,7 +156,7 @@ class OllamaProvider(BaseProvider):
                     "stream": False,
                     "options": {"num_predict": 5},
                 },
-                timeout=httpx.Timeout(120.0, connect=10.0),  # Long timeout for cold start
+                timeout=httpx.Timeout(180.0, connect=10.0),  # Long timeout for cold start on CPU
             )
             if resp.status_code == 200:
                 self._warm = True
@@ -167,7 +169,7 @@ class OllamaProvider(BaseProvider):
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         """Generate text via local Ollama instance.
 
-        Uses the OpenAI-compatible /v1/chat/completions endpoint for
+        Uses the Ollama native /api/chat endpoint for
         clean JSON responses — NO SSE artifacts, NO auth errors.
         """
         if not self._client:
@@ -217,6 +219,8 @@ class OllamaProvider(BaseProvider):
 
         # Try models in order if primary fails
         models_to_try = [model]
+        if model != TEXT_MODELS.get("fast"):
+            models_to_try.append(TEXT_MODELS["fast"])
         if model != TEXT_MODELS.get("fallback"):
             models_to_try.append(TEXT_MODELS["fallback"])
 
@@ -278,8 +282,7 @@ class OllamaProvider(BaseProvider):
                     )
                     continue
 
-                # Clean up any think tags (Qwen3 uses <think/> blocks)
-                import re
+                # Clean up think tags (Qwen3 uses <think/> blocks)
                 text = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
                 text = re.sub(r'<thinking\b[^>]*>.*?</thinking\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
                 text = text.strip()
@@ -348,7 +351,7 @@ class OllamaProvider(BaseProvider):
             except httpx.TimeoutException:
                 last_error = ProviderError(
                     self.name,
-                    f"Request timed out for {try_model}",
+                    f"Request timed out for {try_model} (CPU inference can be slow)",
                     retryable=True,
                 )
                 continue
