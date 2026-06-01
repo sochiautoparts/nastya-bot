@@ -407,6 +407,12 @@ async def post_news_to_channel(bot: Bot, db, news_items: List[Dict]) -> int:
         "террор", "бомб", "обстрел", "нацизм", "фашизм", "конфликт",
         "религи", "православ", "ислам", "вероисповед",
         "мобилизац", "армия", "солдат", "военн",
+        # v7.1: Additional keywords to catch war/political news that slipped through
+        "удар", "погибл", "ракет", "дрон", "атак", "вторжен",
+        "оккупац", "аннекс", "референдум", "мирн", "переговор",
+        "генсек", "оон", "сми:", "сми сообщ", 
+        "пентагон", "белик", "британ", "congress", "senate",
+        "ракета", "взрыв", "разруш", "жертв",
     ]
 
     posted = 0
@@ -606,19 +612,19 @@ async def post_real_poll_to_channel(bot: Bot, db) -> bool:
                 chat_id=CHANNEL_ID,
                 question=question,
                 options=options,
-                is_anonymous=False,
+                is_anonymous=True,  # MUST be True for channels!
                 allows_multiple_answers=False,
                 type="quiz",
                 correct_option_id=correct_index,
                 explanation=explanation,
             )
         else:
-            # Regular poll — show who voted
+            # Regular poll — anonymous for channels (non-anonymous not allowed in channels)
             await bot.send_poll(
                 chat_id=CHANNEL_ID,
                 question=question,
                 options=options,
-                is_anonymous=False,  # Show who voted — more engaging!
+                is_anonymous=True,  # MUST be True for channels! Non-anonymous polls can't be sent to channels
                 allows_multiple_answers=False,
             )
 
@@ -815,7 +821,7 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
                     chat_id=CHANNEL_ID,
                     question=question,
                     options=quiz["options"],
-                    is_anonymous=False,
+                    is_anonymous=True,  # MUST be True for channels!
                     allows_multiple_answers=False,
                     type="quiz",
                     correct_option_id=quiz["correct"],

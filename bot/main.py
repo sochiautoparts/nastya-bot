@@ -252,7 +252,16 @@ async def memory_cleanup() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 15.0 Starting (Local Qwen3-VL, Apolitical, Vision, Context memory) ===")
+    logger.info("=== Nastya Bot 15.1 Starting (Local Qwen3-VL, Apolitical, Vision, Context memory) ===")
+
+    # ── CRITICAL: Delete webhook and drop pending updates to avoid conflicts ──
+    # If another bot instance is running, this will force it to stop receiving updates
+    if bot:
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+            logger.info("Webhook deleted, pending updates dropped")
+        except Exception as e:
+            logger.warning(f"Failed to delete webhook: {e}")
 
     db = Database(DB_PATH)
     await db.init()
@@ -294,7 +303,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 15.0 Ready ===")
+    logger.info("=== Nastya Bot 15.1 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:
