@@ -1,25 +1,23 @@
-name: Nastya Bot — Production Cluster v23
+name: Nastya Bot — Production Cluster v25
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v23.0 — Production Cluster Edition
+# Nastya Bot v25.0 — Production Cluster Edition
 #
 # Architecture:
-#   - LOCAL OLLAMA CLUSTER as SOLE AI provider (NO external APIs!)
-#   - Models: qwen3-vl:2b (vision+text), qwen3:1.7b (fast text)
+#   - LOCAL OLLAMA CLUSTER as PRIMARY AI provider
+#   - POLLINATIONS as TEXT FALLBACK (free, no API key)
+#   - Models: phi4-mini:3.8b (text), qwen3-vl:2b (vision)
 #   - Bot runs continuously with UNLIMITED auto-restart
 #   - Every 5 hours cron kicks off a fresh runner
 #   - Single concurrency group — ONE bot instance only!
-#   - Health watchdog: checks Telegram + Ollama every 30s
+#   - Health watchdog: checks Telegram + Ollama every 300s
 #   - Self-dispatch: re-triggers workflow when runner time runs out
 #
-# v23.0 CHANGES vs v22.0:
-#   - ALL external API providers REMOVED (GitHub Models, Pollinations,
-#     Chutes, Blackbox, HuggingFace, OpenRouter, Cloudflare, Groq,
-#     Cerebras, Sambanova, Mistral, Gemini)
-#   - Only local Ollama — NO rate limits, NO auth errors, NO cascading
-#   - Vision FIXED: image_base64 passed correctly
-#   - Response time: 1-5s instead of 30-260s
-#   - OllamaClusterProvider replaces all 12+ cloud providers
+# v25.0 CHANGES vs v23.0:
+#   - PollinationsProvider added as text fallback
+#   - phi4-mini:3.8b replaces qwen3:1.7b as primary text model
+#   - Vision ALWAYS through Ollama, text can fall back to Pollinations
+#   - Cache key updated for phi4-mini
 #
 # Schedule (UTC, Moscow = UTC+3):
 #   Every 5 hours: 00:00, 05:00, 10:00, 15:00, 20:00
@@ -124,16 +122,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /home/runner/.ollama
-          key: ollama-qwen3-vl-2b-v6
+          key: ollama-phi4-mini-qwen3-v6
           restore-keys: |
+            ollama-phi4-mini-
             ollama-qwen3-
 
       - name: Pull models
         if: steps.cache-models.outputs.cache-hit != 'true'
         run: |
-          echo "=== Pulling Qwen3-VL-2B (PRIMARY: text + vision) ==="
+          echo "=== Pulling Phi4-Mini-3.8B (PRIMARY: fast text) ==="
+          ollama pull phi4-mini:3.8b
+          echo "=== Pulling Qwen3-VL-2B (vision) ==="
           ollama pull qwen3-vl:2b
-          echo "=== Pulling Qwen3-1.7B (fast text fallback) ==="
+          echo "=== Pulling Qwen3-1.7B (text fallback) ==="
           ollama pull qwen3:1.7b
 
       - name: Verify Ollama and models
@@ -141,7 +142,15 @@ jobs:
           echo "=== Installed models ==="
           ollama list
           echo ""
-          echo "=== Quick test: Qwen3-VL-2B ==="
+          echo "=== Quick test: Phi4-Mini-3.8B (PRIMARY text model) ==="
+          curl -s http://localhost:11434/api/chat -d '{
+            "model": "phi4-mini:3.8b",
+            "messages": [{"role": "user", "content": "Привет! Скажи что-нибудь."}],
+            "stream": false,
+            "options": {"num_predict": 20}
+          }' | python3 -m json.tool || true
+          echo ""
+          echo "=== Quick test: Qwen3-VL-2B (vision model) ==="
           curl -s http://localhost:11434/api/chat -d '{
             "model": "qwen3-vl:2b",
             "messages": [{"role": "user", "content": "Привет! Скажи что-нибудь."}],
@@ -165,7 +174,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v23
+          key: nastya-db-v25
           restore-keys: |
             nastya-db-
 
@@ -186,7 +195,7 @@ jobs:
           CHANNEL_POST_INTERVAL: 1200
           OLLAMA_KEEP_ALIVE: -1
         run: |
-          echo "=== Starting Nastya Bot 23.0 (Production Cluster) ==="
+          echo "=== Starting Nastya Bot 25.0 (Production Cluster + Pollinations Fallback) ==="
           echo "Ollama status:"
           curl -s http://localhost:11434/api/tags | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  Model: {m[\"name\"]}') for m in d.get('models',[])]" 2>/dev/null || echo "  Ollama not responding"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
@@ -247,7 +256,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v23-${{ github.run_id }}
+          key: nastya-db-v25-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation

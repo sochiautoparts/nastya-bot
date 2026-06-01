@@ -577,7 +577,7 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
                 prompt=caption, image_base64=image_b64,
                 system_prompt=system_prompt, messages=history,
             )
-            response_text = _clean_response(result.text)
+            response_text = result.text
         except Exception as e:
             logger.error(f"Vision AI error for user {user_id}: {e}")
             # Fallback: respond without vision — don't leave user hanging!
@@ -1016,7 +1016,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     for topic_key, topic_data in KNOWLEDGE_TOPICS.items():
         topic_facts = topic_data.get("facts", [])
         keywords = topic_keywords.get(topic_key, [topic_data["name"].lower()])
-        if any(kw in text_lower_for_knowledge for kw in keywords) and topic_facts and not knowledge_injected:
+        if any(kw in text.lower() for kw in keywords) and topic_facts and not knowledge_injected:
             # Inject 2-3 relevant facts
             facts_to_inject = random.sample(topic_facts, min(3, len(topic_facts)))
             knowledge_str = "\n".join(f"- {f}" for f in facts_to_inject)

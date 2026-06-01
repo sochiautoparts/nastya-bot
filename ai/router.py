@@ -1,21 +1,20 @@
-"""AI Router v23.0 — Production Cluster Edition.
+"""AI Router v25.0 — Production Cluster Edition.
 
-АРХИТЕКТУРА: Полностью локальная, БЕЗ внешних API!
-  - ЕДИНСТВЕННЫЙ провайдер: OllamaClusterProvider
-  - Ollama кластер через OLOL Proxy или прямой Ollama
-  - Модели: qwen3-vl:2b (vision+text), qwen3:1.7b (fast text)
+АРХИТЕКТУРА: Локальный Ollama + Pollinations fallback!
+  - PRIMARY провайдер: OllamaClusterProvider (локальный inference)
+  - FALLBACK провайдер: PollinationsProvider (только текст, бесплатный)
+  - Модели: phi4-mini:3.8b (text), qwen3-vl:2b (vision)
   - Кэширование повторяющихся запросов
   - НИКАКИХ каскадных ошибок через 12 провайдеров
   - НИКАКИХ таймаутов на 260+ секунд
   - Vision РАБОТАЕТ — image_base64 корректно передаётся
+  - Pollinations ТОЛЬКО для текста — vision всегда через Ollama
 
-Изменения v23.0 vs v22.0:
-  - УДАЛЕНЫ все внешние API-провайдеры (GitHub Models, Pollinations, Chutes,
-    Blackbox, HuggingFace, OpenRouter, Cloudflare, Groq, Cerebras, Sambanova,
-    Mistral, Gemini)
-  - ЕДИНСТВЕННЫЙ провайдер: OllamaClusterProvider
-  - Простая маршрутизация: текст -> быстрая модель, vision -> vision модель
-  - Время ответа: 1-5 секунд вместо 30-260 секунд
+Изменения v25.0 vs v23.0:
+  - ДОБАВЛЕН PollinationsProvider как fallback (бесплатный, без API ключа)
+  - Если Ollama недоступен для текста — Pollinations берёт на себя
+  - Vision запросы ВСЕГДА через Ollama (Pollinations НЕ используется для vision)
+  - Модель текста: phi4-mini:3.8b (вместо qwen3:1.7b)
 """
 import logging
 import random
@@ -26,6 +25,7 @@ from typing import Any, Dict, List, Optional
 
 from ai.providers.base import AIResponse, ProviderError
 from ai.providers.ollama_cluster_provider import OllamaClusterProvider
+from ai.providers.pollinations_provider import PollinationsProvider
 from ai.voice import transcribe_voice_ogg
 from bot.config import OLLAMA_BASE_URL, CACHE_TTL_TEXT, CACHE_MAX_MEMORY
 
@@ -74,14 +74,16 @@ class AICache:
 
 
 class AIRouter:
-    """Центральный AI-маршрутизатор — v23.0 Production Cluster.
+    """Центральный AI-маршрутизатор — v25.0 Production Cluster.
 
-    ЕДИНСТВЕННЫЙ провайдер — локальный Ollama кластер.
-    Никаких внешних API, никаких каскадных ошибок.
+    Primary: OllamaClusterProvider (локальный inference).
+    Fallback: PollinationsProvider (только текст, бесплатный).
+    Vision: ВСЕГДА через Ollama.
     """
 
     def __init__(self, db=None):
         self.provider: Optional[OllamaClusterProvider] = None
+        self._pollinations: Optional[PollinationsProvider] = None
         self._cache = AICache()
         self._db = db
         self._total_requests: int = 0
@@ -89,27 +91,44 @@ class AIRouter:
         self._cache_hits: int = 0
 
     async def init(self) -> None:
-        """Инициализация единственного провайдера — OllamaClusterProvider."""
+        """Инициализация провайдеров — OllamaClusterProvider + Pollinations fallback."""
         self.provider = OllamaClusterProvider(
             timeout=180.0,
             base_url=OLLAMA_BASE_URL,
         )
         await self.provider.init()
 
+        # Try to initialize PollinationsProvider as text fallback
+        # Don't fail if it doesn't work — it's optional
+        try:
+            self._pollinations = PollinationsProvider(timeout=30.0)
+            await self._pollinations.init()
+            logger.info("PollinationsProvider initialized as text fallback")
+        except Exception as e:
+            logger.warning(f"PollinationsProvider init failed (non-critical): {e}")
+            self._pollinations = None
+
         stats = self.provider.get_stats()
+        pollinations_status = "active" if self._pollinations else "unavailable"
         logger.info(
-            f"AI Router v23.0 initialized: "
+            f"AI Router v25.0 initialized: "
             f"url={stats['active_url']}, "
             f"text_model={stats['text_model']}, "
             f"vision_model={stats['vision_model']}, "
-            f"vision={stats['vision_available']}"
+            f"vision={stats['vision_available']}, "
+            f"pollinations_fallback={pollinations_status}"
         )
 
     async def close(self) -> None:
-        """Закрыть провайдер."""
+        """Закрыть провайдеры."""
         if self.provider:
             try:
                 await self.provider.close()
+            except Exception:
+                pass
+        if self._pollinations:
+            try:
+                await self._pollinations.close()
             except Exception:
                 pass
 
@@ -162,7 +181,7 @@ class AIRouter:
                 gen_kwargs = {}
                 if image_base64:
                     gen_kwargs["image_base64"] = image_base64
-                # v24.0: Pass priority to provider (high for user chat, low for background)
+                # v25.0: Pass priority to provider (high for user chat, low for background)
                 gen_kwargs["priority"] = kwargs.get("priority", "high")
 
                 result = await self.provider.generate(
@@ -196,9 +215,37 @@ class AIRouter:
             except Exception as e:
                 logger.error(f"Unexpected AI error: {e}")
 
-        # ── FALLBACK — бот ВСЕГДА отвечает ──
+        # ── FALLBACK 1: PollinationsProvider (text only!) ──
+        # Only use Pollinations for text requests, NEVER for vision
+        if self._pollinations and not image_base64:
+            try:
+                logger.info("Trying PollinationsProvider as text fallback...")
+                result = await self._pollinations.generate(
+                    prompt,
+                    system_prompt=system_prompt,
+                    messages=messages,
+                )
+                if result and result.text:
+                    cleaned = self.clean_ai_response(result.text)
+                    if cleaned:
+                        # Кэшируем
+                        if not has_conversation:
+                            self._cache.put(prompt, system_prompt, cleaned)
+                        return AIResponse(
+                            text=cleaned,
+                            provider=result.provider,
+                            model=result.model,
+                            tokens_used=result.tokens_used,
+                            metadata={**result.metadata, "fallback": True},
+                        )
+            except ProviderError as e:
+                logger.warning(f"PollinationsProvider fallback error: {e}")
+            except Exception as e:
+                logger.error(f"PollinationsProvider fallback unexpected error: {e}")
+
+        # ── FALLBACK 2 — бот ВСЕГДА отвечает ──
         self._total_fallbacks += 1
-        logger.error("Ollama cluster unavailable! Using fallback response.")
+        logger.error("All providers unavailable! Using static fallback response.")
         return AIResponse(
             text=self.get_fallback_response(),
             provider="fallback",
@@ -210,11 +257,11 @@ class AIRouter:
                               system_prompt: str = "", **kwargs) -> AIResponse:
         """Vision-запрос с изображением.
 
-        v23.0: ПЕРЕДАЁТ image_base64 КОРРЕКТНО — через kwargs в chat(),
+        v25.0: ПЕРЕДАЁТ image_base64 КОРРЕКТНО — через kwargs в chat(),
         который делает kwargs.pop("image_base64"), а затем передаёт
         как именованный аргумент в provider.generate().
 
-        БАГА БОЛЬШЕ НЕТ: image_base64 НЕ дублируется!
+        Vision ВСЕГДА через Ollama — Pollinations НЕ используется.
         """
         logger.info(
             f"chat_with_image: prompt={prompt[:50]}, "
@@ -299,6 +346,9 @@ class AIRouter:
                 "healthy": self.provider.is_available(),
                 **stats,
             }
+        status["pollinations_fallback"] = {
+            "available": self._pollinations is not None,
+        }
         status["_stats"] = {
             "total_requests": self._total_requests,
             "total_fallbacks": self._total_fallbacks,

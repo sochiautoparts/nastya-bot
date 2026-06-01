@@ -1,23 +1,23 @@
-"""Nastya Bot 23.0 — Production Cluster Edition. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 25.0 — Production Cluster Edition. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v23.0 (Production Cluster):
+Architecture v25.0 (Production Cluster):
   - SINGLE INSTANCE: file lock + conflict tracker prevents multiple bot instances
   - SINGLE WORKFLOW: one bot.yml with concurrency group (no duplicate runs)
-  - LOCAL OLLAMA CLUSTER as SOLE AI provider (no external APIs!)
-  - Models: qwen3-vl:2b (vision+text), qwen3:1.7b (fast text)
+  - LOCAL OLLAMA CLUSTER as PRIMARY AI provider
+  - POLLINATIONS as TEXT FALLBACK (free, no API key)
+  - Models: phi4-mini:3.8b (text), qwen3-vl:2b (vision)
   - HEALTH WATCHDOG: monitors Telegram API + Ollama, auto-restarts on failure
   - АПОЛИТИЧНОСТЬ: Настя не обсуждает политику, религию, войну
   - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ + VISION
   - MOSCOW TIMEZONE — Настя из Москвы!
 
-v23.0 CRITICAL CHANGES:
-  1. ALL external API providers REMOVED — only local Ollama cluster
-  2. OllamaClusterProvider replaces all 12+ cloud providers
-  3. Vision FIXED: image_base64 passed correctly via kwargs
-  4. Response time: 1-5s instead of 30-260s (no cascading failures!)
-  5. Health watchdog: checks Telegram + Ollama every 120s
-  6. Process supervisor: unlimited retries with intelligent backoff
-  7. Signal handlers: clean shutdown on SIGTERM/SIGINT
+v25.0 CHANGES:
+  1. PollinationsProvider added as text fallback (free, no API key)
+  2. phi4-mini:3.8b replaces qwen3:1.7b as primary text model
+  3. Vision ALWAYS through Ollama, text can fall back to Pollinations
+  4. If Ollama fails for text → Pollinations takes over automatically
+  5. Critical bug fix: text_lower_for_knowledge NameError fixed
+  6. Photo handler: removed redundant _clean_response call
 """
 import asyncio
 import fcntl
@@ -477,7 +477,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 24.0 Starting (Production Cluster, SPEED FIX) ===")
+    logger.info("=== Nastya Bot 25.0 Starting (Production Cluster + Pollinations Fallback) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -524,7 +524,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 24.0 Ready (Production Cluster, SPEED FIX) ===")
+    logger.info("=== Nastya Bot 25.0 Ready (Production Cluster + Pollinations Fallback) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

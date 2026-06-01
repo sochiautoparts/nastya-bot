@@ -1,8 +1,8 @@
 """OllamaClusterProvider — единый провайдер для кластера OLOL или прямого Ollama.
 
-Architecture v24.0 (Production Cluster — SPEED FIX):
+Architecture v25.0 (Production Cluster — SPEED FIX):
   - Единая точка входа: OLOL Proxy (:8000) или прямой Ollama (:11434)
-  - Автовыбор модели: qwen3-vl:2b для vision, qwen3:1.7b для текста
+  - Автовыбор модели: phi4-mini:3.8b для текста, qwen3-vl:2b для vision
   - СЕМАФОР=1: на 2 CPU Ollama может обрабатывать только 1 запрос за раз!
   - ПРИОРИТЕТНАЯ ОЧЕРЕДЬ: user > background
   - Адаптивные таймауты: 300s текст, 360s vision (CPU медленный под нагрузкой)
@@ -82,12 +82,13 @@ class ResponseCache:
 class OllamaClusterProvider(BaseProvider):
     """Провайдер для Ollama-кластера через OLOL Proxy или прямое подключение.
 
-    v24.0 CRITICAL FIXES:
+    v25.0 CRITICAL FIXES:
     - СЕМАФОР=1: Ollama на 2 CPU может обрабатывать ТОЛЬКО 1 запрос за раз!
       2 параллельных запроса = оба медленные, оба таймаутятся
     - Приоритетная очередь: пользовательские запросы приоритетнее фоновых
     - Адаптивные таймауты: 300s для текста, 360s для vision
     - Пропуск прогрева при ожидающих запросах
+    - phi4-mini:3.8b — primary text model (NEVER qwen3-vl for text!)
     """
 
     name: str = "ollama_cluster"
@@ -168,7 +169,7 @@ class OllamaClusterProvider(BaseProvider):
     def _detect_models(self) -> None:
         """Определить доступные модели.
         
-        v24.0: phi4-mini for text (NEVER qwen3-vl for plain text!)
+        v25.0: phi4-mini for text (NEVER qwen3-vl for plain text!)
         qwen3-vl for VISION ONLY.
         """
         # Текстовая модель — prefer phi4-mini, then qwen3:1.7b
@@ -317,7 +318,7 @@ class OllamaClusterProvider(BaseProvider):
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         """Генерация ответа через локальный кластер Ollama.
 
-        v24.0 CRITICAL: Semaphore=1, priority queue, longer timeouts
+        v25.0 CRITICAL: Semaphore=1, priority queue, longer timeouts
         """
         if not self._client:
             await self.init()
@@ -342,7 +343,7 @@ class OllamaClusterProvider(BaseProvider):
             logger.info(f"Trimming history for text: {len(messages_history)} -> 15")
             messages_history = messages_history[-15:]
 
-        # Выбор модели — v24.0 CRITICAL FIX:
+        # Выбор модели — v25.0 CRITICAL FIX:
         # Vision: ONLY qwen3-vl:2b
         # Text: ONLY phi4-mini/qwen3:1.7b (NEVER qwen3-vl for text!)
         is_vision = bool(image_base64 and self._vision_available)
@@ -401,7 +402,7 @@ class OllamaClusterProvider(BaseProvider):
                         },
                     }
 
-                    # v24.0: Адаптивные таймауты
+                    # v25.0: Адаптивные таймауты
                     # Text: 300s (was 90s — too short when Ollama busy)
                     # Vision: 360s (was 180s — too short for CPU vision)
                     request_timeout = 300.0 if not is_vision else 360.0
