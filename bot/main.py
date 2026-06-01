@@ -1,23 +1,12 @@
-"""Nastya Bot 31.0 — CPU-OPTIMIZED. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 32.0 — HYBRID EDITION. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v31.0 (CPU-OPTIMIZED):
-  - SINGLE INSTANCE: file lock + conflict tracker prevents multiple bot instances
-  - SINGLE WORKFLOW: one bot.yml with concurrency group (no duplicate runs)
-  - LOCAL OLLAMA as PRIMARY AI provider
-  - POLLINATIONS as FALLBACK (text fallback при недоступности Ollama)
-  - Models: Vikhr-1B (PRIMARY, БЫСТРАЯ) + Qwen3-4B (RESERVE, медленная)
+Architecture v32.0 (HYBRID):
+  - Pollinations (GPT-4o-mini) = PRIMARY для чата (2-5 сек, умный, бесплатный)
+  - Ollama (Vikhr-1B / Qwen3-4B) = PRIMARY для фона + FALLBACK для чата
+  - РАЗДЕЛЬНЫЕ семафоры — чат не блокирует фон
+  - Сокращённый системный промпт (~200 токенов вместо ~1000)
   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
-  - HEALTH WATCHDOG: monitors Telegram API + Ollama, auto-restarts on failure
-  - АПОЛИТИЧНОСТЬ: Настя не обсуждает политику, религию, войну
-  - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ
-  - MOSCOW TIMEZONE — Настя из Москвы!
-
-v31.0 CRITICAL CHANGES vs v30.0:
-  1. ПЕРЕСТАВЛЕНЫ МОДЕЛИ: Vikhr-1B = primary (5-15с на CPU вместо 45+с)
-  2. num_ctx=2048 (было 4096), max_tokens=100 (было 400), история=6 (было 12)
-  3. Таймауты увеличены: 90с primary, 120с reserve
-  4. Системный промпт сокращён для скорости на CPU
-  5. Фоновые задачи: увеличены задержки чтобы не блокировать чат
+  - HEALTH WATCHDOG: monitors Telegram API + Ollama
 """
 import asyncio
 import fcntl
@@ -399,13 +388,10 @@ async def conflict_monitor() -> None:
 
 
 async def health_watchdog() -> None:
-    """Background task: monitor bot and Ollama health, restart if unresponsive.
+    """Background task: monitor bot health.
 
-    v21.0: The watchdog ensures the bot ALWAYS stays running.
-    - Checks Ollama server health every 60s
-    - Checks Telegram API reachability every 60s
-    - If Ollama is down, tries to restart it
-    - If nothing works, exits with code 3 to trigger workflow restart
+    v32: Ollama is no longer critical — Pollinations handles chat.
+    Ollama failures no longer cause os._exit(3).
     """
     global _ollama_restart_count
 
@@ -416,32 +402,29 @@ async def health_watchdog() -> None:
         try:
             await asyncio.sleep(_HEALTH_CHECK_INTERVAL)
 
-            # ── Check 1: Ollama cluster health ──
+            # ── Check 1: Ollama health (non-critical — Pollinations handles chat) ──
             if ai_router and ai_router.provider:
                 ollama_ok = await ai_router.provider.health_check()
                 if not ollama_ok:
-                    logger.warning("Ollama health check FAILED! Trying to restart...")
+                    logger.warning("Ollama health check FAILED! Chat uses Pollinations. Background may be slower.")
                     try:
                         import subprocess
                         subprocess.Popen(["pkill", "ollama"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         await asyncio.sleep(3)
                         subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        await asyncio.sleep(10)
-                        # Check again
+                        await asyncio.sleep(15)
                         ollama_ok = await ai_router.provider.health_check()
                         if ollama_ok:
                             _ollama_restart_count += 1
-                            logger.info(f"Ollama restarted successfully (restart #{_ollama_restart_count})")
+                            logger.info(f"Ollama restarted (attempt #{_ollama_restart_count})")
                             try:
                                 await ai_router.provider.init()
                             except Exception:
                                 pass
                         else:
-                            logger.critical("Ollama restart FAILED! Bot needs full restart.")
-                            os._exit(3)
+                            logger.warning("Ollama still down. Chat works via Pollinations. Will retry later.")
                     except Exception as e:
                         logger.error(f"Ollama restart attempt failed: {e}")
-                        os._exit(3)
 
             # ── Check 2: Telegram API health ──
             if bot:
@@ -484,7 +467,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 31.0 Starting (CPU-OPTIMIZED — v31) ===")
+    logger.info("=== Nastya Bot 32.0 Starting (HYBRID — v32) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -531,7 +514,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 31.0 Ready (CPU-OPTIMIZED — v31) ===")
+    logger.info("=== Nastya Bot 32.0 Ready (HYBRID — v32) ===")
 
 
 async def on_shutdown(**kwargs) -> None:
@@ -565,7 +548,7 @@ def setup_dispatcher() -> Dispatcher:
     global dp
     dp = Dispatcher()
 
-    dp.message.middleware(RateLimitMiddleware(max_per_minute=15))
+    dp.message.middleware(RateLimitMiddleware(max_per_minute=30))
     dp.callback_query.middleware(RateLimitMiddleware(max_per_minute=30))
     dp.message.middleware(LoggingMiddleware())
     dp.callback_query.middleware(LoggingMiddleware())

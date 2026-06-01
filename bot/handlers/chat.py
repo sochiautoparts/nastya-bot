@@ -913,208 +913,86 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     # Add time-aware mood
     time_mood = _get_time_greeting()
 
-    # Build system prompt with USER INFO and GENDER context
-    user_context = f"\n\nТы разговариваешь с: {user_name}"
-    if user_username:
-        user_context += f" (@{user_username})"
+    # v32: КОМПАКТНЫЙ контекст пользователя — максимум 1-2 предложения!
+    # Проблема v31: user_context занимал 100-200 токенов — слишком много
+    user_context = f"Собеседник: {user_name}"
     if gender == "male":
-        user_context += ". Это парень — общайся как девушка с парнем: флирти, дразни, называй по имени, будь игривой и тёплой. Если хвалит — смущайся мило. Можешь сказать 'красавчик' или 'солнышко'. Реагируй на фото как девушка — оцени, подколи, заинтересоваться."
+        user_context += " (парень — флирти, называй по имени)."
     elif gender == "female":
-        user_context += ". Это девушка — общайся как с подругой: 'девочка', 'красотка', 'милая', 'подруга'. Будь теплее, откровеннее, делись 'секретами'. Предлагай советы по стилю и красоте. Реагируй на фото как подруга — оцени, посоветуй, поддержи."
+        user_context += " (девушка — как подруга)."
     else:
-        user_context += ". Будь дружелюбной и живой. Попробуй понять кто перед тобой по ходу разговора."
-
-    # Add message count context — how well Nastya knows this person
+        user_context += "."
     if msg_count > 20:
-        user_context += " Ты уже хорошо знаешь этого человека — обращайся как к старому знакомому, вспоминай детали!"
+        user_context += " Старый знакомый!"
     elif msg_count > 5:
-        user_context += " Вы уже общались несколько раз — будь знакомой, не чужой."
-    else:
-        user_context += " Это новый собеседник — познакомься поближе!"
+        user_context += " Уже общались."
 
-    # POLITICS FILTER — detect political topics and redirect
-    political_keywords = ["путин", "зеленск", "байден", "трамп", "навальн", "оппозиц", "выборы",
-                         "санкци", "войн", "спецопер", "ввс", "днр", "лнр", "крым",
-                         "нато", "nato", "политик", "парти", "депутат", "государств",
-                         "президент", "министр", "правительств", "госдум", "едро",
-                         "кпрф", "лдпр", "религи", "вера", "православ", "ислам",
-                         "конфликт", "террор", "бомб", "обстрел", "нацизм", "фашизм"]
+    # POLITICS FILTER — кратко!
+    political_keywords = ["путин", "зеленск", "байден", "трамп", "навальн", "войн",
+                         "санкци", "нато", "политик", "депутат", "президент", "министр",
+                         "религи", "конфликт", "террор", "бомб", "фашизм", "нацизм"]
     if any(kw in text.lower() for kw in political_keywords):
-        user_context += " ВНИМАНИЕ: Собеседник спрашивает про политику/религию/войну! Ты АПОЛИТИЧНА! Мягко переведи тему. Не высказывай мнение. Скажи: 'Ой, Настя не про политику! Давай лучше про...' и предложи безопасную тему (кино, шопинг, технологии, автомобили, путешествия)."
+        user_context += " Вопрос про политику — переведи тему!"
 
-    system_prompt = NASTYA_SYSTEM_PROMPT + f"\n\nНастроение Насти: {mood}. Время суток: {time_mood}."
-    system_prompt += user_context
+    # v32: МИНИМАЛЬНЫЙ system prompt — без лишних инъекций!
+    # Было ~800-1100 токенов, стало ~200-250
+    system_prompt = NASTYA_SYSTEM_PROMPT + f" Настроение: {mood}. Время: {time_mood}."
+    system_prompt += f" {user_context}"
 
-    # Add Moscow time context for time-aware behavior
+    # v32: Время — коротко, одной фразой
     now_msk = _moscow_now()
-    time_desc = f"Сейчас {now_msk.strftime('%H:%M')} по Москве"
-    if 6 <= now_msk.hour < 10:
-        time_desc += " (утро — Настя может быть сонной)"
-    elif 10 <= now_msk.hour < 14:
-        time_desc += " (день — Настя может хотеть обедать)"
-    elif 14 <= now_msk.hour < 18:
-        time_desc += " (вторая половина дня — Настя может хотеть шопинг)"
-    elif 18 <= now_msk.hour < 22:
-        time_desc += " (вечер — Настя может хотеть сериал)"
-    else:
-        time_desc += " (ночь — Настя может хотеть спать)"
-    system_prompt += f"\n{time_desc}"
+    time_of_day = "утро" if 6 <= now_msk.hour < 12 else "день" if 12 <= now_msk.hour < 18 else "вечер" if 18 <= now_msk.hour < 23 else "ночь"
+    # Already added to system_prompt above via time_mood
 
-    # Channel reminder (keep brief — already in main system prompt)
-    system_prompt += (
-        "\n\nНапоминание: ты Настя из Москвы, ты ведёшь канал @chasnastya. Упомяни если к месту. "
-        "Если обсуждаешь новость — дай ссылку из контекста ниже или напиши 'подробнее в @chasnastya'. "
-        "Ты АПОЛИТИЧНА — никогда не обсуждай политику, религию, войну! Мягко переведи тему на безопасную."
-    )
+    # v32: Убрано — канал уже в NASTYA_SYSTEM_PROMPT, без дублирования
 
-    # ── NEWS CONTEXT INJECTION ──
-    news_ctx = await _build_news_context(db)
-    # Also store news items for post-processing link enforcement
+    # v32: НОВОСТИ — коротко, 1-2 заголовка без инструкций
+    # Было ~200 токенов с инструкциями, стало ~50
     _current_news_items = []
-    if news_ctx:
-        system_prompt += f"\n\n{news_ctx}"
-        try:
-            _current_news_items = await db.get_recent_news_with_links(limit=5, max_age_hours=12)
-        except Exception:
-            pass
-
-    # ── Add user's name for personalization (already included in user_context above) ──
-
-    # v31: Reduced history from 15 to 6 for CPU speed!
-    # On 2 CPU cores, 15 messages = massive prompt = timeout
-    # 6 messages = reasonable context + fast inference
-    history = []
     try:
-        history = await db.get_history(user_id, limit=6)
+        recent_news = await db.get_recent_news(limit=2, max_age_hours=12)
+        if recent_news:
+            news_parts = []
+            for item in recent_news[:2]:
+                news_parts.append(item.get("title", ""))
+            system_prompt += f" Свежие новости: {'; '.join(news_parts)}."
+        _current_news_items = await db.get_recent_news_with_links(limit=5, max_age_hours=12)
     except Exception:
         pass
 
-    # Check if user mentioned their zodiac sign in history — add reminder
-    zodiac_signs = ["овен", "телец", "близнецы", "рак", "лев", "дева",
-                    "весы", "скорпион", "стрелец", "козерог", "водолей", "рыбы"]
-    for msg in history[-10:]:  # Check last 10 messages
-        content_lower = msg.get("content", "").lower()
-        for sign in zodiac_signs:
-            if sign in content_lower and msg.get("role") == "user":
-                system_prompt += f"\n\nВАЖНО: Собеседник говорил что его знак — {sign.capitalize()}. Запомни это и используй! Не переспрашивай!"
-                break
+    # ── Add user's name for personalization (already included in user_context above) ──
 
-    # ── KNOWLEDGE INJECTION — v24.0: DISABLED for speed!
-    # Small models (1.7B) are too slow with long prompts.
-    # Knowledge injection adds 500+ tokens to system prompt = 2-3x slower inference.
-    # Re-enable when using larger models (7B+).
-    knowledge_injected = True  # Pretend injected to skip random injection below
-    topic_keywords = {
-        "auto": ["авто", "машин", "запчаст", "ремонт", "двигател", "масл", "фильтр", "тормоз",
-                  "шин", "колёс", "toyota", "honda", "nissan", "сервис", "сто", "тачк", "кузов",
-                  "бензин", "карбюрат", "инжектор", "свеч", "акпп", "мкпп", "привод"],
-        "zodiac": ["гороскоп", "зодиак", "знак", "овен", "телец", "близнецы", "рак", "лев",
-                   "дева", "весы", "скорпион", "стрелец", "козерог", "водолей", "рыбы", "астролог",
-                   "совместимост", "ретроград", "меркури"],
-        "psychology": ["психолог", "мозг", "эмоци", "стресс", "тревог", "депресс", "характер", "личност",
-                       "самооцен", "дофамин", "привычк", "мотивац", "осознан"],
-        "fun_facts": ["факт", "интересн", "знаешь ли", "прикинь", "удив", "не знал", "правда что",
-                      "миф", "подтверд", "опровергн"],
-        "moscow": ["москва", "москв", "метро", "пробк", "москве", "цум", "москвы", "москвой"],
-        "cinema": ["фильм", "сериал", "кино", "нетфликс", "netflix", "смотр", "актрис", "актёр",
-                   "режисс", "премьер", "оскар", "трейлер", "попкорн"],
-        "cooking": ["готов", "рецепт", "еда", "суши", "пицц", "кофе", "торт", "шоколад", "матча",
-                    "вкусн", "ресторан", "доставк", "завтрак", "обед", "ужин", "кулинар"],
-        "relationships": ["отношени", "люблю", "влюб", "свидан", "романти", "бывш", "парень",
-                          "девушк", "измен", "расставан", "свадьб", "ревность", "доверие"],
-        "fashion": ["мод", "стил", "зара", "zara", "платье", "сумочк", "маникюр", "макияж",
-                    "коллекц", "тренд", "шопинг", "распродаж", "оверсайз", "винтаж", "стритстайл"],
-        "travel": ["путешеств", "отпуск", "море", "стамбул", "дубай", "бали", "сочи", "самолёт",
-                   "отель", "виз", "перелёт", "пляж", "курорт", "турци"],
-        "tech": ["технолог", "айфон", "iphone", "нейросет", "ии", "искусственн", "интеллект",
-                 "gpt", "chatgpt", "тикток", "tiktok", "airpods", "электромобил", "5g",
-                 "квант", "компьютер", "программ", "приложен", "смартфон", "гаджет"],
-    }
-    for topic_key, topic_data in KNOWLEDGE_TOPICS.items():
-        topic_facts = topic_data.get("facts", [])
-        keywords = topic_keywords.get(topic_key, [topic_data["name"].lower()])
-        if any(kw in text.lower() for kw in keywords) and topic_facts and not knowledge_injected:
-            # Inject 2-3 relevant facts
-            facts_to_inject = random.sample(topic_facts, min(3, len(topic_facts)))
-            knowledge_str = "\n".join(f"- {f}" for f in facts_to_inject)
-            system_prompt += f"\n\nЗНАНИЯ ПО ТЕМЕ '{topic_data['name']}' (используй естественно, как будто ты это знала!):\n{knowledge_str}"
-            knowledge_injected = True
+    # v32: History 4 сообщения (было 6 — всё равно много для локальных моделей)
+    history = []
+    try:
+        history = await db.get_history(user_id, limit=4)
+    except Exception:
+        pass
 
-    # Also inject a random knowledge fact 25% of the time for variety
-    if not knowledge_injected and random.random() < 0.35:
-        random_topic = random.choice(list(KNOWLEDGE_TOPICS.keys()))
-        topic_data = KNOWLEDGE_TOPICS[random_topic]
-        random_fact = random.choice(topic_data["facts"])
-        system_prompt += f"\n\nКСТАТИ, Настя знает: {random_fact} (можешь упомянуть если к месту!)"
+    # v32: УБРАНО — зодиак сканирование из промпта (дублировало memory extraction)
+    # Зодиак будет упомянут в memory_facts ниже если пользователь говорил о нём
 
-    # ── MEMORY EXTRACTION — remember key facts about the user ──
-    # Extract important info from FULL history (names, zodiac, preferences, city, etc.)
-    # v7.0: Increased scan range for better retention
-    memory_facts = []
-    zodiac_signs = ["овен", "телец", "близнецы", "рак", "лев", "дева",
-                    "весы", "скорпион", "стрелец", "козерог", "водолей", "рыбы"]
-    for msg in history[-40:]:  # Scan full history range
-        content = msg.get("content", "")
-        role = msg.get("role", "")
-        if role == "user":
-            content_lower = content.lower()
-            # Detect name mentions
-            name_patterns = ["меня зовут", "я —", "я — это", "моё имя", "я это", "называй меня", "моё имя"]
-            for pattern in name_patterns:
-                if pattern in content_lower:
-                    memory_facts.append(f"Собеседник говорил: '{content[:100]}'")
-                    break
-            # Detect zodiac sign
-            for sign in zodiac_signs:
-                if sign in content_lower and ("знак" in content_lower or "я " in content_lower or "мой " in content_lower):
-                    if not any(sign in f.lower() for f in memory_facts):
-                        memory_facts.append(f"Знак собеседника — {sign.capitalize()}")
-                    break
-            # Detect city/location
-            city_patterns = ["я из ", "живу в ", "я в ", "город ", "из города"]
-            for pattern in city_patterns:
-                if pattern in content_lower:
-                    if not any("из " in f.lower() or "живёт" in f.lower() for f in memory_facts):
-                        memory_facts.append(f"Собеседник о месте: '{content[:100]}'")
-                    break
-            # Detect preferences
-            pref_patterns = ["люблю ", "обожаю ", "ненавижу ", "не люблю ", "фаворит", "любимый "]
-            for pattern in pref_patterns:
-                if pattern in content_lower:
-                    if not any(pattern.strip() in f.lower() for f in memory_facts):
-                        memory_facts.append(f"Предпочтение: '{content[:100]}'")
-                    break
-            # Detect age/birthday
-            age_patterns = ["мне ", "моего возраста", "мне лет", "мне год"]
-            for pattern in age_patterns:
-                if pattern in content_lower and any(c.isdigit() for c in content):
-                    if not any("лет" in f.lower() or "мне" in f.lower() for f in memory_facts):
-                        memory_facts.append(f"Возраст: '{content[:100]}'")
-                    break
-            # Detect work/profession
-            work_patterns = ["я работаю", "моя работа", "я программист", "я врач", "я учитель", "я студент"]
-            for pattern in work_patterns:
-                if pattern in content_lower:
-                    if not any("работ" in f.lower() or "професс" in f.lower() for f in memory_facts):
-                        memory_facts.append(f"Профессия: '{content[:100]}'")
-                    break
+    # v32: УБРАНО — knowledge injection полностью отключено (мёртвый код)
+    # Малые модели не справлялись с 500+ токенов знаний в промпте
+    # Pollinations/GPT-4o-mini и без этого знает факты
 
-    if memory_facts:
-        unique_facts = list(set(memory_facts))[-7:]  # Max 7, deduplicated
-        system_prompt += f"\n\nПАМЯТЬ НАСТИ (НЕ переспрашивай про это! Запомни НАВСЕГДА!):\n" + "\n".join(f"- {f}" for f in unique_facts)
+    # v32: Memory extraction — УБРАНО из промпта (сканировало только 4 сообщения из-за limit=4)
+    # GPT-4o-mini помнит контекст из истории чата и без подсказок
+    # Для Ollama: память хранится в истории сообщений, не в системном промпте
 
-    # ── WEB SEARCH INTEGRATION — Nastya can find information! ──
-    # v7.0: Search the web when user asks about events, facts, or news
+    # v32: Web search — КОМПАКТНО, без ALL-CAPS инструкций
+    # Было ~150-200 токенов с инструкциями, стало ~30-50
     search_query = should_search(text)
     search_results = []
     if search_query:
         try:
-            search_results = await search_web(search_query, num_results=3)
+            search_results = await search_web(search_query, num_results=2)
             if search_results:
-                search_ctx = format_search_results_for_prompt(search_results, search_query)
-                if search_ctx:
-                    system_prompt += f"\n\n{search_ctx}"
-                    logger.info(f"Web search for user {user_id}: '{search_query}' → {len(search_results)} results")
+                search_parts = []
+                for r in search_results[:2]:
+                    search_parts.append(f"{r.get('title', '')} ({r.get('url', '')})")
+                system_prompt += f" Нашла: {'; '.join(search_parts)}."
+                logger.info(f"Web search for user {user_id}: '{search_query}' → {len(search_results)} results")
         except Exception as e:
             logger.warning(f"Web search error: {e}")
 
