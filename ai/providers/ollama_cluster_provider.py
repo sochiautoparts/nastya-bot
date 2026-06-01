@@ -1,19 +1,21 @@
-"""OllamaClusterProvider v32.0 — OPTIMIZED for background + chat fallback.
+"""OllamaClusterProvider v33.0 — OLLAMA-FIRST for both chat and background.
 
-Architecture v32.0 (HYBRID):
-  - Ollama = PRIMARY для фоновых задач (новости, канал)
-  - Ollama = FALLBACK для чата (когда Pollinations rate-limited)
+Architecture v33.0:
+  - Ollama = PRIMARY для ВСЕГО (чат + фон)
+  - Pollinations = FALLBACK только когда Ollama недоступен
+  - qwen2.5:1.5b — PRIMARY модель (отличный русский, быстрая на CPU)
+  - qwen3:4b-instruct — RESERVE модель (умнее, медленнее)
+  - vikhr-1B УБРАН — слишком слабая для русского (генерирует бред)
   - РАЗДЕЛЬНЫЕ семафоры: чат (высокий приоритет) и фон (низкий приоритет)
-  - Сокращённые таймауты: 30с primary, 60с reserve
-  - История 4 сообщения (было 6)
-  - num_predict=150 (было 100 — слишком коротко, ответы обрезались)
-  - Pollinations fallback ВНЕ семафора Ollama
+  - Кулдаун Pollinations после 429 (5 минут)
+  - НЕТ двойного вызова Pollinations
+  - num_predict=100 (короткие ответы = быстрее)
 
 МОДЕЛИ:
-  - lakomoor/vikhr-llama-3.2-1b-instruct:1b — 1B, быстрый на CPU
+  - qwen2.5:1.5b — 1.5B, отличный русский, быстрая на CPU
   - qwen3:4b-instruct — 4B, умный, медленный на CPU
 
-Важно: На GitHub Actions (2 CPU, 7GB RAM) реалистичен только ОДИН
+Важно: На VPS (2 CPU, 7GB RAM) реалистичен только ОДИН
 параллельный запрос к Ollama. Но чат и фон НЕ должны блокировать друг друга.
 """
 
@@ -31,13 +33,15 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 logger = logging.getLogger(__name__)
 
 # ── Модели ──────────────────────────────────────────────────
-PRIMARY_MODEL = "lakomoor/vikhr-llama-3.2-1b-instruct:1b"
+# v33: vikhr-1B убран — генерирует бред на русском
+# qwen2.5:1.5b — лучший баланс качества/скорости для русского на CPU
+PRIMARY_MODEL = "qwen2.5:1.5b"
 RESERVE_MODEL = "qwen3:4b-instruct"
 
-# Таймауты — v32: СОКРАЩЕНЫ! Нет смысла ждать 90/120с если Pollinations отвечает за 3с
-# Vikhr-1B на CPU обычно отвечает за 5-15с, 30с — щедрый лимит
-PRIMARY_TIMEOUT_SECONDS = 30.0   # Vikhr-1B (быстрая)
-RESERVE_TIMEOUT_SECONDS = 60.0   # Qwen3-4B (медленная на CPU)
+# Таймауты — v33: qwen2.5:1.5b отвечает за 5-20с на CPU
+# qwen3:4b медленнее, но умнее
+PRIMARY_TIMEOUT_SECONDS = 25.0   # qwen2.5:1.5b (быстрая для CPU)
+RESERVE_TIMEOUT_SECONDS = 60.0   # qwen3:4b-instruct (медленная на CPU)
 
 # Request priorities
 PRIORITY_HIGH = "high"    # User chat
@@ -82,6 +86,9 @@ class OllamaClusterProvider(BaseProvider):
         self._HEALTH_CACHE_TTL: int = 300
         # Pollinations fallback
         self._pollinations_fallback = pollinations_fallback
+        # v33: Pollinations 429 кулдаун — после 429 не пробуем 5 минут
+        self._pollinations_429_until: float = 0
+        self._POLLINATIONS_429_COOLDOWN: float = 300.0  # 5 минут
 
     async def init(self) -> None:
         """Инициализация: автоопределение Ollama."""
@@ -271,10 +278,12 @@ class OllamaClusterProvider(BaseProvider):
                     messages=messages_history,
                 )
 
-                # v32: Оптимизированные параметры для CPU
+                # v33: Оптимизированные параметры для CPU
+                # num_predict=100 — Настя говорит коротко (1-3 предложения)
+                # Меньше токенов = быстрее ответ
                 options = {
                     "temperature": temperature,
-                    "num_predict": min(max_tokens, 150),  # v32: 150 (было 100)
+                    "num_predict": min(max_tokens, 100),  # v33: 100 (было 150 — слишком длинно)
                     "num_ctx": 2048,
                 }
                 payload = {
@@ -365,50 +374,19 @@ class OllamaClusterProvider(BaseProvider):
                     last_error = ProviderError(self.name, f"Error with {model}: {exc}", retryable=True)
                     continue
 
-        # Обе Ollama модели не ответили
-        # НЕ вызываем Pollinations внутри семафора — освобождаем семафор сначала!
-        if self._pollinations_fallback:
-            logger.warning("Both Ollama models failed! Trying Pollinations fallback (outside semaphore)...")
-            fallback_result = await self._try_pollinations_fallback(
-                prompt, system_prompt, messages_history
-            )
-            if fallback_result:
-                return fallback_result
+
 
         if last_error:
             raise last_error
         raise ProviderError(self.name, "All models failed (Ollama + Pollinations)", retryable=True)
 
-    async def _try_pollinations_fallback(
-        self, prompt: str, system_prompt: str = "",
-        messages: Optional[List[Dict]] = None
-    ) -> Optional[AIResponse]:
-        """Try Pollinations as fallback when both Ollama models fail.
-        
-        v32: Вызывается ВНЕ семафора Ollama!
-        """
-        if not self._pollinations_fallback:
-            return None
-        try:
-            result = await self._pollinations_fallback.generate(
-                prompt,
-                system_prompt=system_prompt,
-                messages=messages,
-            )
-            if result and result.text:
-                cleaned = self._strip_think_tags(result.text)
-                if cleaned:
-                    logger.info("Pollinations text fallback SUCCESS!")
-                    return AIResponse(
-                        text=cleaned,
-                        provider="pollinations_fallback",
-                        model=result.model,
-                        tokens_used=0,
-                        metadata={"fallback": True},
-                    )
-        except Exception as e:
-            logger.warning(f"Pollinations fallback failed: {e}")
-        return None
+    def set_pollinations_429_cooldown(self, until: float) -> None:
+        """v33: Установить кулдаун Pollinations после 429."""
+        self._pollinations_429_until = until
+
+    def is_pollinations_on_cooldown(self) -> bool:
+        """v33: Проверить, на кулдауне ли Pollinations."""
+        return time.time() < self._pollinations_429_until
 
     async def generate_with_context(self, messages: List[Dict[str, str]],
                                      image: Optional[str] = None,
@@ -437,7 +415,7 @@ class OllamaClusterProvider(BaseProvider):
             "options": {
                 "temperature": 0.7,
                 "num_ctx": 2048,
-                "num_predict": 150,
+                "num_predict": 100,  # v33: 100 (было 150)
             },
         }
 

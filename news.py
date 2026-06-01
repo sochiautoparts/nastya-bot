@@ -459,24 +459,21 @@ async def run_news_cycle(db, ai_router) -> int:
 def format_news_for_context(news_items: List[Dict]) -> str:
     """Format recent news for injection into system prompt.
 
-    INCLUDES LINKS so Nastya can reference them in conversation.
-    When she mentions news, she should include the link.
+    v33: Упрощено — убраны агрессивные ALL-CAPS инструкции.
+    Малые модели (1.5B) путаются от КАПС-инструкций и тратят
+    токены на их обработку вместо нормального ответа.
+    Просто перечисляем заголовки — модель сама решит упоминать или нет.
     """
     if not news_items:
         return ""
 
-    lines = ["Свежие новости, которые Настя видела (ОБЯЗАТЕЛЬНО давай ссылку когда упоминаешь!):"]
+    lines = ["Свежие новости:"]
     for item in news_items[:3]:
-        comment = item.get("nastya_comment", "")
+        title = item.get("title", "")
         link = item.get("link", "")
-        if comment:
-            entry = f"- {item['title']} (Моя реакция: {comment})"
-        else:
-            entry = f"- {item['title']}"
-        if link:
-            entry += f" [ОБЯЗАТЕЛЬНО ПРИКРЕПИ ССЫЛКУ: {link}]"
-        lines.append(entry)
+        if title and link:
+            lines.append(f"- {title} ({link})")
+        elif title:
+            lines.append(f"- {title}")
 
-    lines.append("⛔ КОГДА УПОМИНАЕШЬ НОВОСТЬ — ОБЯЗАТЕЛЬНО ДАВАЙ ССЫЛКУ ИЗ СКОБОК ВЫШЕ! Это правило! Нет ссылки = нарушение!")
-
-    return "\n".join(lines)
+    return " ".join(lines)

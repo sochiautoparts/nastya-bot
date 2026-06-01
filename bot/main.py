@@ -1,10 +1,12 @@
-"""Nastya Bot 32.0 — HYBRID EDITION. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 33.0 — OLLAMA-FIRST EDITION. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v32.0 (HYBRID):
-  - Pollinations (GPT-4o-mini) = PRIMARY для чата (2-5 сек, умный, бесплатный)
-  - Ollama (Vikhr-1B / Qwen3-4B) = PRIMARY для фона + FALLBACK для чата
-  - РАЗДЕЛЬНЫЕ семафоры — чат не блокирует фон
-  - Сокращённый системный промпт (~200 токенов вместо ~1000)
+Architecture v33.0 (OLLAMA-FIRST):
+  - Ollama (qwen2.5:1.5b / qwen3:4b) = PRIMARY для чата И фона
+  - Pollinations = FALLBACK (после 429 кулдаун 5 минут)
+  - vikhr-1B УБРАН — генерирует бред на русском
+  - Кулдаун Pollinations после 429 — не дёргаем зря
+  - НЕТ двойного вызова Pollinations
+  - Сокращённый системный промпт
   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
   - HEALTH WATCHDOG: monitors Telegram API + Ollama
 """
@@ -467,7 +469,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 32.0 Starting (HYBRID — v32) ===")
+    logger.info("=== Nastya Bot 33.0 Starting (OLLAMA-FIRST — v33) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -514,7 +516,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 32.0 Ready (HYBRID — v32) ===")
+    logger.info("=== Nastya Bot 33.0 Ready (OLLAMA-FIRST — v33) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

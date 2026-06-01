@@ -1,26 +1,25 @@
-"""AI Router v32.0 — HYBRID EDITION.
+"""AI Router v33.0 — OLLAMA-FIRST EDITION.
 
-АРХИТЕКТУРА: Pollinations (облако) для чата + Ollama (локально) для фона!
+АРХИТЕКТУРА v33: Ollama (локально) = PRIMARY для ВСЕГО!
+
+  ПРИЧИНА СМЕНЫ: Pollinations постоянно rate-limited (429),
+  а vikhr-1B генерирует бред на русском.
+  Теперь qwen2.5:1.5b — отличное качество русского для CPU.
 
   ЧАТ (пользовательские сообщения — приоритет СКОРОСТЬ):
-    1. PollinationsProvider (GPT-4o-mini — быстрый, умный, бесплатный)
-    2. OllamaClusterProvider (локальный fallback при rate-limit)
+    1. OllamaClusterProvider (qwen2.5:1.5b — 5-20 сек, качественный русский)
+    2. PollinationsProvider (fallback — если Ollama недоступен)
     3. Static fallback — бот ВСЕГДА отвечает
 
   ФОН (новости, канал — приоритет НАДЁЖНОСТЬ):
-    1. OllamaClusterProvider (локальный, без rate-limit, скорость не критична)
+    1. OllamaClusterProvider (локальный, без rate-limit)
     2. PollinationsProvider (облачный fallback)
 
-  Почему Pollinations для чата:
-    - GPT-4o-mini в 10x умнее чем Vikhr-1B
-    - Отвечает за 2-5 сек вместо 15-90 сек на CPU
-    - Бесплатный, без API ключа
-    - Rate limit (429) бывает редко при 1-2 запросах/мин
-
-  Почему Ollama для фона:
-    - Бесплатный, без rate-limit
-    - Новости/канал не требуют мгновенного ответа
-    - 15-30 сек на комментарий — приемлемо
+  Ключевые изменения v33:
+    - Ollama PRIMARY для чата (Pollinations ненадёжен — 429)
+    - 5-минутный кулдаун Pollinations после 429
+    - НЕТ двойного вызова Pollinations
+    - vikhr-1B убран, заменён на qwen2.5:1.5b
 """
 import logging
 import asyncio
@@ -49,10 +48,12 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """Центральный AI-маршрутизатор — v32.0 HYBRID.
+    """Центральный AI-маршрутизатор — v33.0 OLLAMA-FIRST.
 
-    Чат: Pollinations → Ollama → static fallback.
+    Чат: Ollama → Pollinations (если не на кулдауне) → static fallback.
     Фон: Ollama → Pollinations → skip.
+
+    Кулдаун Pollinations: после 429 не пробуем 5 минут.
     """
 
     def __init__(self, db=None):
@@ -66,30 +67,30 @@ class AIRouter:
 
     async def init(self) -> None:
         """Инициализация провайдеров."""
-        # Pollinations — PRIMARY для чата
+        # Ollama — PRIMARY для ВСЕГО (v33: Pollinations ненадёжен)
+        self.provider = OllamaClusterProvider(
+            timeout=120.0,
+            base_url=OLLAMA_BASE_URL,
+            pollinations_fallback=None,  # v33: НЕТ Pollinations внутри Ollama
+        )
+        await self.provider.init()
+
+        # Pollinations — FALLBACK (не primary!)
         try:
             self._pollinations = PollinationsProvider(timeout=25.0)
             await self._pollinations.init()
-            logger.info("PollinationsProvider initialized as PRIMARY for chat")
+            logger.info("PollinationsProvider initialized as FALLBACK for chat")
         except Exception as e:
             logger.warning(f"PollinationsProvider init failed: {e}")
             self._pollinations = None
 
-        # Ollama — PRIMARY для фона, FALLBACK для чата
-        self.provider = OllamaClusterProvider(
-            timeout=120.0,
-            base_url=OLLAMA_BASE_URL,
-            pollinations_fallback=self._pollinations,
-        )
-        await self.provider.init()
-
         pollinations_status = "active" if self._pollinations else "unavailable"
         logger.info(
-            f"AI Router v32.0 (HYBRID) initialized: "
-            f"chat_primary=pollinations, "
+            f"AI Router v33.0 (OLLAMA-FIRST) initialized: "
+            f"chat_primary=ollama, "
             f"bg_primary=ollama, "
             f"ollama={self.provider.get_stats()['primary_model']}, "
-            f"pollinations={pollinations_status}"
+            f"pollinations={pollinations_status} (fallback only)"
         )
 
     async def close(self) -> None:
@@ -122,41 +123,12 @@ class AIRouter:
 
     async def _route_chat(self, prompt: str, system_prompt: str,
                           messages: Optional[List[Dict]], **kwargs) -> AIResponse:
-        """Маршрут для чата: Pollinations → Ollama → static fallback.
+        """Маршрут для чата: Ollama → Pollinations (если не на кулдауне) → static fallback.
 
-        Pollinations отвечает за 2-5 секунд (GPT-4o-mini).
-        Ollama — резерв при rate-limit (15-30 сек на CPU).
+        v33: Ollama теперь PRIMARY — Pollinations постоянно 429.
+        Кулдаун: после 429 Pollinations не трогаем 5 минут.
         """
-        # ── 1. Pollinations (PRIMARY для чата) ──
-        if self._pollinations:
-            try:
-                result = await self._pollinations.generate(
-                    prompt,
-                    system_prompt=system_prompt,
-                    messages=messages,
-                    model_key="default",  # GPT-4o-mini
-                )
-                if result and result.text:
-                    cleaned = self.clean_ai_response(result.text)
-                    if cleaned:
-                        self._pollinations_requests += 1
-                        return AIResponse(
-                            text=cleaned,
-                            provider=result.provider,
-                            model=result.model,
-                            tokens_used=result.tokens_used,
-                            metadata=result.metadata,
-                        )
-            except ProviderError as e:
-                err_str = str(e)
-                if "429" in err_str:
-                    logger.warning(f"Pollinations rate-limited (429), falling back to Ollama...")
-                else:
-                    logger.warning(f"Pollinations chat error: {e}")
-            except Exception as e:
-                logger.warning(f"Pollinations unexpected error: {e}")
-
-        # ── 2. Ollama (FALLBACK для чата) ──
+        # ── 1. Ollama (PRIMARY для чата) ──
         if self.provider:
             try:
                 gen_kwargs = {"priority": "high"}
@@ -175,12 +147,44 @@ class AIRouter:
                             provider=result.provider,
                             model=result.model,
                             tokens_used=result.tokens_used,
-                            metadata={**result.metadata, "fallback": "ollama"},
+                            metadata=result.metadata,
                         )
             except ProviderError as e:
-                logger.warning(f"Ollama chat fallback error: {e}")
+                logger.warning(f"Ollama chat error: {e}")
             except Exception as e:
                 logger.error(f"Unexpected Ollama chat error: {e}")
+
+        # ── 2. Pollinations (FALLBACK для чата) — с кулдауном ──
+        if self._pollinations and not self.provider.is_pollinations_on_cooldown():
+            try:
+                result = await self._pollinations.generate(
+                    prompt,
+                    system_prompt=system_prompt,
+                    messages=messages,
+                    model_key="default",  # GPT-4o-mini
+                )
+                if result and result.text:
+                    cleaned = self.clean_ai_response(result.text)
+                    if cleaned:
+                        self._pollinations_requests += 1
+                        return AIResponse(
+                            text=cleaned,
+                            provider=result.provider,
+                            model=result.model,
+                            tokens_used=result.tokens_used,
+                            metadata={**result.metadata, "fallback": "pollinations"},
+                        )
+            except ProviderError as e:
+                err_str = str(e)
+                if "429" in err_str:
+                    # v33: Кулдаун 5 минут после 429
+                    cooldown_until = time.time() + 300
+                    self.provider.set_pollinations_429_cooldown(cooldown_until)
+                    logger.warning(f"Pollinations rate-limited (429)! Cooldown until {cooldown_until:.0f}")
+                else:
+                    logger.warning(f"Pollinations chat error: {e}")
+            except Exception as e:
+                logger.warning(f"Pollinations unexpected error: {e}")
 
         # ── 3. Static fallback — бот ВСЕГДА отвечает ──
         self._total_fallbacks += 1

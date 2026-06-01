@@ -1132,69 +1132,38 @@ async def _maybe_ask_stars_check(user_id: int, msg_count: int, db, message: Mess
 
 
 def _enforce_news_links(response_text: str, news_items: list) -> str:
-    """Post-process AI response to ensure news links are included.
+    """Post-process AI response to add news links — ONLY when specifically relevant.
 
-    If the AI mentions a news topic but forgot the link,
-    we append the relevant link from our news database.
+    v33: РАДИКАЛЬНО УПРОЩЕНО. Было слишком агрессивно — лепило ссылки
+    на одни и те же новости в КАЖДЫЙ ответ, даже когда не про новости.
+    Теперь: добавляем ссылку ТОЛЬКО если ответ конкретно упоминает
+    заголовок новости (2+ слова совпадают) и нет других ссылок.
     """
     if not news_items or not response_text:
         return response_text
 
     response_lower = response_text.lower()
 
-    # Check if response already has a link (http/https or t.me)
-    has_link = bool(re.search(r'https?://\S+', response_text)) or 't.me/' in response_lower
+    # Already has a link? Don't add more
+    if re.search(r'https?://\S+', response_text) or 't.me/' in response_lower:
+        return response_text
 
-    # Check if response is discussing news/events
-    news_keywords = [
-        "новост", "событ", "происшеств", "случилос", "прочитал", "узнал",
-        "говор", "писал", "сообщ", "объяв", "нововведен", "реформ",
-        "закон", "указ", "решен", "приказ", "скандал", "кризис",
-        "катастроф", "авари", "взрыв", "пожар", "наводнен",
-        "выбор", "президент", "министр", "правительств",
-        "войн", "конфликт", "митинг", "протест",
-        "запуст", "выпущ", "представ", "анонсир", "релиз",
-        "открыт", "закрыт", "банкрот", "рекорд",
-        # Auto keywords
-        "авто", "машин", "двигател", "запчаст", "ремонт",
-        # Tech keywords
-        "нейросет", "ии ", "искусственн", "gpt", "технолог",
-        "электромобил", "apple", "google", "tesla",
-    ]
-    is_discussing_news = any(kw in response_lower for kw in news_keywords)
-
-    # Check if any news title keywords match the response
+    # Check if any news title keywords match the response (2+ significant words)
     matched_news = None
     for item in news_items:
         title = item.get("title", "").lower()
         link = item.get("link", "")
         if not link:
             continue
-        # Check if significant words from the title appear in the response
-        title_words = [w for w in re.split(r'[\s,.\-!?;:()]+', title) if len(w) > 3]
-        if title_words:
+        title_words = [w for w in re.split(r'[\s,.\-!?;:()]+', title) if len(w) > 4]
+        if len(title_words) >= 2:
             match_count = sum(1 for w in title_words if w.lower() in response_lower)
             if match_count >= min(2, len(title_words)):
                 matched_news = item
                 break
 
-    # If discussing news/events and no link present, add one
-    if is_discussing_news and not has_link:
-        if matched_news and matched_news.get("link"):
-            response_text += f"\n\n🔗 {matched_news['link']}"
-        elif news_items:
-            # Append link to the most relevant recent news
-            for item in news_items:
-                if item.get("link"):
-                    response_text += f"\n\n🔗 {item['link']}"
-                    break
-                else:
-                    response_text += "\n\n📺 Подробнее в @chasnastya"
-                    break
-        else:
-            response_text += "\n\n📺 Подробнее в @chasnastya"
-    elif matched_news and matched_news.get("link"):
-        # If we matched a specific news item, check if its link is already in the response
+    # Add link ONLY for specifically matched news — not random keywords
+    if matched_news and matched_news.get("link"):
         if matched_news["link"] not in response_text:
             response_text += f"\n\n🔗 {matched_news['link']}"
 
