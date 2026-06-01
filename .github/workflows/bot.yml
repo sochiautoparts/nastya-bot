@@ -1,28 +1,25 @@
 name: Nastya Bot — Qwen3-VL-2B
 
 # ═══════════════════════════════════════════════════════════════
-# SINGLE CONSOLIDATED WORKFLOW for Nastya Bot v19.0
+# SINGLE CONSOLIDATED WORKFLOW for Nastya Bot v21.0
 #
 # Architecture:
 #   - Ollama runs INSIDE GitHub Actions with Qwen3-VL-2B model
-#   - Bot runs continuously with self-restart on failure
+#   - Bot runs continuously with UNLIMITED auto-restart on failure
 #   - Every 5 hours cron kicks off a fresh runner (new IP, clean state)
 #   - concurrency: ONLY ONE instance can run at a time!
 #   - If old run is still going, it gets cancelled automatically
-#   - Auto-restart: if bot crashes, it retries up to 5 times
-#   - Self-dispatch: when all retries exhausted, re-dispatch workflow
-#   - Conflict exit: bot exits with code 2 on persistent conflicts
-#     → uses os._exit(2) so aiogram can't catch it
+#   - UNLIMITED retries: bot always restarts, never stays dead
+#   - Health watchdog inside bot: monitors Telegram + Ollama
+#   - Self-dispatch: re-dispatches workflow when runner time runs out
+#   - Exit codes: 2=conflict, 3=Ollama/health failure, 0=timeout
 #
-# v19.0 FIXES:
-#   - Bot takeover uses DEDICATED httpx client (not aiogram session)
-#     → fixes ROOT CAUSE of persistent TelegramConflictError
-#   - FRESH bot instance created after takeover (no stale sessions)
-#   - conflict_monitor uses os._exit(2) instead of SystemExit(2)
-#     → ensures process actually dies and auto-restart kicks in
-#   - Longer wait after cancelling old runs (90s instead of 60s)
-#   - Better self-dispatch with retry logic
-#   - Database saved as artifact (more reliable than cache)
+# v21.0 CHANGES:
+#   - UNLIMITED retries (was 5) — bot MUST always be running
+#   - Intelligent backoff: 5s → 10s → 15s → 30s (max)
+#   - Ollama health check before each restart attempt
+#   - Health watchdog inside bot monitors Ollama + Telegram
+#   - Fast-fail routing: Ollama first, max 3 cloud providers
 #
 # Schedule (UTC, Moscow = UTC+3):
 #   Every 5 hours: 00:00, 05:00, 10:00, 15:00, 20:00
@@ -87,14 +84,8 @@ jobs:
             done
           done
 
-          # v19.0: Increased to 90s — the old process needs time to:
-          # 1. Receive SIGTERM
-          # 2. Finish current Telegram long-poll request
-          # 3. Close aiogram sessions
-          # 4. Actually exit
-          # If we start too early, both processes call getUpdates → Conflict!
-          echo "Waiting 90s for old bot instances to fully stop..."
-          sleep 90
+          echo "Waiting 60s for old bot instances to fully stop..."
+          sleep 60
           echo "=== Ready to start ==="
 
       - name: Checkout repository
@@ -133,16 +124,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /home/runner/.ollama
-          key: ollama-qwen3-vl-2b-v3
+          key: ollama-qwen3-vl-2b-v4
           restore-keys: |
             ollama-qwen3-
 
       - name: Pull models
         if: steps.cache-models.outputs.cache-hit != 'true'
         run: |
-          echo "=== Pulling Qwen3-VL-2B (vision model) ==="
+          echo "=== Pulling Qwen3-VL-2B (PRIMARY model: text + vision) ==="
           ollama pull qwen3-vl:2b
-          echo "=== Pulling Qwen3-1.7B (fast text model) ==="
+          echo "=== Pulling Qwen3-1.7B (fast text fallback) ==="
           ollama pull qwen3:1.7b
 
       - name: Verify Ollama and models
@@ -159,7 +150,6 @@ jobs:
           }' | python3 -m json.tool || true
           echo ""
           echo "=== Vision test: Qwen3-VL-2B with base64 image ==="
-          # Create a tiny 1x1 red pixel PNG and test vision
           TEST_IMG=$(python3 -c "import base64; print(base64.b64encode(b'\\x89PNG\\r\\n\\x1a\\n\\x00\\x00\\x00\\rIHDR\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x01\\x08\\x02\\x00\\x00\\x00\\x90wS\\xde\\x00\\x00\\x00\\x0cIDATx\\x9cc\\xf8\\x0f\\x00\\x00\\x01\\x01\\x00\\x05\\x18\\xd8N\\x00\\x00\\x00\\x00IEND\\xaeB\`\\x82').decode())")
           curl -s http://localhost:11434/api/chat -d "{
             \"model\": \"qwen3-vl:2b\",
@@ -175,11 +165,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v19
+          key: nastya-db-v21
           restore-keys: |
             nastya-db-
 
-      # ── Run the Bot ──
+      # ── Run the Bot — UNLIMITED AUTO-RESTART ──
       - name: Run Nastya Bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
@@ -208,40 +198,73 @@ jobs:
           CHANNEL_POST_INTERVAL: 1200
           OLLAMA_KEEP_ALIVE: 30m
         run: |
-          echo "=== Starting Nastya Bot 20.0 with Qwen3-VL-2B ==="
+          echo "=== Starting Nastya Bot 21.0 with Qwen3-VL-2B ==="
           echo "Ollama status:"
           curl -s http://localhost:11434/api/tags | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  Model: {m[\"name\"]}') for m in d.get('models',[])]" 2>/dev/null || echo "  Ollama not responding"
-          echo "=== Launching bot with auto-restart ==="
-          # Auto-restart: if bot crashes, retry up to 5 times
+          echo "=== Launching bot with UNLIMITED auto-restart ==="
+
+          # v21.0: UNLIMITED retries — bot MUST always be running!
+          # Intelligent backoff: 5s → 10s → 15s → 30s (max 30s)
           RETRY=0
-          MAX_RETRIES=5
-          while [ $RETRY -lt $MAX_RETRIES ]; do
-            echo "--- Attempt $((RETRY+1))/$MAX_RETRIES ---"
+          while true; do
+            RETRY=$((RETRY+1))
+            echo "--- Attempt $RETRY ---"
+
+            # Check Ollama before starting bot
+            if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+              echo "WARNING: Ollama not responding! Trying to restart..."
+              pkill ollama 2>/dev/null || true
+              sleep 3
+              ollama serve &
+              sleep 15
+              if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+                echo "CRITICAL: Ollama still not responding after restart!"
+                sleep 30
+                continue
+              fi
+              echo "Ollama restarted successfully!"
+            fi
+
             python3 -m bot.main
             EXIT_CODE=$?
-            echo "Bot exited with code $EXIT_CODE"
+            echo "Bot exited with code $EXIT_CODE (attempt $RETRY)"
+
+            # Intelligent backoff based on exit code and attempt number
             if [ $EXIT_CODE -eq 2 ]; then
-              echo "Bot exited due to persistent conflicts — restarting quickly..."
-              RETRY=$((RETRY+1))
+              # Conflict exit — restart quickly
+              echo "Persistent conflicts — restarting in 10s..."
+              sleep 10
+            elif [ $EXIT_CODE -eq 3 ]; then
+              # Health/Ollama failure — give Ollama time to recover
+              echo "Health check failure — restarting Ollama + bot in 20s..."
+              pkill ollama 2>/dev/null || true
+              sleep 5
+              ollama serve &
               sleep 15
             elif [ $EXIT_CODE -eq 0 ]; then
-              echo "Bot exited normally (session timeout). Restarting..."
-              RETRY=$((RETRY+1))
-              sleep 10
+              # Normal exit (session timeout) — restart immediately
+              echo "Session timeout — restarting in 5s..."
+              sleep 5
             else
-              echo "Bot crashed with exit code $EXIT_CODE. Restarting in 30s..."
-              RETRY=$((RETRY+1))
-              sleep 30
+              # Unknown crash — backoff gradually
+              if [ $RETRY -le 3 ]; then
+                SLEEP=10
+              elif [ $RETRY -le 6 ]; then
+                SLEEP=15
+              else
+                SLEEP=30
+              fi
+              echo "Bot crashed (code $EXIT_CODE) — restarting in ${SLEEP}s..."
+              sleep $SLEEP
             fi
           done
-          echo "=== All $MAX_RETRIES attempts exhausted ==="
 
       - name: Save database cache
         uses: actions/cache/save@v4
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v19-${{ github.run_id }}
+          key: nastya-db-v21-${{ github.run_id }}
 
       # ── Self-dispatch: re-trigger workflow for 24/7 uptime ──
       - name: Re-dispatch workflow for continuous operation
@@ -251,9 +274,7 @@ jobs:
         run: |
           echo "=== Re-dispatching workflow for 24/7 uptime ==="
           REPO=${{ github.repository }}
-          # Wait a bit to avoid race conditions
-          sleep 15
-          # Trigger a new workflow run with retry
+          sleep 10
           for i in 1 2 3; do
             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
               -H "Authorization: token $GH_TOKEN" \

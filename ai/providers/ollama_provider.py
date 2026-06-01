@@ -10,13 +10,13 @@ Architecture:
   - NEVER has authentication errors (local inference)
   - Perfect for channel posts, news commentary, basic chat
 
-v4.0: Reliability and model selection overhaul
-  - Use qwen3:1.7b for TEXT-ONLY tasks (FASTER on CPU!)
-  - Use qwen3-vl:2b ONLY for vision (image) tasks
-  - Only try models that are INSTALLED (no auto-pull of uninstalled models!)
+v5.0: Simplified model selection — qwen3-vl:2b for EVERYTHING
+  - qwen3-vl:2b for BOTH text AND vision (simpler, more reliable)
+  - qwen3:1.7b as FAST text-only fallback (if available)
+  - NEVER references qwen2.5:3b (not installed!)
+  - Only tries INSTALLED models — no auto-pull!
   - asyncio Lock serializes Ollama requests (CPU can't handle concurrent inference)
-  - Better timeout handling: 180s for text, 300s for vision
-  - No more pulling qwen2.5:3b wasting CPU and disk!
+  - Ollama health check + auto-recovery
 """
 import logging
 import asyncio
@@ -33,11 +33,12 @@ logger = logging.getLogger(__name__)
 OLLAMA_BASE_URL = "http://localhost:11434"
 
 # Models — ONLY use what's installed via GitHub Actions workflow!
-# qwen3:1.7b = fast text model (pulled in workflow)
-# qwen3-vl:2b = vision model (pulled in workflow)
+# qwen3-vl:2b = PRIMARY model for BOTH text and vision (most reliable)
+# qwen3:1.7b = fast text-only fallback (if available)
 # DO NOT add models that aren't pre-installed — auto-pull wastes CPU/disk!
-TEXT_MODEL = "qwen3:1.7b"         # Fast text model — PRIMARY for text-only
-VISION_MODEL = "qwen3-vl:2b"      # Vision model — ONLY for image tasks
+# NEVER reference qwen2.5:3b — it's not installed!
+PRIMARY_MODEL = "qwen3-vl:2b"     # Works for text AND vision — PRIMARY
+TEXT_FAST_MODEL = "qwen3:1.7b"     # Fast text-only fallback (optional)
 
 # Vision-capable model prefixes — ANY model starting with these is vision-capable
 VISION_MODEL_PREFIXES = ["qwen3-vl", "qwen2.5-vl", "qwen2-vl", "llava", "minicpm-v", "bakllava", "moondream", "llama3-vision"]
@@ -245,7 +246,20 @@ class OllamaProvider(BaseProvider):
     def _is_model_installed(self, model_name: str) -> bool:
         """Check if a model is installed locally."""
         prefix = model_name.split(":")[0]
-        return any(m.startswith(prefix) for m in self._installed_models)
+        found = any(m.startswith(prefix) for m in self._installed_models)
+        if not found:
+            logger.warning(f"Model {model_name} NOT installed! Available: {self._installed_models}")
+        return found
+
+    async def health_check(self) -> bool:
+        """Check if Ollama server is still responding."""
+        try:
+            if not self._client:
+                return False
+            resp = await self._client.get("/api/tags", timeout=5.0)
+            return resp.status_code == 200
+        except Exception:
+            return False
 
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         """Generate text via local Ollama instance.
@@ -278,16 +292,22 @@ class OllamaProvider(BaseProvider):
             messages_history = messages_history[-30:]
 
         # ── Select model based on task type ──
-        # Text-only → qwen3:1.7b (FASTER on CPU!)
-        # Vision → qwen3-vl:2b (required for image processing)
+        # v5.0: qwen3-vl:2b for EVERYTHING (primary), qwen3:1.7b as text-only fast fallback
+        # NEVER use qwen2.5:3b — it's not installed!
         is_vision_request = bool(image_base64 and self._vision_available)
 
         if is_vision_request:
-            primary_model = self._vision_model or VISION_MODEL
-            fallback_model = self._text_model  # Fallback to text model without image
+            # Vision: MUST use vision model
+            primary_model = self._vision_model or PRIMARY_MODEL
+            fallback_model = None  # No text fallback for vision — can't process images
         else:
-            primary_model = self._text_model or TEXT_MODEL
-            fallback_model = None  # For text, just try the primary model
+            # Text: Try fast text model first (if available), then primary
+            if self._text_model and self._text_model != PRIMARY_MODEL and self._is_model_installed(self._text_model):
+                primary_model = self._text_model  # qwen3:1.7b (faster for text)
+                fallback_model = PRIMARY_MODEL     # qwen3-vl:2b as fallback
+            else:
+                primary_model = PRIMARY_MODEL      # qwen3-vl:2b for everything
+                fallback_model = None
 
         # Build list of models to try — ONLY installed ones!
         models_to_try = []

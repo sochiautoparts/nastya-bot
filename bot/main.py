@@ -1,26 +1,22 @@
-"""Nastya Bot 19.0 — Main Entry Point. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 21.0 — Main Entry Point. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v19.0:
+Architecture v21.0:
   - SINGLE INSTANCE: file lock + conflict tracker prevents multiple bot instances
   - SINGLE WORKFLOW: one bot.yml with concurrency group (no duplicate runs)
   - LOCAL Qwen3-VL-2B via Ollama as PRIMARY (with FIXED vision!)
-  - GitHub Models SECOND (free DeepSeek-V3 via PAT)
-  - Pollinations, Chutes, Blackbox, HuggingFace as cloud fallbacks
+  - Ollama-first routing with fast-fail cloud fallback
+  - HEALTH WATCHDOG: monitors Telegram API + Ollama, auto-restarts on failure
   - АПОЛИТИЧНОСТЬ: Настя не обсуждает политику, религию, войну
   - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ + VISION (FIXED!)
   - MOSCOW TIMEZONE — Настя из Москвы!
 
-v19.0 CRITICAL FIXES:
-  1. TelegramConflictError ROOT CAUSE: takeover used timeout=0 which causes
-     aiogram's internal session to open parallel getUpdates requests.
-     FIX: Use timeout=5 for takeover test, then CLOSE bot session and
-     create a NEW bot instance for polling. This ensures no stale connections.
-  2. conflict_monitor: SystemExit(2) in background task doesn't kill the
-     process — aiogram catches it. FIX: use os._exit(2) instead.
-  3. Ollama vision: images now attach to LAST user message, not first!
-  4. Vision history: limited to 10 messages for 2B model (was 50 = context overflow)
-  5. Workflow: re-dispatches itself when all retries exhausted
-  6. Better auto-restart: track aiogram's own conflict counter
+v21.0 CRITICAL FIXES:
+  1. Health watchdog: checks Telegram + Ollama every 60s, restarts if unresponsive
+  2. Ollama health check: restarts Ollama server if it dies
+  3. Vision routing: goes DIRECTLY to Ollama, no cascading through failing clouds
+  4. Fast-fail: max 3 cloud providers tried (was 12+, causing 260s timeouts)
+  5. Model selection: qwen3-vl:2b for everything, no qwen2.5:3b references
+  6. Process supervisor in workflow: unlimited retries with intelligent backoff
 """
 import asyncio
 import fcntl
@@ -75,6 +71,12 @@ _consecutive_conflicts: int = 0
 _first_conflict_time: float = 0
 _MAX_CONFLICT_SECONDS = 45  # Exit after 45s of continuous conflicts
 _should_exit = False  # Flag for conflict_monitor to signal main loop
+
+# ── Health watchdog state ──
+_last_successful_update: float = 0  # Timestamp of last successful Telegram update
+_HEALTH_CHECK_INTERVAL = 60  # Check health every 60 seconds
+_MAX_UNRESPONSIVE_SECONDS = 180  # Restart if no response for 3 minutes
+_ollama_restart_count: int = 0  # Track Ollama restarts
 
 
 def record_conflict() -> bool:
@@ -358,7 +360,7 @@ async def memory_cleanup() -> None:
 async def conflict_monitor() -> None:
     """Background task: monitor conflict state and exit if persistent.
 
-    v19.0 FIX: Uses os._exit(2) instead of SystemExit(2).
+    Uses os._exit(2) instead of SystemExit(2).
     SystemExit raised in a background task is caught by asyncio's
     event loop and never reaches the main thread. os._exit() kills
     the entire process immediately, ensuring the workflow's
@@ -377,9 +379,6 @@ async def conflict_monitor() -> None:
                         f"({_consecutive_conflicts} conflicts). "
                         f"FORCE EXITING with os._exit(2) to trigger auto-restart!"
                     )
-                    # CRITICAL FIX: os._exit() bypasses asyncio's exception handling
-                    # and kills the process immediately. SystemExit in a background
-                    # task is silently caught by the event loop and never propagates!
                     os._exit(2)
             # Also check the global exit flag
             if _should_exit:
@@ -389,6 +388,86 @@ async def conflict_monitor() -> None:
             break
         except Exception as e:
             logger.error(f"Conflict monitor error: {e}")
+
+
+async def health_watchdog() -> None:
+    """Background task: monitor bot and Ollama health, restart if unresponsive.
+
+    v21.0: The watchdog ensures the bot ALWAYS stays running.
+    - Checks Ollama server health every 60s
+    - Checks Telegram API reachability every 60s
+    - If Ollama is down, tries to restart it
+    - If nothing works, exits with code 3 to trigger workflow restart
+    """
+    global _ollama_restart_count
+
+    await asyncio.sleep(30)  # Give startup time to settle
+    logger.info("Health watchdog started")
+
+    while True:
+        try:
+            await asyncio.sleep(_HEALTH_CHECK_INTERVAL)
+
+            # ── Check 1: Ollama health ──
+            if ai_router and "ollama" in ai_router.providers:
+                ollama = ai_router.providers["ollama"]
+                ollama_ok = await ollama.health_check()
+                if not ollama_ok:
+                    logger.warning("Ollama health check FAILED! Trying to restart...")
+                    try:
+                        import subprocess
+                        subprocess.Popen(["pkill", "ollama"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        await asyncio.sleep(3)
+                        subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        await asyncio.sleep(10)
+                        # Check again
+                        ollama_ok = await ollama.health_check()
+                        if ollama_ok:
+                            _ollama_restart_count += 1
+                            logger.info(f"Ollama restarted successfully (restart #{_ollama_restart_count})")
+                            try:
+                                await ollama.init()
+                            except Exception:
+                                pass
+                        else:
+                            logger.critical("Ollama restart FAILED! Bot needs full restart.")
+                            os._exit(3)
+                    except Exception as e:
+                        logger.error(f"Ollama restart attempt failed: {e}")
+                        os._exit(3)
+
+            # ── Check 2: Telegram API health ──
+            if bot:
+                try:
+                    me = await bot.get_me()
+                    if me and me.id:
+                        continue  # Bot is healthy!
+                except Exception as e:
+                    logger.warning(f"Telegram API health check failed: {e}")
+                    if _first_conflict_time > 0:
+                        unresponsive_time = time.time() - _first_conflict_time
+                        if unresponsive_time > _MAX_UNRESPONSIVE_SECONDS:
+                            logger.critical(
+                                f"Bot unresponsive for {unresponsive_time:.0f}s! "
+                                f"FORCE EXITING to trigger restart!"
+                            )
+                            os._exit(3)
+
+            # ── Check 3: Uptime sanity ──
+            if _start_time > 0 and ai_router:
+                uptime = time.time() - _start_time
+                status = ai_router.get_status()
+                total_req = status.get("_stats", {}).get("total_requests", 0)
+                if uptime > 600 and total_req == 0:
+                    logger.warning(
+                        f"Bot running for {uptime:.0f}s with 0 AI requests. "
+                        f"Polling may be stuck. Continuing to monitor..."
+                    )
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Health watchdog error: {e}")
 
 
 # ════════════════════════════════════════════════════════════
@@ -429,6 +508,7 @@ async def on_startup(**kwargs) -> None:
         asyncio.create_task(periodic_db_cleanup())
         asyncio.create_task(memory_cleanup())
         asyncio.create_task(conflict_monitor())
+        asyncio.create_task(health_watchdog())
 
         # Startup notification — Nastya-style, NO technical info
         for admin_id in ADMIN_IDS:

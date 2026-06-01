@@ -1,18 +1,14 @@
-"""AI Router — BULLETPROOF routing with local model PRIMARY + cloud fallback.
+"""AI Router — BULLETPROOF routing with LOCAL model as SOLE reliable provider.
 
-Architecture (v15.0 — Local Qwen3-VL as PRIMARY):
-  - Ollama FIRST (local Qwen3-VL-2B — free, unlimited, no external API!)
-  - GitHub Models SECOND (free DeepSeek-V3 via PAT, reliable backup)
-  - Pollinations THIRD (free, no key, vision)
-  - Chutes FOURTH (free DeepSeek V3, no key, vision)
-  - Blackbox FIFTH (free, unlimited, vision)
-  - HuggingFace SIXTH (free tier, optional key, vision)
-  - OpenRouter SEVENTH (50 free req/day — demoted)
-  - Other API-key providers as additional fallbacks
+Architecture (v16.0 — Ollama-First, Fast-Fail Cloud):
+  - Ollama FIRST AND PRIMARY (local Qwen3-VL-2B — free, unlimited, no external API!)
+  - Cloud providers as FAST-FAIL fallbacks (short timeout, quick skip on error)
+  - NEVER cascades through 8+ failing providers — fails fast!
   - NEVER raises exceptions to caller — ALWAYS returns AIResponse
   - Political content filtering — responses with political keywords are replaced
   - Aggressive response cleaning: strips ads, markdown, artifacts, SSE garbage
   - NO "голова разболелась" error messages EVER
+  - Vision: ONLY Ollama has reliable vision — cloud providers often fail
 """
 import logging
 import asyncio
@@ -51,28 +47,21 @@ FALLBACK_RESPONSES = [
     "Кстати, заходи на мой канал @chasnastya! 💅 А ты что сказал?",
 ]
 
-# Provider chain v15.0: LOCAL model FIRST, then free cloud, then limited
+# Provider chain v16.0: LOCAL model FIRST, cloud providers FAST-FAIL
+# Ollama handles 99% of requests. Cloud providers are tried with SHORT timeouts
+# and quick failure — no more 260-second cascading failures!
 PROVIDER_CHAIN = [
-    # ── LOCAL model (PRIMARY — free, unlimited, no external dependency!) ──
+    # ── LOCAL model (PRIMARY — handles text AND vision!) ──
     "ollama",
-    # ── Free cloud providers ──
-    # GitHub Models — free DeepSeek-V3 via PAT, reliable
+    # ── Free cloud providers (FAST-FAIL: short timeout, skip on error) ──
     "github_models",
-    # Pollinations — always free, always available, vision
     "pollinations",
-    # Chutes — free DeepSeek V3, no key, vision
     "chutes",
-    # Blackbox — free, unlimited, multiple models, vision
     "blackbox",
-    # HuggingFace — free tier, optional key, many models, vision
     "huggingface",
-    # ── Limited free providers (demoted) ──
     "openrouter",
-    # Cloudflare — free if credentials available
     "cloudflare",
-    # Groq — free, ultra-fast LPU, great Russian, 30 RPM
     "groq",
-    # Other API-key providers as additional fallbacks
     "sambanova", "cerebras", "mistral", "gemini",
 ]
 
@@ -244,8 +233,15 @@ class AIRouter:
 
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
-        """Route text chat. NEVER raises exceptions. ALWAYS returns a response."""
-        image_base64 = kwargs.pop("image_base64", None)  # pop to avoid double-passing
+        """Route text chat. NEVER raises exceptions. ALWAYS returns a response.
+
+        v16.0: Ollama-first with fast-fail for cloud providers.
+        Vision requests go DIRECTLY to Ollama (only reliable vision provider).
+        Text requests try Ollama first, then fast-fail through cloud providers.
+        """
+        # ── CRITICAL: Pop image_base64 from kwargs to prevent double-passing ──
+        # This must be done FIRST before any provider calls
+        image_base64 = kwargs.pop("image_base64", None)
         self._total_requests += 1
 
         # ── PHASE 0: Check memory cache ONLY for no-history requests ──
@@ -276,10 +272,36 @@ class AIRouter:
             except Exception:
                 pass
 
-        # If image, try vision providers first
-        # NOTE: image_base64 is popped from kwargs above, so we pass it explicitly only
-        if image_base64:
+        # ── VISION: Ollama is the ONLY reliable vision provider ──
+        # Cloud vision providers fail too often (429s, auth errors, garbage responses)
+        # Go DIRECTLY to Ollama for vision — no cascading through failing clouds!
+        if image_base64 and "ollama" in self.providers:
+            ollama = self.providers["ollama"]
+            if self._is_provider_healthy("ollama") and getattr(ollama, 'supports_vision', False):
+                try:
+                    result = await ollama.generate(
+                        prompt, system_prompt=system_prompt,
+                        messages=messages, image_base64=image_base64,
+                    )
+                    if result and result.text:
+                        cleaned = self.clean_ai_response(result.text)
+                        if cleaned:
+                            self._mark_success("ollama")
+                            return AIResponse(
+                                text=cleaned,
+                                provider=result.provider,
+                                model=result.model,
+                                tokens_used=result.tokens_used,
+                                metadata=result.metadata,
+                            )
+                except Exception as e:
+                    self._mark_failure("ollama")
+                    logger.warning(f"Ollama vision failed: {e}")
+
+            # If Ollama vision failed, try other vision providers as fallback
             for vp_name in self._vision_providers:
+                if vp_name == "ollama":
+                    continue  # Already tried
                 provider = self.providers.get(vp_name)
                 if not provider or not self._is_provider_healthy(vp_name):
                     continue
@@ -290,10 +312,39 @@ class AIRouter:
                     )
                     if result and result.text:
                         cleaned = self.clean_ai_response(result.text)
-                        if not cleaned:
-                            logger.warning(f"Vision provider {vp_name} returned garbage after cleaning")
-                            continue
-                        self._mark_success(vp_name)
+                        if cleaned:
+                            self._mark_success(vp_name)
+                            return AIResponse(
+                                text=cleaned,
+                                provider=result.provider,
+                                model=result.model,
+                                tokens_used=result.tokens_used,
+                                metadata=result.metadata,
+                            )
+                except Exception as e:
+                    self._mark_failure(vp_name)
+                    logger.warning(f"Vision fallback {vp_name} error: {e}")
+
+        # ── TEXT: Try Ollama FIRST (fastest, most reliable) ──
+        if "ollama" in self.providers and self._is_provider_healthy("ollama"):
+            try:
+                ollama = self.providers["ollama"]
+                result = await ollama.generate(
+                    prompt, system_prompt=system_prompt,
+                    messages=messages,
+                )
+                if result and result.text:
+                    cleaned = self.clean_ai_response(result.text)
+                    if cleaned:
+                        self._mark_success("ollama")
+                        if not has_conversation and not image_base64:
+                            self._cache.put(prompt, system_prompt, cleaned)
+                            if self._db:
+                                try:
+                                    cache_key = hashlib.sha256(f"{system_prompt}:{prompt}".encode()).hexdigest()[:32]
+                                    await self._db.cache_put(cache_key, "text", {"text": cleaned})
+                                except Exception:
+                                    pass
                         return AIResponse(
                             text=cleaned,
                             provider=result.provider,
@@ -301,79 +352,30 @@ class AIRouter:
                             tokens_used=result.tokens_used,
                             metadata=result.metadata,
                         )
-                except ProviderError as e:
-                    self._mark_failure(vp_name)
-                    logger.warning(f"Vision provider {vp_name} failed: {e}")
-                    if not e.retryable:
-                        continue
-                except Exception as e:
-                    self._mark_failure(vp_name)
-                    logger.warning(f"Vision provider {vp_name} error: {e}")
-
-        # ── PHASE 1: Try configured providers ──
-        chain = self._get_ordered_chain()
-
-        # NOTE: image_base64 already popped from kwargs — no risk of double-passing
-        for provider_name in chain:
-            provider = self.providers.get(provider_name)
-            if not provider:
-                continue
-
-            try:
-                gen_kwargs = dict(kwargs)  # copy remaining kwargs (no image_base64)
-                if image_base64 and getattr(provider, 'supports_vision', False):
-                    gen_kwargs["image_base64"] = image_base64  # add only for vision providers
-
-                result = await provider.generate(
-                    prompt, system_prompt=system_prompt,
-                    messages=messages, **gen_kwargs,
-                )
-                if result and result.text:
-                    cleaned = self.clean_ai_response(result.text)
-                    if not cleaned:
-                        logger.warning(f"Provider {provider_name} returned garbage after cleaning")
-                        continue
-
-                    self._mark_success(provider_name)
-
-                    result = AIResponse(
-                        text=cleaned,
-                        provider=result.provider,
-                        model=result.model,
-                        tokens_used=result.tokens_used,
-                        metadata=result.metadata,
-                    )
-
-                    if not has_conversation and not image_base64:
-                        self._cache.put(prompt, system_prompt, cleaned)
-                        if self._db:
-                            try:
-                                cache_key = hashlib.sha256(f"{system_prompt}:{prompt}".encode()).hexdigest()[:32]
-                                await self._db.cache_put(cache_key, "text", {"text": cleaned})
-                            except Exception:
-                                pass
-
-                    return result
-                logger.warning(f"Provider {provider_name} returned empty")
-            except ProviderError as e:
-                self._mark_failure(provider_name)
-                logger.warning(f"Provider {provider_name} failed: {e}")
-                if not e.retryable:
-                    continue
             except Exception as e:
-                self._mark_failure(provider_name)
-                logger.warning(f"Error from {provider_name}: {e}")
+                self._mark_failure("ollama")
+                logger.warning(f"Ollama text failed: {e}")
 
-        # ── PHASE 2: Retry top providers ──
-        logger.info("All providers failed on first try, retrying top 3...")
-        await asyncio.sleep(1)
+        # ── CLOUD FALLBACK: Fast-fail through cloud providers ──
+        # v16.0: Each cloud provider gets ONE try with short timeout,
+        # no more cascading through 8+ failing providers for 260 seconds!
+        chain = self._get_ordered_chain()
+        cloud_tried = 0
+        MAX_CLOUD_ATTEMPTS = 3  # Only try 3 cloud providers max!
 
-        for provider_name in chain[:3]:
+        for provider_name in chain:
+            if provider_name == "ollama":
+                continue  # Already tried above
             provider = self.providers.get(provider_name)
             if not provider:
                 continue
+
+            # Skip unhealthy providers immediately
+            if not self._is_provider_healthy(provider_name):
+                continue
+
             try:
-                gen_kwargs = dict(kwargs)
+                gen_kwargs = {}
                 if image_base64 and getattr(provider, 'supports_vision', False):
                     gen_kwargs["image_base64"] = image_base64
 
@@ -385,7 +387,18 @@ class AIRouter:
                     cleaned = self.clean_ai_response(result.text)
                     if not cleaned:
                         continue
+
                     self._mark_success(provider_name)
+
+                    if not has_conversation and not image_base64:
+                        self._cache.put(prompt, system_prompt, cleaned)
+                        if self._db:
+                            try:
+                                cache_key = hashlib.sha256(f"{system_prompt}:{prompt}".encode()).hexdigest()[:32]
+                                await self._db.cache_put(cache_key, "text", {"text": cleaned})
+                            except Exception:
+                                pass
+
                     return AIResponse(
                         text=cleaned,
                         provider=result.provider,
@@ -393,26 +406,29 @@ class AIRouter:
                         tokens_used=result.tokens_used,
                         metadata=result.metadata,
                     )
-            except Exception:
-                pass
+                logger.warning(f"Provider {provider_name} returned empty")
+            except ProviderError as e:
+                self._mark_failure(provider_name)
+                logger.warning(f"Provider {provider_name} failed: {e}")
+            except Exception as e:
+                self._mark_failure(provider_name)
+                logger.warning(f"Error from {provider_name}: {e}")
 
-        # ── PHASE 3: Try free providers with simplified prompt ──
-        for free_name in ["ollama", "pollinations", "chutes", "blackbox"]:
-            if free_name in self.providers:
-                try:
-                    provider = self.providers[free_name]
-                    gen_kwargs = dict(kwargs)
-                    if image_base64 and getattr(provider, 'supports_vision', False):
-                        gen_kwargs["image_base64"] = image_base64
-                    result = await provider.generate(
-                        prompt, system_prompt=system_prompt,
-                        messages=None, **gen_kwargs,
-                    )
-                    if result and result.text:
-                        cleaned = self.clean_ai_response(result.text)
-                        if not cleaned:
-                            continue
-                        self._mark_success(free_name)
+            cloud_tried += 1
+            if cloud_tried >= MAX_CLOUD_ATTEMPTS:
+                break  # Stop trying cloud providers after 3 failures
+
+        # ── FINAL RETRY: Try Ollama one more time (might have recovered) ──
+        if "ollama" in self.providers:
+            try:
+                result = await self.providers["ollama"].generate(
+                    prompt, system_prompt=system_prompt,
+                    messages=messages, image_base64=image_base64,
+                )
+                if result and result.text:
+                    cleaned = self.clean_ai_response(result.text)
+                    if cleaned:
+                        self._mark_success("ollama")
                         return AIResponse(
                             text=cleaned,
                             provider=result.provider,
@@ -420,10 +436,10 @@ class AIRouter:
                             tokens_used=result.tokens_used,
                             metadata=result.metadata,
                         )
-                except Exception as e:
-                    logger.error(f"Even {free_name} failed: {e}")
+            except Exception:
+                pass
 
-        # ── PHASE 5: FALLBACK — bot ALWAYS responds ──
+        # ── FALLBACK — bot ALWAYS responds ──
         self._total_fallbacks += 1
         logger.error("ALL providers failed! Using fallback response.")
 
