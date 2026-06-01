@@ -1,26 +1,25 @@
-name: Nastya Bot — RELIABILITY FIX v27
+name: Nastya Bot — PURE TEXT BOT v28
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v27.0 — RELIABILITY FIX
+# Nastya Bot v28.0 — PURE TEXT BOT
 #
 # Architecture:
 #   - LOCAL OLLAMA as PRIMARY AI provider
-#   - POLLINATIONS as FALLBACK (text + vision timeout + 502 retry)
-#   - Models: phi4-mini:3.8b (text), moondream (vision)
-#   - NO QWEN — completely removed!
+#   - POLLINATIONS as FALLBACK (text only)
+#   - Models: Qwen3-4B (PRIMARY) + Vikhr-Llama-1B (RESERVE)
+#   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
 #   - Bot runs continuously with UNLIMITED auto-restart
 #   - Every 5 hours cron kicks off a fresh runner
 #   - Single concurrency group — ONE bot instance only!
 #   - Health watchdog: checks Telegram + Ollama every 300s
 #   - Self-dispatch: re-triggers workflow when runner time runs out
 #
-# v27.0 CHANGES vs v26.0:
-#   - Text semaphore 4→2 (2 CPU can't handle 4 parallel phi4-mini!)
-#   - Vision timeout 15→30s (moondream was timing out under load)
-#   - Text timeout 120→90s + Pollinations fallback on timeout (NEW!)
-#   - Pollinations retry on 502 Cloudflare with 2s delay
-#   - Per-user message dedup — skip stale messages from spamming users
-#   - Rate-limit 30→15 msg/min
+# v28.0 CHANGES vs v27.0:
+#   - ВСЯ ОБРАБОТКА ФОТО УДАЛЕНА — бот чисто текстовый!
+#   - Модели: Qwen3-4B (PRIMARY) + Vikhr-Llama-1B (RESERVE)
+#   - Заменены phi4-mini + moondream на Qwen3-4B + Vikhr-Llama-1B
+#   - Vikhr-Llama-1B — русский оптимизирован, быстрый резерв
+#   - Qwen3-4B — thinking mode, 119 языков, tool calling
 #
 # Schedule (UTC, Moscow = UTC+3):
 #   Every 5 hours: 00:00, 05:00, 10:00, 15:00, 20:00
@@ -125,35 +124,34 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /home/runner/.ollama
-          key: ollama-phi4-moondream-v3
+          key: ollama-qwen3-vikhr-v1
           restore-keys: |
-            ollama-phi4-
-            ollama-moondream-
+            ollama-qwen3-
 
       - name: Pull models
         if: steps.cache-models.outputs.cache-hit != 'true'
         run: |
-          echo "=== Pulling Phi4-Mini-3.8B (PRIMARY text model — fast, smart) ==="
-          ollama pull phi4-mini:3.8b
-          echo "=== Pulling Moondream (vision model — 2-3x faster than qwen3-vl!) ==="
-          ollama pull moondream
+          echo "=== Pulling Qwen3-4B (PRIMARY text model — smart, thinking mode, 119 languages) ==="
+          ollama pull qwen3:4b
+          echo "=== Pulling Vikhr-Llama-1B (RESERVE text model — Russian optimized, fast) ==="
+          ollama pull lakomoor/vikhr-llama-3.2-1b-instruct
 
       - name: Verify Ollama and models
         run: |
           echo "=== Installed models ==="
           ollama list
           echo ""
-          echo "=== Quick test: Phi4-Mini-3.8B (PRIMARY text model) ==="
+          echo "=== Quick test: Qwen3-4B (PRIMARY text model) ==="
           curl -s http://localhost:11434/api/chat -d '{
-            "model": "phi4-mini:3.8b",
+            "model": "qwen3:4b",
             "messages": [{"role": "user", "content": "Привет! Скажи что-нибудь."}],
             "stream": false,
             "options": {"num_predict": 20}
           }' | python3 -m json.tool || true
           echo ""
-          echo "=== Quick test: Moondream (vision model — MUCH faster than qwen3-vl!) ==="
+          echo "=== Quick test: Vikhr-Llama-1B (RESERVE text model) ==="
           curl -s http://localhost:11434/api/chat -d '{
-            "model": "moondream",
+            "model": "lakomoor/vikhr-llama-3.2-1b-instruct",
             "messages": [{"role": "user", "content": "Привет! Скажи что-нибудь."}],
             "stream": false,
             "options": {"num_predict": 20}
@@ -166,7 +164,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v27
+          key: nastya-db-v28
           restore-keys: |
             nastya-db-
 
@@ -186,9 +184,8 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
           OLLAMA_KEEP_ALIVE: -1
-          OLLAMA_VISION_TIMEOUT: 30
         run: |
-          echo "=== Starting Nastya Bot 27.0 (RELIABILITY FIX — v27) ==="
+          echo "=== Starting Nastya Bot 28.0 (PURE TEXT BOT — v28) ==="
           echo "Ollama status:"
           curl -s http://localhost:11434/api/tags | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  Model: {m[\"name\"]}') for m in d.get('models',[])]" 2>/dev/null || echo "  Ollama not responding"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
@@ -249,7 +246,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v27-${{ github.run_id }}
+          key: nastya-db-v28-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation

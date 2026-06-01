@@ -56,14 +56,13 @@ async def cmd_providers(message: Message, db=None, ai_router=None) -> None:
             available = "✅" if info.get("available") else "❌"
             healthy = "💚" if info.get("healthy") else "💔"
             url = info.get('active_url', '?')
-            text_model = info.get('text_model', '?')
-            vision_model = info.get('vision_model', '?')
-            vision = "👁" if info.get('vision_available') else ""
+            primary_model = info.get('primary_model', '?')
+            reserve_model = info.get('reserve_model', '?')
             warm = "🔥" if info.get('warm') else "❄️"
-            lines.append(f"  {available}{healthy} {name} {vision}{warm}")
+            lines.append(f"  {available}{healthy} {name} {warm}")
             lines.append(f"    URL: {url}")
-            lines.append(f"    Text: {text_model} | Vision: {vision_model}")
-            lines.append(f"    Requests: {info.get('request_count', 0)} | Errors: {info.get('error_count', 0)}")
+            lines.append(f"    Primary: {primary_model} | Reserve: {reserve_model}")
+            lines.append(f"    Requests: {info.get('request_count', 0)} | Primary: {info.get('primary_requests', 0)} | Reserve: {info.get('reserve_requests', 0)} | Errors: {info.get('error_count', 0)}")
 
     stats = status.get("_stats", {})
     lines.append(f"\n📊 Запросов: {stats.get('total_requests', 0)}")

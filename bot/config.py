@@ -1,10 +1,10 @@
-"""Nastya Bot 26.0 — Configuration (SPEED OPTIMIZED — NO QWEN)
+"""Nastya Bot 28.0 — Configuration (PURE TEXT BOT — NO VISION)
 
-ВСЕ ВНЕШНИЕ API УДАЛЕНЫ! QWEN УДАЛЁН!
-Единственный AI-источник: локальный Ollama-кластер
-- phi4-mini:3.8b для текста (PRIMARY, быстрый)
-- moondream для vision (быстрее qwen3-vl в 2-3 раза!)
+v28.0: Чисто текстовый бот!
+- Qwen3-4B для текста (PRIMARY — умная, thinking mode, 119 языков)
+- Vikhr-Llama-1B для текста (RESERVE — быстрая, русский оптимизирован)
 - Pollinations как fallback (бесплатный, без API ключа)
+- НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
 - Бесплатно, безлимитно, без авторизации!
 """
 import os
@@ -31,7 +31,7 @@ BOT_TOKEN: str = _env("BOT_TOKEN")
 
 # ── Ollama Local Model ─────────────────────────────────────
 OLLAMA_BASE_URL: str = _env("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_VISION_TIMEOUT: int = _env_int("OLLAMA_VISION_TIMEOUT", 30)  # v27: 15→30 — moondream needs more time under load
+# v28: НЕТ VISION_TIMEOUT — бот чисто текстовый!
 OWNER_ID: int = _env_int("OWNER_ID", 0)
 ADMIN_IDS: List[int] = list(set(
     [OWNER_ID] + [int(x) for x in _env("ADMIN_IDS", str(OWNER_ID) if OWNER_ID else "").split(",") if x.strip().isdigit()]

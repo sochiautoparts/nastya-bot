@@ -1,24 +1,23 @@
-"""Nastya Bot 27.0 — RELIABILITY FIX. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 28.0 — PURE TEXT BOT. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v27.0 (RELIABILITY FIX):
+Architecture v28.0 (PURE TEXT BOT):
   - SINGLE INSTANCE: file lock + conflict tracker prevents multiple bot instances
   - SINGLE WORKFLOW: one bot.yml with concurrency group (no duplicate runs)
   - LOCAL OLLAMA as PRIMARY AI provider
-  - POLLINATIONS as FALLBACK (text + vision timeout fallback)
-  - Models: phi4-mini:3.8b (text), moondream (vision)
-  - NO QWEN — completely removed!
+  - POLLINATIONS as FALLBACK (text fallback при недоступности Ollama)
+  - Models: Qwen3-4B (PRIMARY) + Vikhr-Llama-1B (RESERVE)
+  - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
   - HEALTH WATCHDOG: monitors Telegram API + Ollama, auto-restarts on failure
   - АПОЛИТИЧНОСТЬ: Настя не обсуждает политику, религию, войну
-  - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ + VISION
+  - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ
   - MOSCOW TIMEZONE — Настя из Москвы!
 
-v27.0 CHANGES vs v26.0:
-  1. Текстовый семафор 4→2 (2 CPU не тянут 4 параллельных phi4-mini)
-  2. Vision таймаут 15→30с (moondream тормозил под нагрузкой)
-  3. Текст таймаут 120→90с + Pollinations fallback при timeout
-  4. Rate-limit 30→15 msg/min (пользователь не должен спамить)
-  5. Per-user message dedup — отбрасываем старые сообщения
-  6. Pollinations retry при 502 Cloudflare с задержкой 2с
+v28.0 CHANGES vs v27.0:
+  1. ВСЯ ОБРАБОТКА ФОТО УДАЛЕНА — бот чисто текстовый!
+  2. Модели: Qwen3-4B + Vikhr-Llama-1B (вместо phi4-mini + moondream)
+  3. Две текстовые модели: основная + быстрая резервная
+  4. Авто-фоллбэк с основной на резервную при таймауте/ошибке
+  5. Нет vision семафоров, нет moondream, нет image_base64
 """
 import asyncio
 import fcntl
@@ -478,7 +477,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 27.0 Starting (RELIABILITY FIX — v27) ===")
+    logger.info("=== Nastya Bot 28.0 Starting (PURE TEXT BOT — v28) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -525,7 +524,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 27.0 Ready (RELIABILITY FIX — v27) ===")
+    logger.info("=== Nastya Bot 28.0 Ready (PURE TEXT BOT — v28) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

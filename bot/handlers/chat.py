@@ -7,7 +7,7 @@ STABILITY RULES:
   - 30-day context memory + news context injection
   - Short, effective system prompt
 
-INTELLIGENCE FEATURES v7.0:
+INTELLIGENCE FEATURES v8.0 (PURE TEXT BOT):
   - Web search integration — Nastya can find and verify information!
   - Search triggers: questions, news, factual queries
   - ALWAYS includes source links when sharing found information
@@ -18,11 +18,10 @@ INTELLIGENCE FEATURES v7.0:
   - Enhanced memory extraction — remembers names, facts, preferences
   - Time-aware greetings and moods
   - /search command for explicit web searches
+  - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый! (v28)
 """
 import logging
 import random
-import base64
-import io
 import re
 import time
 import datetime
@@ -498,128 +497,32 @@ async def handle_voice(message: Message, db=None, ai_router=None) -> None:
         await message.answer("Ой, у Насти ушки заболели... Напиши текстом! 👂😅")
 
 
-# ── Photo handler ────────────────────────────────────────────
+# ── Photo handler (v28: TEXT ONLY — no vision!) ────────────────
 
 @router.message(F.photo)
 async def handle_photo(message: Message, db=None, ai_router=None) -> None:
-    if not db or not ai_router:
-        await message.answer("Настя сейчас не видит... Напиши текстом! 💅")
-        return
-
-    user_id = message.from_user.id
-    user_name = message.from_user.first_name or ""
-    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
-
-    try:
-        photo = message.photo[-1]
-        file = await message.bot.get_file(photo.file_id)
-        buf = io.BytesIO()
-        await message.bot.download_file(file.file_path, buf)
-        image_bytes = buf.getvalue()
-
-        # Send immediate notification so user knows bot is working on it
-        processing_msg = await message.reply("🖼️ Анализирую фотографию... Это может занять несколько секунд.")
-
-        # Compress and resize image for vision models
-        # v26.0: moondream — 448x448 is optimal (2-3x faster than 672x672)
-        # Smaller image = faster processing on CPU, moondream handles small images well
+    """v28: Бот не обрабатывает фото — предлагает описать текстом."""
+    caption = message.caption or ""
+    if db:
+        user_id = message.from_user.id
         try:
-            from PIL import Image
-            img = Image.open(io.BytesIO(image_bytes))
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-            w, h = img.size
-            max_dim = 448  # Optimal for moondream — 2-3x faster than 672!
-            if max(w, h) > max_dim:
-                ratio = max_dim / max(w, h)
-                img = img.resize((int(w * ratio), int(h * ratio)), Image.Resampling.LANCZOS)
-            compressed = io.BytesIO()
-            img.save(compressed, format="JPEG", quality=75, optimize=True)
-            image_bytes = compressed.getvalue()
-            logger.info(f"Image compressed: {w}x{h} -> {img.size}, {len(image_bytes)} bytes")
-        except Exception as e:
-            logger.warning(f"Image compression failed: {e}")
-
-        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        caption = message.caption or "Что скажешь про это фото?"
-
-        await db.get_or_create_user(user_id=user_id, username=message.from_user.username or "",
-                                     first_name=user_name)
-        await db.increment_messages(user_id)
-
-        # Detect gender for personalized photo responses
-        gender = "unknown"
-        try:
-            gender = await db.get_gender(user_id)
-            if gender == "unknown":
-                gender = _guess_gender_from_name(user_name)
-                if gender != "unknown":
-                    await db.set_gender(user_id, gender)
-        except Exception:
-            pass
-
-        # LIMIT history for vision: 2B model has limited context, 50 messages = overflow!
-        # Only last 8 messages needed for conversation context with photos
-        history = await db.get_history(user_id, limit=8)
-        await db.add_message(user_id, "user", f"[Фото] {caption}")
-
-        # Build personalized system prompt for photo response
-        mood = await db.get_user_mood(user_id)
-        gender_info = ""
-        if gender == "male":
-            gender_info = f"Собеседник — мужчина по имени {user_name}. Отреагируй как девушка, которой парень прислал фото — можешь оценить, подколоть, заинтересоваться."
-        elif gender == "female":
-            gender_info = f"Собеседник — девушка по имени {user_name}. Отреагируй как подруга — оцени, посоветуй, поддержи."
-        else:
-            gender_info = f"Собеседника зовут {user_name}. Реагируй дружелюбно и живо."
-
-        system_prompt = NASTYA_SYSTEM_PROMPT + f"\n\nНастроение: {mood}. {gender_info} Пользователь прислал фото — посмотри и прокомментируй как живая девушка. Опиши что видишь и реагируй эмоционально и естественно. Отвечай КОРОТКО — 1-3 предложения."
-
-        # NOTE: Do NOT add news context for vision — it makes the prompt too long for 2B model!
-        # The system prompt + image already uses most of the context window.
-
-        logger.info(f"Processing photo from user {user_id} ({gender}), caption: {caption[:50]}, img_size={len(image_b64)} chars, history={len(history)} msgs")
-
-        try:
-            result = await ai_router.chat_with_image(
-                prompt=caption, image_base64=image_b64,
-                system_prompt=system_prompt, messages=history,
+            await db.get_or_create_user(
+                user_id=user_id,
+                username=message.from_user.username or "",
+                first_name=message.from_user.first_name or "",
             )
-            response_text = result.text
-        except Exception as e:
-            logger.error(f"Vision AI error for user {user_id}: {e}")
-            # Fallback: respond without vision — don't leave user hanging!
-            response_text = random.choice([
-                "Ой, Настя не может разглядеть... Опиши что на фото? 😅",
-                "Фото не грузится у Насти... Расскажи что там? 📱😅",
-                "Настя не видит картинку... Напиши что на фото! 👀💅",
-            ])
-
-        if not response_text or len(response_text.strip()) < 3:
-            response_text = random.choice([
-                "Прикольное фото! А что на нём? 😍",
-                "О, фото! Расскажи подробнее? 📸",
-                "Настя видит... но не понимает! Опиши? 😅",
-            ])
-
-        # Delete the "analyzing" notification
-        try:
-            await processing_msg.delete()
+            await db.increment_messages(user_id)
+            await db.add_message(user_id, "user", f"[Фото] {caption}" if caption else "[Фото]")
         except Exception:
             pass
 
-        await db.add_message(user_id, "assistant", response_text)
-
-        if len(response_text) > 4096:
-            for i in range(0, len(response_text), 4096):
-                await message.answer(response_text[i:i + 4096])
-        else:
-            await message.answer(response_text)
-
-    except Exception as e:
-        logger.error(f"Photo handler error: {e}")
-        fallback = "Ой, фото что-то не грузится... Напиши текстом! 😅"
-        await message.answer(fallback)
+    responses = [
+        "Ой, Настя не видит картинки... Расскажи что на фото? 😅",
+        "Фото — это красиво, но Настя читает только текст! Опиши? 📱💅",
+        "Настя не умеет разглядывать фото... Расскажи что там! 👀✨",
+        "О, фотка! Настя не видит, но если расскажешь — обсудим! 💅",
+    ]
+    await message.answer(random.choice(responses))
 
 
 # ── Document handler ─────────────────────────────────────────
