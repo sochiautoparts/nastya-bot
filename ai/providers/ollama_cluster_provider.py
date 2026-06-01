@@ -1,22 +1,25 @@
 """OllamaClusterProvider — единый провайдер для Ollama.
 
-Architecture v28.0 (PURE TEXT BOT):
+Architecture v31.0 (CPU-OPTIMIZED):
   - Единая точка входа: прямой Ollama (:11434)
-  - ДВЕ текстовые модели: Qwen3-4B (основная) + Vikhr-Llama-1B (быстрый резерв)
+  - ПЕРЕСТАВЛЕНЫ МОДЕЛИ: Vikhr-1B (основная, БЫСТРАЯ) + Qwen3-4B (резерв)
   - ВЕТВЛЕНИЕ: если основная модель таймаутит/ошибается → автоматически резервная
-  - Семафор текста: 2 (2 CPU ядра не тянут больше)
-  - Таймаут основной модели: 60с
-  - Таймаут резервной модели: 30с (быстрее, меньше параметров)
+  - Семафор текста: 1 (1 параллельный запрос — CPU не тянет больше)
+  - Таймаут основной модели (Vikhr-1B): 90с (реалистично для CPU)
+  - Таймаут резервной модели (Qwen3-4B): 120с (медленная на CPU)
   - Pollinations fallback при недоступности обеих Ollama моделей
   - Per-user дедупликация — отбрасываем старые сообщения от того же юзера
   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
-  - НИКАКИХ VISION МОДЕЛЕЙ — moondream/qwen-vl УДАЛЕНЫ!
+  - num_ctx=2048 — оптимально для CPU (было 4096 — слишком много)
+  - max_tokens=100 — Настя говорит коротко (было 400 — слишком много)
+  - История 6 сообщений (было 12 — слишком много для CPU)
   - Локальный inference — БЕЗ внешних API (кроме Pollinations fallback)
 
-МОДЕЛИ:
-  - qwen3:4b — 4.02B params, 2.5GB, 32K контекст, thinking mode, 119 языков
-  - lakomoor/vikhr-llama-3.2-1b-instruct — 1B params, 0.8GB, русский оптимизирован,
-    5x эффективнее base Llama для русского языка
+МОДЕЛИ (ПЕРЕСТАВЛЕНЫ!):
+  - lakomoor/vikhr-llama-3.2-1b-instruct — 1B params, 0.8GB, русский оптимизирован
+    ОСНОВНАЯ: на CPU отвечает за 5-15 секунд вместо 45+ у Qwen3
+  - qwen3:4b-instruct — 4.02B params, 2.5GB, 32K контекст, 119 языков
+    РЕЗЕРВНАЯ: слишком медленная на 2 CPU как основная
 
 ВАЖНО: На GitHub Actions (2 CPU, 7GB RAM) реалистичен только ОДИН экземпляр
 Ollama. Поэтому провайдер поддерживает прямой Ollama с автоматическим откатом
@@ -37,15 +40,17 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 logger = logging.getLogger(__name__)
 
 # ── Модели ──────────────────────────────────────────────────
-# Основная модель — Qwen3-4B: умная, thinking mode, 119 языков
-PRIMARY_MODEL = "qwen3:4b-instruct"
-# Резервная модель — Vikhr-Llama-1B: быстрая, русский оптимизирован
+# v31: ПЕРЕСТАВЛЕНЫ! Vikhr-1B теперь ОСНОВНАЯ — она в 5-10x быстрее на CPU
+# Qwen3-4B слишком медленная для 2 CPU ядер как основная модель
 # ВАЖНО: Тег :1b ОБЯЗАТЕЛЕН! Без него Ollama выдаёт "file does not exist"
-RESERVE_MODEL = "lakomoor/vikhr-llama-3.2-1b-instruct:1b"
+PRIMARY_MODEL = "lakomoor/vikhr-llama-3.2-1b-instruct:1b"
+# Резервная модель — Qwen3-4B: умная, но медленная на CPU
+RESERVE_MODEL = "qwen3:4b-instruct"
 
-# Таймауты
-PRIMARY_TIMEOUT_SECONDS = 45.0   # Qwen3-4B-instruct на CPU — быстрее без thinking
-RESERVE_TIMEOUT_SECONDS = 25.0   # Vikhr-1B намного быстрее
+# Таймауты — v31: УВЕЛИЧЕНЫ для реальной работы на CPU
+# Vikhr-1B на CPU обычно отвечает за 5-15с, но при нагрузке может дойти до 90с
+PRIMARY_TIMEOUT_SECONDS = 90.0   # Vikhr-1B (основная, быстрая)
+RESERVE_TIMEOUT_SECONDS = 120.0  # Qwen3-4B (резерв, медленная на CPU)
 
 # Request priorities
 PRIORITY_HIGH = "high"    # User chat
@@ -85,12 +90,14 @@ class ResponseCache:
 
 
 class OllamaClusterProvider(BaseProvider):
-    """Провайдер для Ollama — v30.0 PURE TEXT BOT.
+    """Провайдер для Ollama — v31.0 CPU-OPTIMIZED.
 
-    v30.0 CHANGES vs v29.0:
-    - FIX: Vikhr model tag — :1b обязателен! (иначе pull error)
-    - История уменьшена до 10 сообщений для скорости на CPU
-    - num_ctx=4096 — оптимально для CPU
+    v31.0 CRITICAL CHANGES vs v30.0:
+    - ПЕРЕСТАВЛЕНЫ МОДЕЛИ: Vikhr-1B = primary, Qwen3-4B = reserve
+    - num_ctx=2048 (было 4096 — слишком много для CPU)
+    - max_tokens=100 (было 400 — Настя говорит коротко)
+    - История 6 сообщений (было 12 — меньше контекста = быстрее)
+    - Таймауты увеличены: 90с primary, 120с reserve
     """
 
     name: str = "ollama_cluster"
@@ -171,7 +178,7 @@ class OllamaClusterProvider(BaseProvider):
         self._detect_models()
 
         logger.info(
-            f"OllamaClusterProvider v30.0 (TEXT ONLY): url={self._active_url} | "
+            f"OllamaClusterProvider v31.0 (CPU-OPTIMIZED): url={self._active_url} | "
             f"primary={self._primary_model} | reserve={self._reserve_model}"
         )
 
@@ -318,10 +325,11 @@ class OllamaClusterProvider(BaseProvider):
         messages_history = kwargs.get("messages")
         priority = kwargs.get("priority", PRIORITY_HIGH)
 
-        # Ограничение истории — v29: 12 сообщений для скорости на CPU
-        if messages_history and len(messages_history) > 12:
-            logger.info(f"Trimming history: {len(messages_history)} -> 12")
-            messages_history = messages_history[-12:]
+        # Ограничение истории — v31: 6 сообщений для скорости на CPU
+        # 12 сообщений = слишком много для 2 CPU ядер, модели таймаутятся
+        if messages_history and len(messages_history) > 6:
+            logger.info(f"Trimming history: {len(messages_history)} -> 6")
+            messages_history = messages_history[-6:]
 
         # Проверка кэша (только для запросов без истории)
         has_conversation = bool(messages_history and len(messages_history) > 0)
@@ -358,11 +366,11 @@ class OllamaClusterProvider(BaseProvider):
                         messages=messages_history,
                     )
 
-                    # v29: Для Qwen3-instruct — отключаем thinking через API
+                    # v31: Оптимизированные параметры для CPU
                     options = {
                         "temperature": temperature,
-                        "num_predict": max_tokens,
-                        "num_ctx": 4096,  # Оптимально для CPU
+                        "num_predict": min(max_tokens, 100),  # v31: Макс 100 токенов — Настя говорит коротко!
+                        "num_ctx": 2048,  # v31: Было 4096 — слишком много для CPU
                     }
                     payload = {
                         "model": model,
@@ -370,10 +378,9 @@ class OllamaClusterProvider(BaseProvider):
                         "stream": False,
                         "options": options,
                     }
-                    # Qwen3 thinking отключение — instruct модель и так без thinking
-                    # но если используем qwen3:4b (thinking), принудительно выключаем
-                    if "instruct" not in model:
-                        payload["think"] = False
+                    # Qwen3 thinking отключение — для любой модели выключаем thinking
+                    # v31: Всегда выключаем thinking для скорости на CPU
+                    payload["think"] = False
 
                     try:
                         self._request_count += 1
@@ -541,7 +548,8 @@ class OllamaClusterProvider(BaseProvider):
                                      video: Optional[str] = None) -> str:
         """Генерация с учётом истории диалога (для совместимости).
 
-        v28: image/video параметры игнорируются — бот текстовый!
+        v31: image/video параметры игнорированы — бот текстовый!
+        v31: Использует primary модель (Vikhr-1B), num_ctx=2048, max_tokens=100
         """
         if not messages:
             return "Привет! О чём хочешь поболтать?"
@@ -549,7 +557,7 @@ class OllamaClusterProvider(BaseProvider):
         model = self._primary_model or PRIMARY_MODEL
 
         ollama_messages = []
-        for msg in messages[-15:]:
+        for msg in messages[-6:]:  # v31: Только 6 последних сообщений
             ollama_messages.append({
                 "role": msg.get("role", "user"),
                 "content": msg.get("content", ""),
@@ -559,9 +567,11 @@ class OllamaClusterProvider(BaseProvider):
             "model": model,
             "messages": ollama_messages,
             "stream": False,
+            "think": False,  # v31: Всегда выключаем thinking
             "options": {
                 "temperature": 0.7,
-                "num_ctx": 4096,
+                "num_ctx": 2048,  # v31: Было 4096
+                "num_predict": 100,  # v31: Настя говорит коротко
             },
         }
 

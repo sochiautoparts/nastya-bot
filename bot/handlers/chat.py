@@ -980,12 +980,12 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     # ── Add user's name for personalization (already included in user_context above) ──
 
-    # v24.0 CRITICAL FIX: Reduced history from 40 to 15 for small models!
-    # 40 messages = massive prompt = 30-300s inference on CPU with 1.7B model
-    # 15 messages = reasonable context + fast inference
+    # v31: Reduced history from 15 to 6 for CPU speed!
+    # On 2 CPU cores, 15 messages = massive prompt = timeout
+    # 6 messages = reasonable context + fast inference
     history = []
     try:
-        history = await db.get_history(user_id, limit=15)
+        history = await db.get_history(user_id, limit=6)
     except Exception:
         pass
 

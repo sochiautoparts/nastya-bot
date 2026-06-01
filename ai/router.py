@@ -1,18 +1,18 @@
-"""AI Router v30.0 — PURE TEXT BOT Edition.
+"""AI Router v31.0 — CPU-OPTIMIZED Edition.
 
 АРХИТЕКТУРА: Локальный Ollama (2 модели) + Pollinations fallback!
   - PRIMARY провайдер: OllamaClusterProvider (локальный inference)
   - FALLBACK провайдер: PollinationsProvider (текст при недоступности Ollama)
-  - Основная модель: Qwen3-4B-instruct (БЕЗ thinking = быстрые ответы)
-  - Резервная модель: Vikhr-Llama-1B:1b (быстрая, русский оптимизирован)
+  - ОСНОВНАЯ модель: Vikhr-Llama-1B:1b (БЫСТРАЯ на CPU, русский оптимизирован)
+  - РЕЗЕРВНАЯ модель: Qwen3-4B-instruct (умная, но медленная на CPU)
   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
   - Глубокая ссылка 'Обсудить с Настей' — передача постов канала в чат
   - Живое общение — минимум ограничений
 
-v30.0 CHANGES vs v29.0:
-  - FIX: Vikhr model tag — :1b обязателен!
-  - Живое и естественное общение
-  - Deep link для канала
+v31.0 CRITICAL CHANGES vs v30.0:
+  - ПЕРЕСТАВЛЕНЫ МОДЕЛИ: Vikhr-1B = primary (5-15с на CPU вместо 45+с)
+  - Уменьшен контекст: num_ctx=2048, история=6, max_tokens=100
+  - Увеличены таймауты: 90с primary, 120с reserve
 """
 import logging
 import asyncio
@@ -73,11 +73,12 @@ class AICache:
 
 
 class AIRouter:
-    """Центральный AI-маршрутизатор — v30.0 PURE TEXT BOT.
+    """Центральный AI-маршрутизатор — v31.0 CPU-OPTIMIZED.
 
-    Primary: OllamaClusterProvider (Qwen3-4B-instruct + Vikhr-Llama-1B:1b).
+    Primary: OllamaClusterProvider (Vikhr-Llama-1B:1b + Qwen3-4B-instruct).
     Fallback: PollinationsProvider (текст при недоступности Ollama).
     NO VISION — только текст!
+    v31: Vikhr-1B = primary (5-15с на CPU), Qwen3-4B = reserve
     """
 
     def __init__(self, db=None):
@@ -111,7 +112,7 @@ class AIRouter:
         stats = self.provider.get_stats()
         pollinations_status = "active" if self._pollinations else "unavailable"
         logger.info(
-            f"AI Router v30.0 (TEXT ONLY) initialized: "
+            f"AI Router v31.0 (CPU-OPTIMIZED) initialized: "
             f"url={stats['active_url']}, "
             f"primary_model={stats['primary_model']}, "
             f"reserve_model={stats['reserve_model']}, "

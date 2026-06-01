@@ -1,21 +1,23 @@
-"""Nastya Bot 30.0 — PURE TEXT BOT. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 31.0 — CPU-OPTIMIZED. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v30.0 (PURE TEXT BOT):
+Architecture v31.0 (CPU-OPTIMIZED):
   - SINGLE INSTANCE: file lock + conflict tracker prevents multiple bot instances
   - SINGLE WORKFLOW: one bot.yml with concurrency group (no duplicate runs)
   - LOCAL OLLAMA as PRIMARY AI provider
   - POLLINATIONS as FALLBACK (text fallback при недоступности Ollama)
-  - Models: Qwen3-4B (PRIMARY) + Vikhr-Llama-1B:1b (RESERVE)
+  - Models: Vikhr-1B (PRIMARY, БЫСТРАЯ) + Qwen3-4B (RESERVE, медленная)
   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
   - HEALTH WATCHDOG: monitors Telegram API + Ollama, auto-restarts on failure
   - АПОЛИТИЧНОСТЬ: Настя не обсуждает политику, религию, войну
   - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ
   - MOSCOW TIMEZONE — Настя из Москвы!
 
-v30.0 CHANGES vs v29.0:
-  1. FIX: Vikhr model tag — :1b обязателен! (pull error fix)
-  2. FIX: io import для voice handler
-  3. Обновлён кэш-ключ для моделей
+v31.0 CRITICAL CHANGES vs v30.0:
+  1. ПЕРЕСТАВЛЕНЫ МОДЕЛИ: Vikhr-1B = primary (5-15с на CPU вместо 45+с)
+  2. num_ctx=2048 (было 4096), max_tokens=100 (было 400), история=6 (было 12)
+  3. Таймауты увеличены: 90с primary, 120с reserve
+  4. Системный промпт сокращён для скорости на CPU
+  5. Фоновые задачи: увеличены задержки чтобы не блокировать чат
 """
 import asyncio
 import fcntl
@@ -256,11 +258,15 @@ def release_singleton_lock():
 # ════════════════════════════════════════════════════════════
 
 async def news_scheduler(bot_instance: Bot) -> None:
-    """Background task: periodically fetch news and generate Nastya's commentary."""
+    """Background task: periodically fetch news and generate Nastya's commentary.
+
+    v31: Увеличены задержки между AI-запросами чтобы не блокировать чат.
+    Фоновые задачи должны ждать дольше между запросами к Ollama.
+    """
     from news import run_news_cycle
 
     # Wait for startup
-    await asyncio.sleep(30)
+    await asyncio.sleep(60)  # v31: 60с вместо 30 — даём время Ollama прогреться
 
     while True:
         try:
@@ -277,11 +283,14 @@ async def news_scheduler(bot_instance: Bot) -> None:
 
 
 async def channel_scheduler(bot_instance: Bot) -> None:
-    """Background task: periodically post to Telegram channel @chasnastya."""
+    """Background task: periodically post to Telegram channel @chasnastya.
+
+    v31: Увеличена задержка старта чтобы не мешать прогреву Ollama.
+    """
     from channel import run_channel_cycle
 
     # Wait for startup + initial news fetch
-    await asyncio.sleep(60)
+    await asyncio.sleep(120)  # v31: 120с вместо 60 — не мешаем пользователю
 
     while True:
         try:
@@ -475,7 +484,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 30.0 Starting (PURE TEXT BOT — v30) ===")
+    logger.info("=== Nastya Bot 31.0 Starting (CPU-OPTIMIZED — v31) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -522,7 +531,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 30.0 Ready (PURE TEXT BOT — v30) ===")
+    logger.info("=== Nastya Bot 31.0 Ready (CPU-OPTIMIZED — v31) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

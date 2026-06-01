@@ -60,8 +60,8 @@ if [ "$SINGLE_MODE" = true ]; then
 
     # Загрузка моделей
     echo "Pulling models..."
-    ollama pull phi4-mini:3.8b || echo "phi4-mini:3.8b pull failed (may already exist)"
-    ollama pull moondream || echo "moondream pull failed (may already exist)"
+    ollama pull lakomoor/vikhr-llama-3.2-1b-instruct:1b || echo "Vikhr-1B pull failed (may already exist)"
+    ollama pull qwen3:4b-instruct || echo "Qwen3-4B-instruct pull failed (may already exist)"
 
     echo ""
     echo "✅ Single instance cluster started!"

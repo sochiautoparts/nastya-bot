@@ -501,9 +501,9 @@ async def run_news_cycle(db, ai_router) -> int:
             if comment:
                 await db.update_news_comment(item["id"], comment)
                 commented += 1
-            # v24.0: Increased delay between commentary generations to 5s
+            # v31: Increased delay to 10s between commentary generations
             # This prevents background tasks from blocking user chat
-            await asyncio.sleep(5)
+            await asyncio.sleep(10)
 
     except Exception as e:
         logger.error(f"Commentary generation cycle error: {e}")
