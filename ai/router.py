@@ -150,8 +150,9 @@ class AIRouter:
 
                 if name == "ollama":
                     # Ollama — local model, no key needed, configurable URL
+                    # Longer timeout for CPU inference + vision
                     provider = provider_cls(
-                        timeout=60.0,
+                        timeout=120.0,
                         base_url=OLLAMA_BASE_URL,
                     )
                 elif name in ("pollinations", "chutes", "blackbox"):
@@ -431,6 +432,12 @@ class AIRouter:
 
     async def chat_with_image(self, prompt: str, image_base64: str,
                               system_prompt: str = "", **kwargs) -> AIResponse:
+        logger.info(f"chat_with_image: prompt={prompt[:50]}, img_size={len(image_base64)} chars, vision_providers={self._vision_providers}")
+        # Trim messages for vision — small models can't handle long history + image
+        messages = kwargs.get("messages")
+        if messages and len(messages) > 10:
+            logger.info(f"chat_with_image: Trimming messages from {len(messages)} to 10 for vision")
+            kwargs["messages"] = messages[-10:]
         return await self.chat(prompt=prompt, system_prompt=system_prompt,
                                image_base64=image_base64, **kwargs)
 

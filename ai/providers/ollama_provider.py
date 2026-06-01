@@ -201,7 +201,12 @@ class OllamaProvider(BaseProvider):
         messages_history = kwargs.get("messages")
         image_base64 = kwargs.get("image_base64")
 
-        # Build messages
+        # Build messages — LIMIT history for vision requests (2B model has limited context)
+        # Vision with 50 history messages = context overflow / extremely slow on CPU
+        if image_base64 and messages_history and len(messages_history) > 10:
+            logger.info(f"Ollama: Trimming history for vision request: {len(messages_history)} -> 10 messages")
+            messages_history = messages_history[-10:]
+
         messages = self._build_messages(prompt, system_prompt, messages_history)
 
         # Handle vision — Ollama native API uses "images" field at message level
@@ -229,14 +234,20 @@ class OllamaProvider(BaseProvider):
         for try_model in models_to_try:
             # Build Ollama-native messages format
             # Ollama expects: {"role": "user", "content": "text", "images": ["base64..."]}
+            # CRITICAL: Images MUST go on the LAST user message (the current prompt),
+            # NOT the first! Previous code attached to first user message = BROKEN VISION!
             ollama_messages = []
             for msg in messages:
                 ollama_msg = {"role": msg["role"], "content": msg["content"]}
-                # Add images to the last user message
-                if (ollama_images and msg["role"] == "user" and
-                    not any(m.get("images") for m in ollama_messages if m["role"] == "user")):
-                    ollama_msg["images"] = ollama_images
                 ollama_messages.append(ollama_msg)
+
+            # Attach images to the LAST user message (the current prompt with the image)
+            if ollama_images:
+                for i in range(len(ollama_messages) - 1, -1, -1):
+                    if ollama_messages[i]["role"] == "user":
+                        ollama_messages[i]["images"] = ollama_images
+                        logger.info(f"Ollama: Attached image to last user message (index {i})")
+                        break
 
             payload = {
                 "model": try_model,
@@ -250,10 +261,15 @@ class OllamaProvider(BaseProvider):
 
             try:
                 # Use /api/chat endpoint (Ollama native) — always returns JSON
+                # Vision + CPU inference needs longer timeout!
+                request_timeout = self.timeout
+                if ollama_images:
+                    request_timeout = min(request_timeout * 2, 300)  # Up to 5 min for vision on CPU
+                    logger.info(f"Ollama: Using extended timeout {request_timeout}s for vision request")
                 response = await self._client.post(
                     "/api/chat",
                     json=payload,
-                    timeout=httpx.Timeout(self.timeout, connect=10.0),
+                    timeout=httpx.Timeout(request_timeout, connect=15.0),
                 )
                 response.raise_for_status()
                 data = response.json()

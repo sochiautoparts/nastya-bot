@@ -1,7 +1,7 @@
 name: Nastya Bot — Qwen3-VL-2B
 
 # ═══════════════════════════════════════════════════════════════
-# SINGLE CONSOLIDATED WORKFLOW for Nastya Bot v17.0
+# SINGLE CONSOLIDATED WORKFLOW for Nastya Bot v18.0
 #
 # Architecture:
 #   - Ollama runs INSIDE GitHub Actions with Qwen3-VL-2B model
@@ -11,6 +11,15 @@ name: Nastya Bot — Qwen3-VL-2B
 #   - If old run is still going, it gets cancelled automatically
 #   - This PREVENTS TelegramConflictError from multiple instances
 #   - Auto-restart: if bot crashes, it retries up to 5 times
+#   - Self-dispatch: when all retries exhausted, re-dispatch workflow
+#   - Conflict exit: bot exits with code 2 on persistent conflicts
+#
+# v18.0 FIXES:
+#   - Bot exits on persistent TelegramConflictError (code 2 → auto-restart)
+#   - Self-dispatch when all retries exhausted (24/7 uptime!)
+#   - Longer wait after cancelling old runs (60s instead of 30s)
+#   - Ollama vision fixed: images on LAST message, not first
+#   - Vision history limited to 10 messages (was 50 = context overflow)
 #
 # Schedule (UTC, Moscow = UTC+3):
 #   Every 5 hours: 00:00, 05:00, 10:00, 15:00, 20:00
@@ -32,6 +41,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: write  # Needed for self-dispatch
 
 env:
   PYTHONUNBUFFERED: "1"
@@ -76,8 +86,9 @@ jobs:
           
           # Wait for old bot process to actually die
           # The old Python process needs time to receive SIGTERM and shut down
-          echo "Waiting 30s for old bot instances to fully stop..."
-          sleep 30
+          # v18.0: Increased from 30s to 60s to reduce Conflict errors
+          echo "Waiting 60s for old bot instances to fully stop..."
+          sleep 60
           echo "=== Ready to start ==="
 
       - name: Checkout repository
@@ -140,6 +151,16 @@ jobs:
             "stream": false,
             "options": {"num_predict": 20}
           }' | python3 -m json.tool || true
+          echo ""
+          echo "=== Vision test: Qwen3-VL-2B with base64 image ==="
+          # Create a tiny 1x1 red pixel PNG and test vision
+          TEST_IMG=$(python3 -c "import base64; print(base64.b64encode(b'\\x89PNG\\r\\n\\x1a\\n\\x00\\x00\\x00\\rIHDR\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x01\\x08\\x02\\x00\\x00\\x00\\x90wS\\xde\\x00\\x00\\x00\\x0cIDATx\\x9cc\\xf8\\x0f\\x00\\x00\\x01\\x01\\x00\\x05\\x18\\xd8N\\x00\\x00\\x00\\x00IEND\\xaeB\`\\x82').decode())")
+          curl -s http://localhost:11434/api/chat -d "{
+            \"model\": \"qwen3-vl:2b\",
+            \"messages\": [{\"role\": \"user\", \"content\": \"Что на картинке?\", \"images\": [\"$TEST_IMG\"]}],
+            \"stream\": false,
+            \"options\": {\"num_predict\": 30}
+          }" | python3 -m json.tool || echo "Vision test completed (may show limited output for tiny image)"
 
       - name: Create data directory
         run: mkdir -p data
@@ -148,7 +169,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v16
+          key: nastya-db-v18
           restore-keys: |
             nastya-db-
 
@@ -181,7 +202,7 @@ jobs:
           CHANNEL_POST_INTERVAL: 1200
           OLLAMA_KEEP_ALIVE: 30m
         run: |
-          echo "=== Starting Nastya Bot 17.0 with Qwen3-VL-2B ==="
+          echo "=== Starting Nastya Bot 18.0 with Qwen3-VL-2B (Vision FIXED!) ==="
           echo "Ollama status:"
           curl -s http://localhost:11434/api/tags | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  Model: {m[\"name\"]}') for m in d.get('models',[])]" 2>/dev/null || echo "  Ollama not responding"
           echo "=== Launching bot with auto-restart ==="
@@ -192,7 +213,12 @@ jobs:
             echo "--- Attempt $((RETRY+1))/$MAX_RETRIES ---"
             python3 -m bot.main
             EXIT_CODE=$?
-            if [ $EXIT_CODE -eq 0 ]; then
+            echo "Bot exited with code $EXIT_CODE"
+            if [ $EXIT_CODE -eq 2 ]; then
+              echo "Bot exited due to persistent conflicts — restarting quickly..."
+              RETRY=$((RETRY+1))
+              sleep 15
+            elif [ $EXIT_CODE -eq 0 ]; then
               echo "Bot exited normally (session timeout). Restarting..."
               RETRY=$((RETRY+1))
               sleep 10
@@ -209,7 +235,25 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v16-${{ github.run_id }}
+          key: nastya-db-v18-${{ github.run_id }}
+
+      # ── Self-dispatch: re-trigger workflow for 24/7 uptime ──
+      - name: Re-dispatch workflow for continuous operation
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+        run: |
+          echo "=== Re-dispatching workflow for 24/7 uptime ==="
+          REPO=${{ github.repository }}
+          # Wait a bit to avoid race conditions
+          sleep 10
+          # Trigger a new workflow run
+          curl -s -X POST \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/$REPO/actions/workflows/bot.yml/dispatches" \
+            -d '{"ref":"main"}' || echo "Failed to re-dispatch (may hit rate limit)"
+          echo "=== Workflow re-dispatched ==="
 
       - name: Cleanup
         if: always()

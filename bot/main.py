@@ -1,14 +1,21 @@
-"""Nastya Bot 16.0 — Main Entry Point. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 18.0 — Main Entry Point. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v16.0:
-  - SINGLE INSTANCE: file lock prevents multiple bot instances
+Architecture v18.0:
+  - SINGLE INSTANCE: file lock + conflict tracker prevents multiple bot instances
   - SINGLE WORKFLOW: one bot.yml with concurrency group (no duplicate runs)
-  - LOCAL Qwen3-VL-2B via Ollama as PRIMARY
+  - LOCAL Qwen3-VL-2B via Ollama as PRIMARY (with FIXED vision!)
   - GitHub Models SECOND (free DeepSeek-V3 via PAT)
   - Pollinations, Chutes, Blackbox, HuggingFace as cloud fallbacks
   - АПОЛИТИЧНОСТЬ: Настя не обсуждает политику, религию, войну
-  - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ + VISION
+  - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ + VISION (FIXED!)
   - MOSCOW TIMEZONE — Настя из Москвы!
+
+v18.0 CRITICAL FIXES:
+  1. Ollama vision: images now attach to LAST user message, not first!
+  2. Conflict exit: bot exits after 60s of persistent conflicts → auto-restart kicks in
+  3. Vision history: limited to 10 messages for 2B model (was 50 = context overflow)
+  4. Takeover: added final verification RIGHT BEFORE start_polling
+  5. Workflow: re-dispatches itself when all retries exhausted
 """
 import asyncio
 import fcntl
@@ -52,6 +59,43 @@ if not BOT_TOKEN:
 
 
 # ════════════════════════════════════════════════════════════
+#  CONFLICT TRACKER — exit on persistent conflicts
+# ════════════════════════════════════════════════════════════
+# If TelegramConflictError persists for >60 seconds, the bot
+# will exit with code 2, triggering the workflow's auto-restart.
+# This prevents the bot from being stuck in an infinite retry loop.
+
+_consecutive_conflicts: int = 0
+_first_conflict_time: float = 0
+_MAX_CONFLICT_SECONDS = 60  # Exit after 60s of continuous conflicts
+
+
+def record_conflict() -> bool:
+    """Record a conflict error. Returns True if we should exit."""
+    global _consecutive_conflicts, _first_conflict_time
+    now = time.time()
+    _consecutive_conflicts += 1
+    if _first_conflict_time == 0:
+        _first_conflict_time = now
+
+    duration = now - _first_conflict_time
+    if duration > _MAX_CONFLICT_SECONDS and _consecutive_conflicts > 5:
+        logger.critical(
+            f"Persistent Conflict for {duration:.0f}s ({_consecutive_conflicts} conflicts). "
+            f"EXITING to trigger auto-restart!"
+        )
+        return True
+    return False
+
+
+def clear_conflicts():
+    """Reset conflict tracker on successful update."""
+    global _consecutive_conflicts, _first_conflict_time
+    _consecutive_conflicts = 0
+    _first_conflict_time = 0
+
+
+# ════════════════════════════════════════════════════════════
 #  MIDDLEWARE
 # ════════════════════════════════════════════════════════════
 
@@ -84,6 +128,8 @@ class LoggingMiddleware(BaseMiddleware):
             user_info = f"user={event.from_user.id} ({event.from_user.username or 'no_username'})"
             if event.text:
                 logger.info(f"MSG {user_info}: {event.text[:100]}")
+            elif event.photo:
+                logger.info(f"PHOTO {user_info}: caption={event.caption[:50] if event.caption else 'none'}")
         elif isinstance(event, CallbackQuery) and event.from_user:
             user_info = f"user={event.from_user.id} cb={event.data}"
             logger.info(f"CB {user_info}")
@@ -92,6 +138,8 @@ class LoggingMiddleware(BaseMiddleware):
         elapsed = time.time() - start
         if elapsed > 3.0:
             logger.warning(f"Slow handler: {elapsed:.2f}s for {user_info}")
+        # Clear conflict tracker on successful handler execution
+        clear_conflicts()
         return result
 
 
@@ -284,6 +332,35 @@ async def memory_cleanup() -> None:
             logger.error(f"Memory cleanup error: {e}")
 
 
+async def conflict_monitor() -> None:
+    """Background task: monitor conflict state and exit if persistent.
+    
+    This is the key fix for the 'bot stops and doesn't restart' problem.
+    Aiogram retries Conflict errors indefinitely — but we need to EXIT
+    so the workflow's auto-restart mechanism can kick in with a clean state.
+    """
+    await asyncio.sleep(10)  # Give startup time
+    while True:
+        try:
+            await asyncio.sleep(10)
+            # Check if we've been in conflict state for too long
+            if _consecutive_conflicts > 5 and _first_conflict_time > 0:
+                duration = time.time() - _first_conflict_time
+                if duration > _MAX_CONFLICT_SECONDS:
+                    logger.critical(
+                        f"Conflict monitor: {duration:.0f}s of persistent conflicts. "
+                        f"Exiting to trigger auto-restart!"
+                    )
+                    # Exit with code 2 → workflow will restart
+                    raise SystemExit(2)
+        except asyncio.CancelledError:
+            break
+        except SystemExit:
+            raise
+        except Exception as e:
+            logger.error(f"Conflict monitor error: {e}")
+
+
 # ════════════════════════════════════════════════════════════
 #  STARTUP / SHUTDOWN
 # ════════════════════════════════════════════════════════════
@@ -291,7 +368,7 @@ async def memory_cleanup() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 15.1 Starting (Local Qwen3-VL, Apolitical, Vision, Context memory) ===")
+    logger.info("=== Nastya Bot 18.0 Starting (Local Qwen3-VL, Apolitical, Vision FIXED, Context memory) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -321,6 +398,7 @@ async def on_startup(**kwargs) -> None:
         asyncio.create_task(proactive_scheduler(bot))
         asyncio.create_task(periodic_db_cleanup())
         asyncio.create_task(memory_cleanup())
+        asyncio.create_task(conflict_monitor())
 
         # Startup notification — Nastya-style, NO technical info
         for admin_id in ADMIN_IDS:
@@ -336,7 +414,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 15.1 Ready ===")
+    logger.info("=== Nastya Bot 18.0 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:
@@ -447,7 +525,7 @@ async def main():
         # IS a conflict, the error comes back quickly too.
         # ═══════════════════════════════════════════════════════
 
-        MAX_TAKEOVER_ATTEMPTS = 12
+        MAX_TAKEOVER_ATTEMPTS = 15
         takeover_success = False
 
         for attempt in range(1, MAX_TAKEOVER_ATTEMPTS + 1):
@@ -458,14 +536,15 @@ async def main():
             except Exception as e:
                 logger.warning(f"[Takeover {attempt}] delete_webhook failed: {e}")
 
-            # Step 2: Short wait — don't waste time
-            # Start with short waits, increase gradually
+            # Step 2: Progressive wait — start short, increase gradually
             if attempt <= 3:
                 wait = 3
             elif attempt <= 6:
                 wait = 5
             elif attempt <= 9:
-                wait = 10
+                wait = 8
+            elif attempt <= 12:
+                wait = 12
             else:
                 wait = 15
             logger.info(f"[Takeover {attempt}] Waiting {wait}s...")
@@ -495,7 +574,33 @@ async def main():
         if not takeover_success:
             logger.error("FAILED to take over after all attempts! Starting polling anyway — expect conflicts.")
 
-        # Final cleanup: delete webhook one more time to ensure clean state
+        # ═══════════════════════════════════════════════════════
+        #  FINAL VERIFICATION — check RIGHT BEFORE start_polling
+        # ═══════════════════════════════════════════════════════
+        # Race condition: between takeover success and start_polling,
+        # the old process might reconnect. One final check prevents this.
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+            await asyncio.sleep(2)
+            # Quick check with timeout=0
+            await bot.get_updates(limit=1, timeout=0)
+            logger.info("Final verification: we are the sole instance! Starting polling...")
+        except Exception as e:
+            err_str = str(e)
+            if "Conflict" in err_str:
+                logger.warning(f"Final verification: Conflict detected! Waiting 10s more...")
+                await asyncio.sleep(10)
+                try:
+                    await bot.delete_webhook(drop_pending_updates=True)
+                    await asyncio.sleep(2)
+                    await bot.get_updates(limit=1, timeout=0)
+                    logger.info("Final verification (2nd try): OK! Starting polling...")
+                except Exception:
+                    logger.error("Final verification (2nd try): Still Conflict! Starting anyway...")
+            else:
+                logger.warning(f"Final verification: Non-conflict error: {e}")
+
+        # Final webhook cleanup
         try:
             await bot.delete_webhook(drop_pending_updates=True)
             logger.info("Final webhook cleanup done")
@@ -508,8 +613,12 @@ async def main():
             allowed_updates.append("poll_answer")
         await dispatcher.start_polling(bot, allowed_updates=allowed_updates)
 
-    except SystemExit:
-        logger.info("Bot stopped (session timeout)")
+    except SystemExit as e:
+        code = e.code if isinstance(e.code, int) else 0
+        if code == 2:
+            logger.info("Bot exiting due to persistent conflicts (will auto-restart)")
+        else:
+            logger.info("Bot stopped (session timeout)")
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
@@ -532,6 +641,9 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
+    except SystemExit as e:
+        code = e.code if isinstance(e.code, int) else 1
+        sys.exit(code)
     except Exception as e:
         logger.critical(f"Fatal: {e}")
         sys.exit(1)

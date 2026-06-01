@@ -546,7 +546,9 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         except Exception:
             pass
 
-        history = await db.get_history(user_id, limit=50)
+        # LIMIT history for vision: 2B model has limited context, 50 messages = overflow!
+        # Only last 8 messages needed for conversation context with photos
+        history = await db.get_history(user_id, limit=8)
         await db.add_message(user_id, "user", f"[Фото] {caption}")
 
         # Build personalized system prompt for photo response
@@ -559,14 +561,12 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         else:
             gender_info = f"Собеседника зовут {user_name}. Реагируй дружелюбно и живо."
 
-        system_prompt = NASTYA_SYSTEM_PROMPT + f"\n\nНастроение: {mood}. {gender_info} Пользователь прислал фото — посмотри и прокомментируй как живая девушка. Опиши что видишь и реагируй эмоционально и естественно."
+        system_prompt = NASTYA_SYSTEM_PROMPT + f"\n\nНастроение: {mood}. {gender_info} Пользователь прислал фото — посмотри и прокомментируй как живая девушка. Опиши что видишь и реагируй эмоционально и естественно. Отвечай КОРОТКО — 1-3 предложения."
 
-        # Add news context
-        news_ctx = await _build_news_context(db)
-        if news_ctx:
-            system_prompt += f"\n\n{news_ctx}"
+        # NOTE: Do NOT add news context for vision — it makes the prompt too long for 2B model!
+        # The system prompt + image already uses most of the context window.
 
-        logger.info(f"Processing photo from user {user_id} ({gender}), caption: {caption[:50]}")
+        logger.info(f"Processing photo from user {user_id} ({gender}), caption: {caption[:50]}, img_size={len(image_b64)} chars, history={len(history)} msgs")
 
         result = await ai_router.chat_with_image(
             prompt=caption, image_base64=image_b64,
