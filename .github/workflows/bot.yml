@@ -191,13 +191,14 @@ jobs:
           path: data/nastya.db
           key: nastya-db-v16-${{ github.run_id }}
 
-      # ── Auto-restart: trigger next session if bot stopped ──
+      # ── Auto-restart: trigger next session if bot stopped normally ──
+      # ONLY restart if the bot step actually ran and completed (not cancelled)
       - name: Wake up next session
-        if: always()
+        if: success()
         env:
           GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
         run: |
-          echo "=== Session ended, checking if restart needed ==="
+          echo "=== Session ended normally, checking if restart needed ==="
           sleep 15
           
           ACTIVE=$(curl -s -H "Authorization: token $GH_TOKEN" \
@@ -224,6 +225,7 @@ jobs:
           
           echo "Active: $ACTIVE, Queued: $QUEUED"
           
+          # Only restart if no other sessions exist AND this wasn't a cancelled run
           if [ "$ACTIVE" -eq 0 ] && [ "$QUEUED" -eq 0 ]; then
             echo "No other sessions — triggering restart..."
             curl -s -X POST \
