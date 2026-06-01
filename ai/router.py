@@ -3,7 +3,7 @@
 АРХИТЕКТУРА: Локальный Ollama + Pollinations fallback!
   - PRIMARY провайдер: OllamaClusterProvider (локальный inference)
   - FALLBACK провайдер: PollinationsProvider (текст + vision по таймауту)
-  - Модели: phi4-mini:3.8b (text), moondream:2b (vision)
+  - Модели: phi4-mini:3.8b (text), moondream (vision)
   - НИКАКИХ QWEN МОДЕЛЕЙ — полностью удалены!
   - Кэширование повторяющихся запросов
   - НИКАКИХ каскадных ошибок через 12 провайдеров
@@ -12,7 +12,7 @@
   - Pollinations ВСЕГДА доступен как резерв для текста и vision
 
 Изменения v26.0 vs v25.0:
-  - qwen3-vl:2b → moondream:2b (2-3x быстрее на CPU!)
+  - qwen3-vl:2b → moondream (2-3x быстрее на CPU!)
   - qwen3:1.7b удалён (phi4-mini единственная текстовая модель)
   - Раздельные семафоры для текста (4) и vision (1)
   - Vision таймаут 15с + Pollinations fallback

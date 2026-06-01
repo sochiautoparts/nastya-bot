@@ -516,7 +516,7 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         processing_msg = await message.reply("🖼️ Анализирую фотографию... Это может занять несколько секунд.")
 
         # Compress and resize image for vision models
-        # v26.0: moondream:2b — 448x448 is optimal (2-3x faster than 672x672)
+        # v26.0: moondream — 448x448 is optimal (2-3x faster than 672x672)
         # Smaller image = faster processing on CPU, moondream handles small images well
         try:
             from PIL import Image
@@ -524,7 +524,7 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
             w, h = img.size
-            max_dim = 448  # Optimal for moondream:2b — 2-3x faster than 672!
+            max_dim = 448  # Optimal for moondream — 2-3x faster than 672!
             if max(w, h) > max_dim:
                 ratio = max_dim / max(w, h)
                 img = img.resize((int(w * ratio), int(h * ratio)), Image.Resampling.LANCZOS)

@@ -5,7 +5,7 @@ Architecture v26.0 (SPEED OPTIMIZED):
   - SINGLE WORKFLOW: one bot.yml with concurrency group (no duplicate runs)
   - LOCAL OLLAMA as PRIMARY AI provider
   - POLLINATIONS as FALLBACK (text + vision timeout fallback)
-  - Models: phi4-mini:3.8b (text), moondream:2b (vision)
+  - Models: phi4-mini:3.8b (text), moondream (vision)
   - NO QWEN — completely removed!
   - HEALTH WATCHDOG: monitors Telegram API + Ollama, auto-restarts on failure
   - АПОЛИТИЧНОСТЬ: Настя не обсуждает политику, религию, войну
@@ -13,7 +13,7 @@ Architecture v26.0 (SPEED OPTIMIZED):
   - MOSCOW TIMEZONE — Настя из Москвы!
 
 v26.0 CHANGES:
-  1. qwen3-vl:2b → moondream:2b (2-3x faster vision on CPU!)
+  1. qwen3-vl:2b → moondream (2-3x faster vision on CPU!)
   2. qwen3:1.7b removed — phi4-mini:3.8b is the only text model
   3. Separate semaphores: text (4) + vision (1) — text never blocked by photos
   4. Vision timeout 15s → automatic Pollinations fallback

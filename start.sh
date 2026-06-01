@@ -23,8 +23,8 @@ fi
 # Pull required models — phi4-mini (text) + moondream (vision)
 echo "Pulling models (if not cached)..."
 ollama pull phi4-mini:3.8b
-echo "Pulling moondream:2b (2-3x faster vision than qwen3-vl!)..."
-ollama pull moondream:2b
+echo "Pulling moondream (2-3x faster vision than qwen3-vl!)..."
+ollama pull moondream
 
 echo "Models available:"
 ollama list

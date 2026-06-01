@@ -2,7 +2,7 @@
 
 Architecture v26.0 (SPEED OPTIMIZED — NO QWEN):
   - Единая точка входа: прямой Ollama (:11434)
-  - Автовыбор модели: phi4-mini:3.8b для текста, moondream:2b для vision
+  - Автовыбор модели: phi4-mini:3.8b для текста, moondream для vision
   - РАЗДЕЛЬНЫЕ СЕМАФОРЫ: текст (4) и vision (1)
   - Таймаут vision: 15с + fallback на Pollinations
   - Сжатие изображений до 448x448
@@ -31,9 +31,9 @@ logger = logging.getLogger(__name__)
 # Model priority for TEXT (fastest/best first)
 TEXT_MODELS = ["phi4-mini:3.8b"]
 # Model for VISION — moondream is 2-3x faster than qwen3-vl on CPU!
-VISION_MODELS = ["moondream:2b"]
+VISION_MODELS = ["moondream"]
 # Legacy compat
-PRIMARY_MODEL = "moondream:2b"
+PRIMARY_MODEL = "moondream"
 TEXT_FAST_MODEL = "phi4-mini:3.8b"
 
 # Vision-capable model prefixes
@@ -89,7 +89,7 @@ class OllamaClusterProvider(BaseProvider):
     - РАЗДЕЛЬНЫЕ семафоры: текст (4 параллельных) и vision (1)
     - Vision таймаут 15с + fallback на Pollinations
     - Сжатие изображений до 448x448 для скорости
-    - moondream:2b — в 2-3x быстрее qwen3-vl на CPU
+    - moondream — в 2-3x быстрее qwen3-vl на CPU
     """
 
     name: str = "ollama_cluster"

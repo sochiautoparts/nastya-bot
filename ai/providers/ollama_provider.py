@@ -2,7 +2,7 @@
 
 Architecture v26.0:
   - phi4-mini:3.8b as FAST text model (best quality/speed on CPU)
-  - moondream:2b for VISION (2-3x faster than qwen3-vl on CPU!)
+  - moondream for VISION (2-3x faster than qwen3-vl on CPU!)
   - Semaphore(2) — allows 2 concurrent inferences
   - Smart model selection: vision model NEVER used for plain text
   - Reduced timeouts: 90s text, 15s vision + Pollinations fallback
@@ -25,7 +25,7 @@ OLLAMA_BASE_URL = "http://localhost:11434"
 # Model priority for TEXT (fastest first)
 TEXT_MODELS = ["phi4-mini:3.8b"]
 # Model for VISION — moondream is 2-3x faster than qwen3-vl on CPU!
-VISION_MODELS = ["moondream:2b"]
+VISION_MODELS = ["moondream"]
 
 VISION_MODEL_PREFIXES = ["moondream", "llava", "minicpm-v", "phi4-mini-vl"]
 
@@ -279,7 +279,7 @@ class OllamaProvider(BaseProvider):
         is_vision_request = bool(image_base64 and self._vision_available)
 
         if is_vision_request:
-            model_to_use = self._vision_model or "moondream:2b"
+            model_to_use = self._vision_model or "moondream"
             models_to_try = [model_to_use]
             request_timeout = 180.0  # Vision needs more time
             logger.info(f"Ollama: VISION request → {model_to_use}")

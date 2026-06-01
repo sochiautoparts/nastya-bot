@@ -6,7 +6,7 @@ name: Nastya Bot — SPEED OPTIMIZED v26
 # Architecture:
 #   - LOCAL OLLAMA as PRIMARY AI provider
 #   - POLLINATIONS as FALLBACK (text + vision timeout)
-#   - Models: phi4-mini:3.8b (text), moondream:2b (vision)
+#   - Models: phi4-mini:3.8b (text), moondream (vision)
 #   - NO QWEN — completely removed!
 #   - Bot runs continuously with UNLIMITED auto-restart
 #   - Every 5 hours cron kicks off a fresh runner
@@ -15,7 +15,7 @@ name: Nastya Bot — SPEED OPTIMIZED v26
 #   - Self-dispatch: re-triggers workflow when runner time runs out
 #
 # v26.0 CHANGES vs v25.0:
-#   - qwen3-vl:2b → moondream:2b (2-3x faster vision on CPU!)
+#   - qwen3-vl:2b → moondream (2-3x faster vision on CPU!)
 #   - qwen3:1.7b removed — phi4-mini:3.8b is the only text model
 #   - Cache key updated for moondream
 #   - Vision timeout 15s → Pollinations fallback
@@ -123,7 +123,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /home/runner/.ollama
-          key: ollama-phi4-moondream-v1
+          key: ollama-phi4-moondream-v2
           restore-keys: |
             ollama-phi4-
             ollama-moondream-
@@ -133,8 +133,8 @@ jobs:
         run: |
           echo "=== Pulling Phi4-Mini-3.8B (PRIMARY text model — fast, smart) ==="
           ollama pull phi4-mini:3.8b
-          echo "=== Pulling Moondream-2B (vision model — 2-3x faster than qwen3-vl!) ==="
-          ollama pull moondream:2b
+          echo "=== Pulling Moondream (vision model — 2-3x faster than qwen3-vl!) ==="
+          ollama pull moondream
 
       - name: Verify Ollama and models
         run: |
@@ -149,9 +149,9 @@ jobs:
             "options": {"num_predict": 20}
           }' | python3 -m json.tool || true
           echo ""
-          echo "=== Quick test: Moondream-2B (vision model — MUCH faster than qwen3-vl!) ==="
+          echo "=== Quick test: Moondream (vision model — MUCH faster than qwen3-vl!) ==="
           curl -s http://localhost:11434/api/chat -d '{
-            "model": "moondream:2b",
+            "model": "moondream",
             "messages": [{"role": "user", "content": "Привет! Скажи что-нибудь."}],
             "stream": false,
             "options": {"num_predict": 20}

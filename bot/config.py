@@ -3,7 +3,7 @@
 ВСЕ ВНЕШНИЕ API УДАЛЕНЫ! QWEN УДАЛЁН!
 Единственный AI-источник: локальный Ollama-кластер
 - phi4-mini:3.8b для текста (PRIMARY, быстрый)
-- moondream:2b для vision (быстрее qwen3-vl в 2-3 раза!)
+- moondream для vision (быстрее qwen3-vl в 2-3 раза!)
 - Pollinations как fallback (бесплатный, без API ключа)
 - Бесплатно, безлимитно, без авторизации!
 """

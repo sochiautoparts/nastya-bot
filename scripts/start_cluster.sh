@@ -61,7 +61,7 @@ if [ "$SINGLE_MODE" = true ]; then
     # Загрузка моделей
     echo "Pulling models..."
     ollama pull phi4-mini:3.8b || echo "phi4-mini:3.8b pull failed (may already exist)"
-    ollama pull moondream:2b || echo "moondream:2b pull failed (may already exist)"
+    ollama pull moondream || echo "moondream pull failed (may already exist)"
 
     echo ""
     echo "✅ Single instance cluster started!"
@@ -83,7 +83,7 @@ else
     # Загрузка моделей на все ноды
     echo "Pulling models on all nodes..."
     for port in 11435 11436 11437; do
-        curl -s -X POST http://localhost:$port/api/pull -d '{"name": "moondream:2b"}' > /dev/null &
+        curl -s -X POST http://localhost:$port/api/pull -d '{"name": "moondream"}' > /dev/null &
     done
     wait
     sleep 5
