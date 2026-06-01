@@ -1,6 +1,6 @@
-"""Nastya Bot 26.0 — SPEED OPTIMIZED (NO QWEN). Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 27.0 — RELIABILITY FIX. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v26.0 (SPEED OPTIMIZED):
+Architecture v27.0 (RELIABILITY FIX):
   - SINGLE INSTANCE: file lock + conflict tracker prevents multiple bot instances
   - SINGLE WORKFLOW: one bot.yml with concurrency group (no duplicate runs)
   - LOCAL OLLAMA as PRIMARY AI provider
@@ -12,14 +12,13 @@ Architecture v26.0 (SPEED OPTIMIZED):
   - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ + VISION
   - MOSCOW TIMEZONE — Настя из Москвы!
 
-v26.0 CHANGES:
-  1. qwen3-vl:2b → moondream (2-3x faster vision on CPU!)
-  2. qwen3:1.7b removed — phi4-mini:3.8b is the only text model
-  3. Separate semaphores: text (4) + vision (1) — text never blocked by photos
-  4. Vision timeout 15s → automatic Pollinations fallback
-  5. Image compression 448x448 (was 672x672) — faster processing
-  6. Photo notification: "Анализирую фотографию..." for better UX
-  7. Pollinations now used for vision fallback too (not just text)
+v27.0 CHANGES vs v26.0:
+  1. Текстовый семафор 4→2 (2 CPU не тянут 4 параллельных phi4-mini)
+  2. Vision таймаут 15→30с (moondream тормозил под нагрузкой)
+  3. Текст таймаут 120→90с + Pollinations fallback при timeout
+  4. Rate-limit 30→15 msg/min (пользователь не должен спамить)
+  5. Per-user message dedup — отбрасываем старые сообщения
+  6. Pollinations retry при 502 Cloudflare с задержкой 2с
 """
 import asyncio
 import fcntl
@@ -479,7 +478,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 26.0 Starting (SPEED OPTIMIZED — NO QWEN) ===")
+    logger.info("=== Nastya Bot 27.0 Starting (RELIABILITY FIX — v27) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -526,7 +525,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 26.0 Ready (SPEED OPTIMIZED — phi4-mini + moondream + Pollinations) ===")
+    logger.info("=== Nastya Bot 27.0 Ready (RELIABILITY FIX — v27) ===")
 
 
 async def on_shutdown(**kwargs) -> None:
@@ -560,7 +559,7 @@ def setup_dispatcher() -> Dispatcher:
     global dp
     dp = Dispatcher()
 
-    dp.message.middleware(RateLimitMiddleware(max_per_minute=30))
+    dp.message.middleware(RateLimitMiddleware(max_per_minute=15))
     dp.callback_query.middleware(RateLimitMiddleware(max_per_minute=30))
     dp.message.middleware(LoggingMiddleware())
     dp.callback_query.middleware(LoggingMiddleware())

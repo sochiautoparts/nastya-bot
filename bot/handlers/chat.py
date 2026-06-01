@@ -53,6 +53,11 @@ _proactive_tracker: dict = {}
 _last_tracker_cleanup: float = 0.0
 _TRACKER_CLEANUP_INTERVAL = 3600
 
+# v27: Per-user message dedup — track last message timestamp per user
+# If user sends multiple messages while we're processing, only process the latest
+_user_processing: dict = {}  # user_id -> {"task": asyncio.Task, "timestamp": float}
+_DEDUP_WINDOW = 3.0  # seconds — if same user sends another message within this window, skip
+
 
 def _cleanup_trackers():
     """Remove entries for users inactive for > 24 hours."""
@@ -681,6 +686,24 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     text = message.text
     text_lower = text.lower()
 
+    # v27: Per-user dedup — if user is spamming messages, skip old ones
+    # This prevents Ollama queue overflow when user sends 10 messages in 5 seconds
+    user_id = message.from_user.id
+    now = time.time()
+    if user_id in _user_processing:
+        last_ts = _user_processing[user_id].get("timestamp", 0)
+        if now - last_ts < _DEDUP_WINDOW:
+            # User sent another message while we're still processing their previous one
+            # Skip this message — the user is spamming, we'll respond to the latest
+            logger.info(f"Dedup: skipping message from user {user_id} (last was {now - last_ts:.1f}s ago)")
+            # Still save to DB for context, but don't process with AI
+            try:
+                await db.add_message(user_id, "user", text)
+            except Exception:
+                pass
+            return
+    _user_processing[user_id] = {"timestamp": now}
+
     # Periodic cleanup
     _cleanup_trackers()
 
@@ -1225,6 +1248,9 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
             await _ask_for_stars(message.chat.id, user_id, message.bot, stars_want)
         except Exception:
             pass
+
+    # v27: Clear processing flag for this user
+    _user_processing.pop(user_id, None)
 
 
 async def _maybe_ask_stars_check(user_id: int, msg_count: int, db, message: Message):

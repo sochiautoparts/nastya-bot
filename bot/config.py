@@ -31,7 +31,7 @@ BOT_TOKEN: str = _env("BOT_TOKEN")
 
 # ── Ollama Local Model ─────────────────────────────────────
 OLLAMA_BASE_URL: str = _env("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_VISION_TIMEOUT: int = _env_int("OLLAMA_VISION_TIMEOUT", 15)  # seconds before Pollinations fallback
+OLLAMA_VISION_TIMEOUT: int = _env_int("OLLAMA_VISION_TIMEOUT", 30)  # v27: 15→30 — moondream needs more time under load
 OWNER_ID: int = _env_int("OWNER_ID", 0)
 ADMIN_IDS: List[int] = list(set(
     [OWNER_ID] + [int(x) for x in _env("ADMIN_IDS", str(OWNER_ID) if OWNER_ID else "").split(",") if x.strip().isdigit()]

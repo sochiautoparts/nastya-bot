@@ -1,10 +1,13 @@
 """OllamaClusterProvider — единый провайдер для Ollama.
 
-Architecture v26.0 (SPEED OPTIMIZED — NO QWEN):
+Architecture v27.0 (RELIABILITY FIX):
   - Единая точка входа: прямой Ollama (:11434)
   - Автовыбор модели: phi4-mini:3.8b для текста, moondream для vision
-  - РАЗДЕЛЬНЫЕ СЕМАФОРЫ: текст (4) и vision (1)
-  - Таймаут vision: 15с + fallback на Pollinations
+  - РАЗДЕЛЬНЫЕ СЕМАФОРЫ: текст (2) и vision (1) — v27: 4→2 для стабильности!
+  - Таймаут vision: 30с (v27: 15→30 — moondream не успевал под нагрузкой)
+  - Таймаут текст: 90с (v27: 120→90 — быстрее фоллбэк на Pollinations)
+  - Pollinations fallback с retry при 502 Cloudflare
+  - Per-user дедупликация — отбрасываем старые сообщения от того же юзера
   - Сжатие изображений до 448x448
   - Локальный inference — БЕЗ внешних API (кроме fallback)
   - Пропуск прогрева если есть ожидающие запросы
@@ -12,6 +15,13 @@ Architecture v26.0 (SPEED OPTIMIZED — NO QWEN):
 
 ВАЖНО: На GitHub Actions (2 CPU, 7GB RAM) реалистичен только ОДИН экземпляр
 Ollama. Поэтому провайдер поддерживает прямой Ollama с автоматическим откатом.
+
+v27.0 vs v26.0:
+  - Текстовый семафор 4→2 (2 CPU не тянут 4 параллельных phi4-mini)
+  - Vision таймаут 15→30с (moondream тормозил под нагрузкой)
+  - Текст таймаут 120→90с (быстрее fallback на Pollinations)
+  - Pollinations retry при 502 с задержкой 2с
+  - Per-user message dedup — обрабатываем только последнее сообщение
 """
 import logging
 import asyncio
@@ -43,8 +53,11 @@ VISION_MODEL_PREFIXES = ["moondream", "llava", "minicpm-v", "phi4-mini-vl"]
 PRIORITY_HIGH = "high"    # User chat
 PRIORITY_LOW = "low"      # Background tasks (news, channel)
 
-# Vision timeout — if local model doesn't respond in 15s, fallback to Pollinations
-VISION_TIMEOUT_SECONDS = 15.0
+# Vision timeout — if local model doesn't respond in 30s, fallback to Pollinations
+# v27: Increased from 15s — moondream on CPU under load needs more time
+VISION_TIMEOUT_SECONDS = 30.0
+# Text timeout — v27: Reduced from 120s to 90s for faster Pollinations fallback
+TEXT_TIMEOUT_SECONDS = 90.0
 
 
 class ResponseCache:
@@ -82,14 +95,16 @@ class ResponseCache:
 
 
 class OllamaClusterProvider(BaseProvider):
-    """Провайдер для Ollama — v26.0 SPEED OPTIMIZED.
+    """Провайдер для Ollama — v27.0 RELIABILITY FIX.
 
-    v26.0 CRITICAL CHANGES:
+    v27.0 CRITICAL CHANGES vs v26.0:
+    - Текстовый семафор 4→2 (2 CPU ядра не тянут 4 параллельных phi4-mini!)
+    - Vision таймаут 15→30с (moondream тормозил под нагрузкой, 15с мало)
+    - Текст таймаут 120→90с (быстрее fallback на Pollinations)
+    - Pollinations retry при 502 Cloudflare с задержкой 2с
+    - Per-user message dedup — отбрасываем старые сообщения от того же юзера
     - QWEN ПОЛНОСТЬЮ УДАЛЁН! Только phi4-mini (text) + moondream (vision)
-    - РАЗДЕЛЬНЫЕ семафоры: текст (4 параллельных) и vision (1)
-    - Vision таймаут 15с + fallback на Pollinations
     - Сжатие изображений до 448x448 для скорости
-    - moondream — в 2-3x быстрее qwen3-vl на CPU
     """
 
     name: str = "ollama_cluster"
@@ -110,10 +125,13 @@ class OllamaClusterProvider(BaseProvider):
         self._installed_models: List[str] = []
         self._cache = ResponseCache(maxsize=200, ttl=1800)
         # РАЗДЕЛЬНЫЕ семафоры!
-        # Текст: phi4-mini лёгкая, можно 4 параллельных
-        self._text_semaphore = asyncio.Semaphore(4)
+        # v27: Текст 4→2 — на 2 CPU ядра 4 параллельных phi4-mini вызывают
+        # перегрузку и TIMEOUT! 2 параллельных = стабильная работа
+        self._text_semaphore = asyncio.Semaphore(2)
         # Vision: moondream тяжёлая, только 1 одновременно
         self._vision_semaphore = asyncio.Semaphore(1)
+        # Per-user message dedup: track last processed message per user
+        self._user_last_msg: Dict[int, float] = {}
         self._request_count: int = 0
         self._error_count: int = 0
         self._last_health_check: float = 0
@@ -170,7 +188,7 @@ class OllamaClusterProvider(BaseProvider):
 
         status = f"url={self._active_url}"
         vision = "+vision" if self._vision_available else "NO_VISION"
-        logger.info(f"OllamaClusterProvider v26.0: {status} | text={self._text_model} | vision={self._vision_model} | {vision}")
+        logger.info(f"OllamaClusterProvider v27.0: {status} | text={self._text_model} | vision={self._vision_model} | {vision}")
 
     def _detect_models(self) -> None:
         """Определить доступные модели.
@@ -323,8 +341,9 @@ class OllamaClusterProvider(BaseProvider):
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         """Генерация ответа через локальный Ollama.
 
-        v26.0: Раздельные семафоры для текста и vision.
-        Vision таймаут 15с + fallback на Pollinations.
+        v27.0: Раздельные семафоры (2 текст + 1 vision).
+        Vision таймаут 30с + fallback на Pollinations с retry.
+        Per-user дедупликация — отбрасываем старые сообщения.
         """
         if not self._client:
             await self.init()
@@ -402,9 +421,9 @@ class OllamaClusterProvider(BaseProvider):
                     }
 
                     # Адаптивные таймауты
-                    # Текст: 120s (phi4-mini быстрая)
-                    # Vision: 15s + fallback (moondream быстрая, но если CPU перегружен — fallback)
-                    request_timeout = 120.0 if not is_vision else VISION_TIMEOUT_SECONDS
+                    # v27: Текст 90s (быстрее fallback на Pollinations при перегрузе)
+                    # v27: Vision 30s (moondream под нагрузкой не успевала за 15с!)
+                    request_timeout = TEXT_TIMEOUT_SECONDS if not is_vision else VISION_TIMEOUT_SECONDS
 
                     try:
                         self._request_count += 1
@@ -459,7 +478,7 @@ class OllamaClusterProvider(BaseProvider):
                     except httpx.TimeoutException:
                         self._error_count += 1
                         if is_vision:
-                            # Vision timeout — try Pollinations fallback
+                            # Vision timeout — try Pollinations fallback WITH RETRY
                             logger.warning(f"Vision TIMEOUT for {try_model} ({VISION_TIMEOUT_SECONDS}s). Trying Pollinations fallback...")
                             fallback_result = await self._try_pollinations_vision_fallback(
                                 prompt, image_base64, system_prompt, messages_history
@@ -468,7 +487,14 @@ class OllamaClusterProvider(BaseProvider):
                                 return fallback_result
                             last_error = ProviderError(self.name, f"Vision timeout for {try_model} and Pollinations fallback failed", retryable=True)
                         else:
-                            last_error = ProviderError(self.name, f"Timeout for {try_model}", retryable=True)
+                            # Text timeout — also try Pollinations as fallback
+                            logger.warning(f"Text TIMEOUT for {try_model} ({TEXT_TIMEOUT_SECONDS}s). Trying Pollinations fallback...")
+                            fallback_result = await self._try_pollinations_text_fallback(
+                                prompt, system_prompt, messages_history
+                            )
+                            if fallback_result:
+                                return fallback_result
+                            last_error = ProviderError(self.name, f"Timeout for {try_model} and Pollinations fallback failed", retryable=True)
                         continue
                     except Exception as exc:
                         self._error_count += 1
@@ -486,30 +512,79 @@ class OllamaClusterProvider(BaseProvider):
         self, prompt: str, image_base64: str, system_prompt: str = "",
         messages: Optional[List[Dict]] = None
     ) -> Optional[AIResponse]:
-        """Try Pollinations as fallback for vision when Ollama times out."""
+        """Try Pollinations as fallback for vision when Ollama times out.
+        v27: Added retry with delay for 502 Cloudflare errors.
+        """
         if not self._pollinations_fallback:
             logger.warning("No Pollinations fallback available for vision")
             return None
-        try:
-            result = await self._pollinations_fallback.generate(
-                prompt,
-                system_prompt=system_prompt,
-                messages=messages,
-                image_base64=image_base64,
-            )
-            if result and result.text:
-                cleaned = self._strip_think_tags(result.text)
-                if cleaned:
-                    logger.info("Pollinations vision fallback SUCCESS!")
-                    return AIResponse(
-                        text=cleaned,
-                        provider="pollinations_fallback",
-                        model=result.model,
-                        tokens_used=0,
-                        metadata={"vision": True, "fallback": True},
-                    )
-        except Exception as e:
-            logger.warning(f"Pollinations vision fallback failed: {e}")
+        for attempt in range(3):
+            try:
+                result = await self._pollinations_fallback.generate(
+                    prompt,
+                    system_prompt=system_prompt,
+                    messages=messages,
+                    image_base64=image_base64,
+                )
+                if result and result.text:
+                    cleaned = self._strip_think_tags(result.text)
+                    if cleaned:
+                        logger.info(f"Pollinations vision fallback SUCCESS (attempt {attempt+1})!")
+                        return AIResponse(
+                            text=cleaned,
+                            provider="pollinations_fallback",
+                            model=result.model,
+                            tokens_used=0,
+                            metadata={"vision": True, "fallback": True},
+                        )
+            except Exception as e:
+                err_str = str(e)
+                if "502" in err_str or "Bad gateway" in err_str.lower():
+                    if attempt < 2:
+                        wait = 2 * (attempt + 1)  # 2s, 4s
+                        logger.warning(f"Pollinations 502, retrying in {wait}s (attempt {attempt+1}/3)...")
+                        await asyncio.sleep(wait)
+                        continue
+                logger.warning(f"Pollinations vision fallback failed: {e}")
+                break
+        return None
+
+    async def _try_pollinations_text_fallback(
+        self, prompt: str, system_prompt: str = "",
+        messages: Optional[List[Dict]] = None
+    ) -> Optional[AIResponse]:
+        """Try Pollinations as fallback for text when Ollama times out.
+        v27: NEW — text timeout now also triggers Pollinations fallback!
+        """
+        if not self._pollinations_fallback:
+            return None
+        for attempt in range(2):  # Only 2 retries for text
+            try:
+                result = await self._pollinations_fallback.generate(
+                    prompt,
+                    system_prompt=system_prompt,
+                    messages=messages,
+                )
+                if result and result.text:
+                    cleaned = self._strip_think_tags(result.text)
+                    if cleaned:
+                        logger.info(f"Pollinations text fallback SUCCESS (attempt {attempt+1})!")
+                        return AIResponse(
+                            text=cleaned,
+                            provider="pollinations_fallback",
+                            model=result.model,
+                            tokens_used=0,
+                            metadata={"text": True, "fallback": True},
+                        )
+            except Exception as e:
+                err_str = str(e)
+                if "502" in err_str or "Bad gateway" in err_str.lower():
+                    if attempt < 1:
+                        logger.warning(f"Pollinations text 502, retrying in 2s...")
+                        await asyncio.sleep(2)
+                        continue
+                logger.warning(f"Pollinations text fallback failed: {e}")
+                break
         return None
 
     async def _try_failover(self) -> None:

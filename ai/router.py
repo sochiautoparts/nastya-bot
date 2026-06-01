@@ -1,4 +1,4 @@
-"""AI Router v26.0 — SPEED OPTIMIZED Edition.
+"""AI Router v27.0 — RELIABILITY FIX Edition.
 
 АРХИТЕКТУРА: Локальный Ollama + Pollinations fallback!
   - PRIMARY провайдер: OllamaClusterProvider (локальный inference)
@@ -8,17 +8,19 @@
   - Кэширование повторяющихся запросов
   - НИКАКИХ каскадных ошибок через 12 провайдеров
   - НИКАКИХ таймаутов на 260+ секунд
-  - Vision: moondream локально (быстро!), при таймауте 15с → Pollinations
+  - Vision: moondream локально, при таймауте 30с → Pollinations (v27: 15→30)
+  - Text: при таймауте 90с → Pollinations (v27: НОВОЕ!)
   - Pollinations ВСЕГДА доступен как резерв для текста и vision
+  - v27: Pollinations retry при 502 Cloudflare
 
-Изменения v26.0 vs v25.0:
-  - qwen3-vl:2b → moondream (2-3x быстрее на CPU!)
-  - qwen3:1.7b удалён (phi4-mini единственная текстовая модель)
-  - Раздельные семафоры для текста (4) и vision (1)
-  - Vision таймаут 15с + Pollinations fallback
-  - Сжатие фото до 448x448 для скорости
+Изменения v27.0 vs v26.0:
+  - Текстовый семафор 4→2 (2 CPU не тянут 4 параллельных phi4-mini)
+  - Vision таймаут 15→30с (moondream тормозил под нагрузкой)
+  - Текст таймаут 120→90с + Pollinations fallback при timeout (НОВОЕ!)
+  - Pollinations retry при 502 с задержкой 2с
 """
 import logging
+import asyncio
 import random
 import time
 import re
@@ -76,11 +78,13 @@ class AICache:
 
 
 class AIRouter:
-    """Центральный AI-маршрутизатор — v26.0 SPEED OPTIMIZED.
+    """Центральный AI-маршрутизатор — v27.0 RELIABILITY FIX.
 
     Primary: OllamaClusterProvider (локальный inference).
     Fallback: PollinationsProvider (текст + vision при таймауте Ollama).
     NO QWEN — phi4-mini (text) + moondream (vision).
+    v27: Text timeout also triggers Pollinations fallback!
+    v27: Pollinations retry при 502 Cloudflare.
     """
 
     def __init__(self, db=None):
@@ -114,7 +118,7 @@ class AIRouter:
         stats = self.provider.get_stats()
         pollinations_status = "active" if self._pollinations else "unavailable"
         logger.info(
-            f"AI Router v26.0 initialized: "
+            f"AI Router v27.0 initialized: "
             f"url={stats['active_url']}, "
             f"text_model={stats['text_model']}, "
             f"vision_model={stats['vision_model']}, "
@@ -216,35 +220,47 @@ class AIRouter:
                 logger.error(f"Unexpected AI error: {e}")
 
         # ── FALLBACK 1: PollinationsProvider (text + vision!) ──
+        # v27: Retry при 502 Cloudflare с задержкой
         if self._pollinations:
-            try:
-                logger.info("Trying PollinationsProvider as fallback...")
-                gen_kwargs = {}
-                if image_base64:
-                    gen_kwargs["image_base64"] = image_base64
-                result = await self._pollinations.generate(
-                    prompt,
-                    system_prompt=system_prompt,
-                    messages=messages,
-                    **gen_kwargs,
-                )
-                if result and result.text:
-                    cleaned = self.clean_ai_response(result.text)
-                    if cleaned:
-                        # Кэшируем
-                        if not has_conversation:
-                            self._cache.put(prompt, system_prompt, cleaned)
-                        return AIResponse(
-                            text=cleaned,
-                            provider=result.provider,
-                            model=result.model,
-                            tokens_used=result.tokens_used,
-                            metadata={**result.metadata, "fallback": True},
-                        )
-            except ProviderError as e:
-                logger.warning(f"PollinationsProvider fallback error: {e}")
-            except Exception as e:
-                logger.error(f"PollinationsProvider fallback unexpected error: {e}")
+            for pollinations_attempt in range(3):
+                try:
+                    if pollinations_attempt > 0:
+                        logger.info(f"Pollinations retry attempt {pollinations_attempt + 1}/3...")
+                    gen_kwargs = {}
+                    if image_base64:
+                        gen_kwargs["image_base64"] = image_base64
+                    result = await self._pollinations.generate(
+                        prompt,
+                        system_prompt=system_prompt,
+                        messages=messages,
+                        **gen_kwargs,
+                    )
+                    if result and result.text:
+                        cleaned = self.clean_ai_response(result.text)
+                        if cleaned:
+                            # Кэшируем
+                            if not has_conversation:
+                                self._cache.put(prompt, system_prompt, cleaned)
+                            return AIResponse(
+                                text=cleaned,
+                                provider=result.provider,
+                                model=result.model,
+                                tokens_used=result.tokens_used,
+                                metadata={**result.metadata, "fallback": True},
+                            )
+                except ProviderError as e:
+                    err_str = str(e)
+                    if "502" in err_str or "Bad gateway" in err_str.lower():
+                        if pollinations_attempt < 2:
+                            wait = 2 * (pollinations_attempt + 1)
+                            logger.warning(f"Pollinations 502, retrying in {wait}s (attempt {pollinations_attempt+1}/3)...")
+                            await asyncio.sleep(wait)
+                            continue
+                    logger.warning(f"PollinationsProvider fallback error: {e}")
+                    break
+                except Exception as e:
+                    logger.error(f"PollinationsProvider fallback unexpected error: {e}")
+                    break
 
         # ── FALLBACK 2 — бот ВСЕГДА отвечает ──
         self._total_fallbacks += 1
