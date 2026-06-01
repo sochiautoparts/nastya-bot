@@ -38,13 +38,13 @@ logger = logging.getLogger(__name__)
 
 # ── Модели ──────────────────────────────────────────────────
 # Основная модель — Qwen3-4B: умная, thinking mode, 119 языков
-PRIMARY_MODEL = "qwen3:4b"
+PRIMARY_MODEL = "qwen3:4b-instruct"
 # Резервная модель — Vikhr-Llama-1B: быстрая, русский оптимизирован
 RESERVE_MODEL = "lakomoor/vikhr-llama-3.2-1b-instruct"
 
 # Таймауты
-PRIMARY_TIMEOUT_SECONDS = 60.0   # Qwen3-4B на CPU под нагрузкой
-RESERVE_TIMEOUT_SECONDS = 30.0   # Vikhr-1B намного быстрее
+PRIMARY_TIMEOUT_SECONDS = 45.0   # Qwen3-4B-instruct на CPU — быстрее без thinking
+RESERVE_TIMEOUT_SECONDS = 25.0   # Vikhr-1B намного быстрее
 
 # Request priorities
 PRIORITY_HIGH = "high"    # User chat
@@ -84,16 +84,15 @@ class ResponseCache:
 
 
 class OllamaClusterProvider(BaseProvider):
-    """Провайдер для Ollama — v28.0 PURE TEXT BOT.
+    """Провайдер для Ollama — v29.0 PURE TEXT BOT.
 
-    v28.0 CHANGES vs v27.0:
-    - ВСЯ ОБРАБОТКА ФОТО УДАЛЕНА — бот чисто текстовый!
-    - Модели: Qwen3-4B (основная) + Vikhr-Llama-1B (быстрый резерв)
-    - Автоматический фоллбэк с основной на резервную при таймауте/ошибке
-    - Нет vision семафора, нет moondream, нет image_base64
-    - Только текстовый семафор = 2
-    - Pollinations fallback при недоступности обеих Ollama моделей
-    - Упрощённая архитектура — меньше кода, меньше ошибок
+    v29.0 CHANGES vs v28.0:
+    - Переключение на qwen3:4b-instruct (БЕЗ thinking = быстрее ответы!)
+    - Уменьшен текстовый семафор до 1 (CPU не тянет больше)
+    - История уменьшена до 12 сообщений для скорости
+    - num_ctx=4096 — оптимально для CPU
+    - Глубокая ссылка 'Обсудить с Настей' для канала
+    - Живое общение, минимум ограничений
     """
 
     name: str = "ollama_cluster"
@@ -112,8 +111,9 @@ class OllamaClusterProvider(BaseProvider):
         self._warm: bool = False
         self._installed_models: List[str] = []
         self._cache = ResponseCache(maxsize=200, ttl=1800)
-        # Текстовый семафор — только 2 параллельных на 2 CPU
-        self._text_semaphore = asyncio.Semaphore(2)
+        # Текстовый семафор — только 1 параллельный запрос на 2 CPU
+        # v29: Уменьшен с 2 до 1 — CPU не справляется с 2 параллельными
+        self._text_semaphore = asyncio.Semaphore(1)
         # Per-user message dedup
         self._user_last_msg: Dict[int, float] = {}
         self._request_count: int = 0
@@ -173,7 +173,7 @@ class OllamaClusterProvider(BaseProvider):
         self._detect_models()
 
         logger.info(
-            f"OllamaClusterProvider v28.0 (TEXT ONLY): url={self._active_url} | "
+            f"OllamaClusterProvider v29.0 (TEXT ONLY): url={self._active_url} | "
             f"primary={self._primary_model} | reserve={self._reserve_model}"
         )
 
@@ -302,8 +302,10 @@ class OllamaClusterProvider(BaseProvider):
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         """Генерация ответа через локальный Ollama.
 
-        v28.0: Основная модель → Резервная модель → Pollinations → static fallback.
+        v29.0: Основная модель → Резервная модель → Pollinations → static fallback.
         НЕТ VISION — только текст!
+        
+        v29 CRITICAL: Qwen3-4B-instruct БЕЗ thinking mode — быстрые ответы!
         """
         if not self._client:
             await self.init()
@@ -313,15 +315,15 @@ class OllamaClusterProvider(BaseProvider):
             await self._warm_up()
 
         system_prompt = kwargs.get("system_prompt", "")
-        temperature = kwargs.get("temperature", 0.7)
-        max_tokens = kwargs.get("max_tokens", 512)
+        temperature = kwargs.get("temperature", 0.8)
+        max_tokens = kwargs.get("max_tokens", 400)
         messages_history = kwargs.get("messages")
         priority = kwargs.get("priority", PRIORITY_HIGH)
 
-        # Ограничение истории
-        if messages_history and len(messages_history) > 15:
-            logger.info(f"Trimming history: {len(messages_history)} -> 15")
-            messages_history = messages_history[-15:]
+        # Ограничение истории — v29: 12 сообщений для скорости на CPU
+        if messages_history and len(messages_history) > 12:
+            logger.info(f"Trimming history: {len(messages_history)} -> 12")
+            messages_history = messages_history[-12:]
 
         # Проверка кэша (только для запросов без истории)
         has_conversation = bool(messages_history and len(messages_history) > 0)
@@ -358,15 +360,22 @@ class OllamaClusterProvider(BaseProvider):
                         messages=messages_history,
                     )
 
+                    # v29: Для Qwen3-instruct — отключаем thinking через API
+                    options = {
+                        "temperature": temperature,
+                        "num_predict": max_tokens,
+                        "num_ctx": 4096,  # Оптимально для CPU
+                    }
                     payload = {
                         "model": model,
                         "messages": ollama_messages,
                         "stream": False,
-                        "options": {
-                            "temperature": temperature,
-                            "num_predict": max_tokens,
-                        },
+                        "options": options,
                     }
+                    # Qwen3 thinking отключение — instruct модель и так без thinking
+                    # но если используем qwen3:4b (thinking), принудительно выключаем
+                    if "instruct" not in model:
+                        payload["think"] = False
 
                     try:
                         self._request_count += 1

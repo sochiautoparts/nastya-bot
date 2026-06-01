@@ -1,22 +1,19 @@
-"""AI Router v28.0 — PURE TEXT BOT Edition.
+"""AI Router v29.0 — PURE TEXT BOT Edition.
 
 АРХИТЕКТУРА: Локальный Ollama (2 модели) + Pollinations fallback!
   - PRIMARY провайдер: OllamaClusterProvider (локальный inference)
   - FALLBACK провайдер: PollinationsProvider (текст при недоступности Ollama)
-  - Основная модель: Qwen3-4B (умная, thinking mode, 119 языков)
+  - Основная модель: Qwen3-4B-instruct (БЕЗ thinking = быстрые ответы)
   - Резервная модель: Vikhr-Llama-1B (быстрая, русский оптимизирован)
   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
-  - Кэширование повторяющихся запросов
-  - НИКАКИХ каскадных ошибок через 12 провайдеров
-  - НИКАКИХ таймаутов на 260+ секунд
-  - Ollama: основная → резервная → Pollinations → static fallback
+  - Глубокая ссылка 'Обсудить с Настей' — передача постов канала в чат
+  - Живое общение — минимум ограничений
 
-Изменения v28.0 vs v27.0:
-  - ВСЯ ОБРАБОТКА ФОТО УДАЛЕНА — бот чисто текстовый!
-  - Модели: Qwen3-4B + Vikhr-Llama-1B (вместо phi4-mini + moondream)
-  - Две текстовые модели вместо текст+vision
-  - Убран chat_with_image, убраны vision-семафоры
-  - Простой путь: Ollama(primary→reserve) → Pollinations → static
+v29.0 CHANGES vs v28.0:
+  - qwen3:4b-instruct вместо qwen3:4b (БЕЗ thinking = быстрее!)
+  - Семфор = 1 (CPU не тянет больше)
+  - Живое и естественное общение
+  - Deep link для канала
 """
 import logging
 import asyncio
@@ -77,9 +74,9 @@ class AICache:
 
 
 class AIRouter:
-    """Центральный AI-маршрутизатор — v28.0 PURE TEXT BOT.
+    """Центральный AI-маршрутизатор — v29.0 PURE TEXT BOT.
 
-    Primary: OllamaClusterProvider (Qwen3-4B + Vikhr-Llama-1B).
+    Primary: OllamaClusterProvider (Qwen3-4B-instruct + Vikhr-Llama-1B).
     Fallback: PollinationsProvider (текст при недоступности Ollama).
     NO VISION — только текст!
     """
@@ -115,7 +112,7 @@ class AIRouter:
         stats = self.provider.get_stats()
         pollinations_status = "active" if self._pollinations else "unavailable"
         logger.info(
-            f"AI Router v28.0 (TEXT ONLY) initialized: "
+            f"AI Router v29.0 (TEXT ONLY) initialized: "
             f"url={stats['active_url']}, "
             f"primary_model={stats['primary_model']}, "
             f"reserve_model={stats['reserve_model']}, "

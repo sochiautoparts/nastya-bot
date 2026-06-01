@@ -1,6 +1,6 @@
-"""Nastya Bot 28.0 — PURE TEXT BOT. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 29.0 — PURE TEXT BOT. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v28.0 (PURE TEXT BOT):
+Architecture v29.0 (PURE TEXT BOT):
   - SINGLE INSTANCE: file lock + conflict tracker prevents multiple bot instances
   - SINGLE WORKFLOW: one bot.yml with concurrency group (no duplicate runs)
   - LOCAL OLLAMA as PRIMARY AI provider
@@ -12,7 +12,7 @@ Architecture v28.0 (PURE TEXT BOT):
   - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ
   - MOSCOW TIMEZONE — Настя из Москвы!
 
-v28.0 CHANGES vs v27.0:
+v29.0 CHANGES vs v28.0:
   1. ВСЯ ОБРАБОТКА ФОТО УДАЛЕНА — бот чисто текстовый!
   2. Модели: Qwen3-4B + Vikhr-Llama-1B (вместо phi4-mini + moondream)
   3. Две текстовые модели: основная + быстрая резервная
@@ -477,7 +477,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 28.0 Starting (PURE TEXT BOT — v28) ===")
+    logger.info("=== Nastya Bot 29.0 Starting (PURE TEXT BOT — v29) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -524,7 +524,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 28.0 Ready (PURE TEXT BOT — v28) ===")
+    logger.info("=== Nastya Bot 29.0 Ready (PURE TEXT BOT — v29) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

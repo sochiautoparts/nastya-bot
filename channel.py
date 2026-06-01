@@ -472,11 +472,12 @@ async def post_news_to_channel(bot: Bot, db, news_items: List[Dict]) -> int:
                 await db.mark_news_posted(item["id"])
                 continue
 
-            # Add inline button to discuss with Nastya bot
+            # v29: Deep link с ID поста — бот будет знать о чём речь!
+            post_id_for_link = item.get("id", 0)
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(
                     text="💬 Обсудить с Настей",
-                    url=f"https://t.me/{BOT_USERNAME}",
+                    url=f"https://t.me/{BOT_USERNAME}?start=discuss_{post_id_for_link}",
                 )],
             ])
 
@@ -524,11 +525,11 @@ async def post_personality_to_channel(bot: Bot, db, post_text: str) -> bool:
             logger.warning("Skipping personality post — validation failed")
             return False
 
-        # Add discussion button for personality posts too
+        # v29: Deep link для personality постов
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
                 text="💬 Написать Насте",
-                url=f"https://t.me/{BOT_USERNAME}",
+                url=f"https://t.me/{BOT_USERNAME}?start=chat",
             )],
         ])
 
@@ -569,10 +570,11 @@ async def post_knowledge_to_channel(bot: Bot, db, fact: str) -> bool:
         return False
 
     try:
+        # v29: Deep link для knowledge постов
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
                 text="💬 Спросить Настю",
-                url=f"https://t.me/{BOT_USERNAME}",
+                url=f"https://t.me/{BOT_USERNAME}?start=chat",
             )],
         ])
 
@@ -656,10 +658,11 @@ async def post_real_poll_to_channel(bot: Bot, db) -> bool:
                 await bot.send_message(
                     chat_id=CHANNEL_ID,
                     text="💬 Обсудить с Настей!",
+                    # v29: Deep link для polls
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(
                             text="💬 Написать Насте",
-                            url=f"https://t.me/{BOT_USERNAME}",
+                            url=f"https://t.me/{BOT_USERNAME}?start=chat",
                         )],
                     ]),
                 )
@@ -785,10 +788,11 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
                         logger.warning("Skipping event reaction post — validation failed")
                     else:
                         try:
+                            # v29: Deep link с ID новости
                             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                                 [InlineKeyboardButton(
                                     text="💬 Обсудить с Настей",
-                                    url=f"https://t.me/{BOT_USERNAME}",
+                                    url=f"https://t.me/{BOT_USERNAME}?start=discuss_{reaction_news.get("id", 0)}",
                                 )],
                             ])
                             await bot.send_message(

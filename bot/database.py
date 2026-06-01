@@ -600,6 +600,47 @@ class Database:
         except Exception:
             return []
 
+    # ── v29: Deep link "Обсудить с Настей" ──
+
+    async def get_news_by_id(self, news_id: int) -> Optional[Dict]:
+        """Получить новость по ID для deep link 'Обсудить'."""
+        conn = await self._get_conn()
+        try:
+            async with conn.execute(
+                """SELECT id, source, title, link, summary, nastya_comment, category
+                FROM news_items WHERE id = ?""",
+                (news_id,),
+            ) as cur:
+                row = await cur.fetchone()
+                if row:
+                    return {
+                        "id": row[0], "source": row[1], "title": row[2],
+                        "link": row[3], "summary": row[4], "nastya_comment": row[5],
+                        "category": row[6],
+                    }
+            return None
+        except Exception:
+            return None
+
+    async def get_channel_post_by_news_id(self, news_id: int) -> Optional[Dict]:
+        """Получить канал-пост по news_id для deep link 'Обсудить'."""
+        conn = await self._get_conn()
+        try:
+            async with conn.execute(
+                """SELECT id, news_id, post_text, post_type, created_at
+                FROM channel_posts WHERE news_id = ? ORDER BY created_at DESC LIMIT 1""",
+                (news_id,),
+            ) as cur:
+                row = await cur.fetchone()
+                if row:
+                    return {
+                        "id": row[0], "news_id": row[1], "post_text": row[2],
+                        "post_type": row[3], "created_at": row[4],
+                    }
+            return None
+        except Exception:
+            return None
+
     # ── AI Cache ─────────────────────────────────────────────
 
     async def cache_get(self, key: str, max_age: int = 3600) -> Optional[Dict]:

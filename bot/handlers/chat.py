@@ -328,10 +328,91 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
         if gender != "unknown":
             await db.set_gender(user.id, gender)
 
-    # Deep link for donations
+    # Deep link handling
     args = message.text.split(maxsplit=1)
     if len(args) > 1:
         param = args[1].strip()
+        
+        # ── v29: "Обсудить с Настей" — deep link из канала ──
+        # Формат: /start discuss_POSTID — пользователь нажал кнопку на посте
+        if param.startswith("discuss_"):
+            post_id_str = param.replace("discuss_", "")
+            try:
+                post_id = int(post_id_str)
+            except ValueError:
+                post_id = 0
+            
+            # Получаем содержание поста из БД
+            post_content = ""
+            if db and post_id > 0:
+                try:
+                    # Сначала пробуем получить новость по ID
+                    news_item = await db.get_news_by_id(post_id)
+                    if news_item:
+                        title = news_item.get("title", "")
+                        comment = news_item.get("nastya_comment", "")
+                        link = news_item.get("link", "")
+                        post_content = f"Новость: {title}"
+                        if comment:
+                            post_content += f"\nМоё мнение: {comment}"
+                        if link:
+                            post_content += f"\n🔗 {link}"
+                except Exception as e:
+                    logger.error(f"Failed to get post content for discuss: {e}")
+            
+            # Также проверяем канал-посты
+            if not post_content and db:
+                try:
+                    channel_post = await db.get_channel_post_by_news_id(post_id)
+                    if channel_post:
+                        post_content = channel_post.get("post_text", "")
+                except Exception:
+                    pass
+            
+            # Приветствие + контекст поста
+            if post_content:
+                greeting = random.choice([
+                    f"О, {name}! Ты с канала пришёл! Давай обсудим! 💅✨",
+                    f"Привет, {name}! Видишь, я про это написала! Обсудим? 💅",
+                    f"Ой, {name}! Пришёл обсудить? Кайф! Давай! ✨",
+                ])
+                await message.answer(greeting)
+                
+                # Сохраняем контекст поста в историю пользователя
+                if db:
+                    try:
+                        await db.add_message(user.id, "assistant", f"[Пост из канала] {post_content[:500]}")
+                    except Exception:
+                        pass
+                
+                # Отправляем пост в AI для обсуждения
+                discuss_prompt = f"Человек пришёл из канала @chasnastya и хочет обсудить этот пост:\n\n{post_content}\n\nНачни живое обсуждение! Спроси его мнение, поделись своими мыслями. Будь как девушка, которая увидела что кто-то заинтересовался её постом."
+                await _process_text_message(
+                    message, 
+                    f"Хочу обсудить пост из канала: {post_content[:200]}", 
+                    db, ai_router,
+                    extra_suffix=discuss_prompt
+                )
+                return
+            else:
+                # Пост не найден — просто приветствуем
+                greeting = random.choice([
+                    f"О, {name}! Ты с канала! Привет! 💅✨",
+                    f"Привет, {name}! Рада что ты здесь! О чём хочешь поболтать? 💋",
+                ])
+                await message.answer(greeting)
+                return
+        
+        # Deep link для chat (личные посты, опросы)
+        if param == "chat":
+            greeting = random.choice([
+                f"О, {name}! Привет! О чём хочешь поболтать? 💅✨",
+                f"Привет, {name}! Настя тут! Давай общаться! 💋",
+            ])
+            await message.answer(greeting)
+            return
+        
+        # Deep link for donations
         if param.startswith("donate_"):
             try:
                 amount = int(param.replace("donate_", ""))
