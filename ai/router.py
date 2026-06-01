@@ -150,9 +150,9 @@ class AIRouter:
 
                 if name == "ollama":
                     # Ollama — local model, no key needed, configurable URL
-                    # Longer timeout for CPU inference + vision
+                    # 180s timeout: CPU inference is slow, especially for vision
                     provider = provider_cls(
-                        timeout=120.0,
+                        timeout=180.0,
                         base_url=OLLAMA_BASE_URL,
                     )
                 elif name in ("pollinations", "chutes", "blackbox"):
@@ -245,7 +245,7 @@ class AIRouter:
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
         """Route text chat. NEVER raises exceptions. ALWAYS returns a response."""
-        image_base64 = kwargs.get("image_base64")
+        image_base64 = kwargs.pop("image_base64", None)  # pop to avoid double-passing
         self._total_requests += 1
 
         # ── PHASE 0: Check memory cache ONLY for no-history requests ──
@@ -277,6 +277,7 @@ class AIRouter:
                 pass
 
         # If image, try vision providers first
+        # NOTE: image_base64 is popped from kwargs above, so we pass it explicitly only
         if image_base64:
             for vp_name in self._vision_providers:
                 provider = self.providers.get(vp_name)
@@ -285,7 +286,7 @@ class AIRouter:
                 try:
                     result = await provider.generate(
                         prompt, system_prompt=system_prompt,
-                        messages=messages, image_base64=image_base64, **kwargs,
+                        messages=messages, image_base64=image_base64,
                     )
                     if result and result.text:
                         cleaned = self.clean_ai_response(result.text)
@@ -312,21 +313,20 @@ class AIRouter:
         # ── PHASE 1: Try configured providers ──
         chain = self._get_ordered_chain()
 
-        safe_kwargs = {k: v for k, v in kwargs.items() if k != "image_base64"}
-
+        # NOTE: image_base64 already popped from kwargs — no risk of double-passing
         for provider_name in chain:
             provider = self.providers.get(provider_name)
             if not provider:
                 continue
 
-            provider_kwargs = safe_kwargs
-            if image_base64 and getattr(provider, 'supports_vision', False):
-                provider_kwargs = kwargs
-
             try:
+                gen_kwargs = dict(kwargs)  # copy remaining kwargs (no image_base64)
+                if image_base64 and getattr(provider, 'supports_vision', False):
+                    gen_kwargs["image_base64"] = image_base64  # add only for vision providers
+
                 result = await provider.generate(
                     prompt, system_prompt=system_prompt,
-                    messages=messages, **provider_kwargs,
+                    messages=messages, **gen_kwargs,
                 )
                 if result and result.text:
                     cleaned = self.clean_ai_response(result.text)
@@ -372,13 +372,14 @@ class AIRouter:
             provider = self.providers.get(provider_name)
             if not provider:
                 continue
-            provider_kwargs = safe_kwargs
-            if image_base64 and getattr(provider, 'supports_vision', False):
-                provider_kwargs = kwargs
             try:
+                gen_kwargs = dict(kwargs)
+                if image_base64 and getattr(provider, 'supports_vision', False):
+                    gen_kwargs["image_base64"] = image_base64
+
                 result = await provider.generate(
                     prompt, system_prompt=system_prompt,
-                    messages=messages, **provider_kwargs,
+                    messages=messages, **gen_kwargs,
                 )
                 if result and result.text:
                     cleaned = self.clean_ai_response(result.text)
@@ -400,9 +401,12 @@ class AIRouter:
             if free_name in self.providers:
                 try:
                     provider = self.providers[free_name]
+                    gen_kwargs = dict(kwargs)
+                    if image_base64 and getattr(provider, 'supports_vision', False):
+                        gen_kwargs["image_base64"] = image_base64
                     result = await provider.generate(
                         prompt, system_prompt=system_prompt,
-                        messages=None,
+                        messages=None, **gen_kwargs,
                     )
                     if result and result.text:
                         cleaned = self.clean_ai_response(result.text)

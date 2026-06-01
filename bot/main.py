@@ -398,7 +398,7 @@ async def conflict_monitor() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 19.0 Starting (Local Qwen3-VL, Apolitical, Vision FIXED, Conflict FIX) ===")
+    logger.info("=== Nastya Bot 20.0 Starting (Ollama Lock, Vision FIX, Text=1.7b Vision=VL) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -444,7 +444,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 19.0 Ready ===")
+    logger.info("=== Nastya Bot 20.0 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:

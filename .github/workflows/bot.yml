@@ -137,13 +137,13 @@ jobs:
           restore-keys: |
             ollama-qwen3-
 
-      - name: Pull Qwen3-VL-2B model
+      - name: Pull models
         if: steps.cache-models.outputs.cache-hit != 'true'
         run: |
-          echo "=== Pulling Qwen3-VL-2B model ==="
+          echo "=== Pulling Qwen3-VL-2B (vision model) ==="
           ollama pull qwen3-vl:2b
-          echo "=== Pulling Qwen3-1.7B for fast responses ==="
-          ollama pull qwen3:1.7b || true
+          echo "=== Pulling Qwen3-1.7B (fast text model) ==="
+          ollama pull qwen3:1.7b
 
       - name: Verify Ollama and models
         run: |
@@ -208,7 +208,7 @@ jobs:
           CHANNEL_POST_INTERVAL: 1200
           OLLAMA_KEEP_ALIVE: 30m
         run: |
-          echo "=== Starting Nastya Bot 19.0 with Qwen3-VL-2B ==="
+          echo "=== Starting Nastya Bot 20.0 with Qwen3-VL-2B ==="
           echo "Ollama status:"
           curl -s http://localhost:11434/api/tags | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  Model: {m[\"name\"]}') for m in d.get('models',[])]" 2>/dev/null || echo "  Ollama not responding"
           echo "=== Launching bot with auto-restart ==="

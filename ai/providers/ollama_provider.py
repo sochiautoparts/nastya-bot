@@ -10,13 +10,13 @@ Architecture:
   - NEVER has authentication errors (local inference)
   - Perfect for channel posts, news commentary, basic chat
 
-v3.0: Vision and reliability fixes
-  - Build messages with explicit current-prompt injection for vision
-  - Images ALWAYS attached to the CURRENT prompt message (last user msg)
-  - Better think-tag stripping for Qwen3
-  - Robust fallback chain: qwen3-vl:2b → qwen3:1.7b → qwen2.5:3b
-  - Model cache verification on startup
-  - Proper timeout handling for CPU inference
+v4.0: Reliability and model selection overhaul
+  - Use qwen3:1.7b for TEXT-ONLY tasks (FASTER on CPU!)
+  - Use qwen3-vl:2b ONLY for vision (image) tasks
+  - Only try models that are INSTALLED (no auto-pull of uninstalled models!)
+  - asyncio Lock serializes Ollama requests (CPU can't handle concurrent inference)
+  - Better timeout handling: 180s for text, 300s for vision
+  - No more pulling qwen2.5:3b wasting CPU and disk!
 """
 import logging
 import asyncio
@@ -32,18 +32,18 @@ logger = logging.getLogger(__name__)
 # Default Ollama endpoint (runs locally in GitHub Actions)
 OLLAMA_BASE_URL = "http://localhost:11434"
 
-# Models to try in order — Qwen3-VL-2B is the target
-TEXT_MODELS = {
-    "default": "qwen3-vl:2b",       # Primary: Qwen3-VL-2B — vision + text
-    "fast": "qwen3:1.7b",           # Fast: smaller Qwen3 for quick responses
-    "reasoning": "qwen3:4b",        # Reasoning: bigger model for complex tasks
-    "fallback": "qwen2.5:3b",      # Fallback: stable Qwen2.5
-}
+# Models — ONLY use what's installed via GitHub Actions workflow!
+# qwen3:1.7b = fast text model (pulled in workflow)
+# qwen3-vl:2b = vision model (pulled in workflow)
+# DO NOT add models that aren't pre-installed — auto-pull wastes CPU/disk!
+TEXT_MODEL = "qwen3:1.7b"         # Fast text model — PRIMARY for text-only
+VISION_MODEL = "qwen3-vl:2b"      # Vision model — ONLY for image tasks
 
 # Vision-capable model prefixes — ANY model starting with these is vision-capable
-# CRITICAL: "qwen3-vl" must be here! Without it, photos are not sent to Ollama!
 VISION_MODEL_PREFIXES = ["qwen3-vl", "qwen2.5-vl", "qwen2-vl", "llava", "minicpm-v", "bakllava", "moondream", "llama3-vision"]
-VISION_MODEL = "qwen3-vl:2b"
+
+# Global lock to serialize Ollama requests — CPU can only handle one inference at a time!
+_ollama_lock = asyncio.Lock()
 
 
 class OllamaProvider(BaseProvider):
@@ -57,21 +57,23 @@ class OllamaProvider(BaseProvider):
     - Vision support built-in
     - Full control over model behavior
 
-    The model is 'woken up' when the GitHub Actions workflow starts.
-    Ollama automatically loads the model on first request (cold start ~10-30s).
+    v4.0: Uses asyncio Lock to serialize requests (CPU can't handle concurrent
+    inference). Uses qwen3:1.7b for text (faster!) and qwen3-vl:2b for vision only.
     """
 
     name: str = "ollama"
     supports_streaming: bool = False
     supports_vision: bool = True
 
-    def __init__(self, api_key: str = "", timeout: float = 90.0, base_url: str = ""):
+    def __init__(self, api_key: str = "", timeout: float = 180.0, base_url: str = ""):
         super().__init__(api_key="", timeout=timeout)
         self.base_url = base_url or OLLAMA_BASE_URL
         self._available: bool = False
-        self._available_model: Optional[str] = None
+        self._text_model: Optional[str] = None
+        self._vision_model: Optional[str] = None
         self._vision_available: bool = False
         self._warm: bool = False
+        self._installed_models: List[str] = []
 
     async def init(self) -> None:
         """Initialize and check if Ollama server is running with models."""
@@ -87,37 +89,36 @@ class OllamaProvider(BaseProvider):
             resp = await self._client.get("/api/tags", timeout=10.0)
             if resp.status_code == 200:
                 data = resp.json()
-                installed_models = [m.get("name", "").lower() for m in data.get("models", [])]
-                logger.info(f"Ollama server running. Installed models: {installed_models}")
+                self._installed_models = [m.get("name", "").lower() for m in data.get("models", [])]
+                logger.info(f"Ollama server running. Installed models: {self._installed_models}")
 
-                # Find the best available model
-                for model_key in ["default", "fast", "reasoning", "fallback"]:
-                    model_name = TEXT_MODELS.get(model_key, "")
-                    # Check exact match or prefix match (e.g., "qwen3-vl:2b" matches "qwen3-vl:2b-q4_K_M")
-                    for installed in installed_models:
-                        if installed.startswith(model_name.split(":")[0]):
-                            self._available = True
-                            self._available_model = model_name
-                            logger.info(f"Ollama: using model {model_name}")
-                            break
-                    if self._available:
-                        break
+                # Find text model (prefer qwen3:1.7b for speed)
+                if any(m.startswith("qwen3:1.7b") or m.startswith("qwen3:1.7b") for m in self._installed_models):
+                    self._text_model = TEXT_MODEL
+                    self._available = True
+                    logger.info(f"Ollama: text model = {self._text_model}")
+                elif any(m.startswith("qwen3-vl") for m in self._installed_models):
+                    # Fallback: use vision model for text too (slower but works)
+                    self._text_model = VISION_MODEL
+                    self._available = True
+                    logger.info(f"Ollama: text model = {self._text_model} (vision model fallback)")
 
-                # Check for vision model — use prefix list for robust detection
-                # This ensures qwen3-vl:2b is correctly detected as vision-capable
+                # Find vision model
                 for prefix in VISION_MODEL_PREFIXES:
-                    for installed in installed_models:
+                    for installed in self._installed_models:
                         if installed.startswith(prefix):
                             self._vision_available = True
+                            self._vision_model = VISION_MODEL
                             logger.info(f"Ollama: vision model detected: {installed} (prefix: {prefix})")
                             break
                     if self._vision_available:
                         break
 
                 if not self._available:
-                    logger.warning("Ollama server running but no suitable models found. Will try to pull.")
-                    self._available = True  # Try anyway — Ollama can auto-pull
-                    self._available_model = TEXT_MODELS["default"]
+                    # No models at all — try anyway with default
+                    logger.warning("Ollama server running but no suitable models found!")
+                    self._available = True
+                    self._text_model = TEXT_MODEL
 
             else:
                 logger.warning(f"Ollama server returned HTTP {resp.status_code}")
@@ -132,7 +133,7 @@ class OllamaProvider(BaseProvider):
 
         status = "available" if self._available else "not available"
         vision = "+vision" if self._vision_available else " NO_VISION"
-        logger.info(f"Ollama provider: {status}{vision} | model={self._available_model} | vision_detected={self._vision_available}")
+        logger.info(f"Ollama provider: {status}{vision} | text_model={self._text_model} | vision_model={self._vision_model}")
 
     def is_available(self) -> bool:
         """Check if Ollama is potentially available."""
@@ -147,15 +148,15 @@ class OllamaProvider(BaseProvider):
         if self._warm:
             return
 
-        if not self._available_model:
+        if not self._text_model:
             return
 
         try:
-            logger.info(f"Warming up Ollama model: {self._available_model}...")
+            logger.info(f"Warming up Ollama model: {self._text_model}...")
             resp = await self._client.post(
                 "/api/chat",
                 json={
-                    "model": self._available_model,
+                    "model": self._text_model,
                     "messages": [{"role": "user", "content": "привет"}],
                     "stream": False,
                     "options": {"num_predict": 5},
@@ -189,16 +190,7 @@ class OllamaProvider(BaseProvider):
     ) -> List[Dict[str, Any]]:
         """Build Ollama-native messages with CORRECT image attachment.
 
-        CRITICAL FIX v3.0: Images MUST be attached to the CURRENT user prompt,
-        which is the LAST message in the array. Previous code used _build_messages()
-        from BaseProvider which adds the prompt as the last message — but the
-        Ollama image attachment code would then search backwards for the last
-        "user" message and might attach to a HISTORY user message instead.
-
-        This method builds messages specifically for Ollama's native API format:
-        {"role": "user", "content": "text", "images": ["base64..."]}
-
-        The images field is ALWAYS on the current prompt message.
+        Images are ALWAYS attached to the CURRENT prompt message (last user msg).
         """
         result: List[Dict[str, Any]] = []
 
@@ -231,7 +223,6 @@ class OllamaProvider(BaseProvider):
             result.append(current_msg)
         elif image_base64 and self._vision_available:
             # Last history message IS the current prompt — attach image to it
-            # Find the last user message in result and add images
             for i in range(len(result) - 1, -1, -1):
                 if result[i]["role"] == "user":
                     result[i]["images"] = [image_base64]
@@ -244,7 +235,6 @@ class OllamaProvider(BaseProvider):
                 prev_content = merged[-1].get("content", "")
                 new_content = msg.get("content", "")
                 merged[-1]["content"] = f"{prev_content}\n{new_content}"
-                # If the new message has images, keep them on the merged message
                 if "images" in msg:
                     merged[-1]["images"] = msg["images"]
             else:
@@ -252,13 +242,17 @@ class OllamaProvider(BaseProvider):
 
         return merged
 
+    def _is_model_installed(self, model_name: str) -> bool:
+        """Check if a model is installed locally."""
+        prefix = model_name.split(":")[0]
+        return any(m.startswith(prefix) for m in self._installed_models)
+
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         """Generate text via local Ollama instance.
 
-        Uses the Ollama native /api/chat endpoint for
-        clean JSON responses — NO SSE artifacts, NO auth errors.
-
-        v3.0: Uses _build_ollama_messages() for correct image attachment.
+        v4.0: Uses Lock to serialize requests (CPU can only do one inference at a time).
+        Uses qwen3:1.7b for text (faster), qwen3-vl:2b for vision only.
+        Only tries INSTALLED models — no auto-pull of uninstalled models!
         """
         if not self._client:
             await self.init()
@@ -270,42 +264,47 @@ class OllamaProvider(BaseProvider):
         if not self._warm:
             await self._warm_up()
 
-        model = kwargs.get("model", self._available_model or TEXT_MODELS["default"])
         system_prompt = kwargs.get("system_prompt", "")
         temperature = kwargs.get("temperature", 0.7)
         max_tokens = kwargs.get("max_tokens", 2048)
         messages_history = kwargs.get("messages")
         image_base64 = kwargs.get("image_base64")
 
-        # Limit history for vision requests (2B model has limited context)
+        # Limit history for small models
         if image_base64 and messages_history and len(messages_history) > 10:
             logger.info(f"Ollama: Trimming history for vision: {len(messages_history)} -> 10 messages")
             messages_history = messages_history[-10:]
         elif not image_base64 and messages_history and len(messages_history) > 30:
-            # Even for text, limit history for 2B model
             messages_history = messages_history[-30:]
 
-        # Use vision model if image is provided and available
-        use_vision_model = False
-        if image_base64 and self._vision_available:
-            model = VISION_MODEL
-            use_vision_model = True
-            logger.info(f"Ollama: Using vision model {model} for image (size: {len(image_base64)} chars)")
-        elif image_base64 and not self._vision_available:
-            logger.warning("Ollama: Image provided but no vision model. Processing text only.")
+        # ── Select model based on task type ──
+        # Text-only → qwen3:1.7b (FASTER on CPU!)
+        # Vision → qwen3-vl:2b (required for image processing)
+        is_vision_request = bool(image_base64 and self._vision_available)
 
-        # Try models in order if primary fails
-        models_to_try = [model]
-        if model != TEXT_MODELS.get("fast"):
-            models_to_try.append(TEXT_MODELS["fast"])
-        if model != TEXT_MODELS.get("fallback"):
-            models_to_try.append(TEXT_MODELS["fallback"])
+        if is_vision_request:
+            primary_model = self._vision_model or VISION_MODEL
+            fallback_model = self._text_model  # Fallback to text model without image
+        else:
+            primary_model = self._text_model or TEXT_MODEL
+            fallback_model = None  # For text, just try the primary model
+
+        # Build list of models to try — ONLY installed ones!
+        models_to_try = []
+        if primary_model and self._is_model_installed(primary_model):
+            models_to_try.append(primary_model)
+        if fallback_model and fallback_model != primary_model and self._is_model_installed(fallback_model):
+            models_to_try.append(fallback_model)
+
+        # If no models found in installed list, try the primary anyway
+        if not models_to_try:
+            models_to_try = [primary_model]
 
         last_error = None
         for try_model in models_to_try:
-            # Build messages using Ollama-native format with correct image attachment
-            # Only attach image to the FIRST model attempt (not fallbacks)
-            img = image_base64 if (use_vision_model and try_model == model) else None
+            # For fallback models (non-vision), don't attach image
+            img = image_base64 if (is_vision_request and try_model == primary_model) else None
+
             ollama_messages = self._build_ollama_messages(
                 prompt=prompt,
                 system_prompt=system_prompt,
@@ -313,7 +312,6 @@ class OllamaProvider(BaseProvider):
                 image_base64=img,
             )
 
-            # Log what we're sending
             msg_count = len(ollama_messages)
             has_images = any("images" in m for m in ollama_messages)
             logger.info(f"Ollama: Sending {msg_count} messages to {try_model} (vision={has_images})")
@@ -321,142 +319,104 @@ class OllamaProvider(BaseProvider):
             payload = {
                 "model": try_model,
                 "messages": ollama_messages,
-                "stream": False,  # CRITICAL: No streaming — clean JSON response!
+                "stream": False,
                 "options": {
                     "temperature": temperature,
                     "num_predict": max_tokens,
                 },
             }
 
-            try:
-                # Vision + CPU inference needs longer timeout!
-                request_timeout = self.timeout
-                if img:
-                    request_timeout = min(request_timeout * 2, 300)  # Up to 5 min for vision on CPU
-                    logger.info(f"Ollama: Extended timeout {request_timeout}s for vision request")
-                response = await self._client.post(
-                    "/api/chat",
-                    json=payload,
-                    timeout=httpx.Timeout(request_timeout, connect=15.0),
-                )
-                response.raise_for_status()
-                data = response.json()
+            # ── CRITICAL: Serialize Ollama requests ──
+            # CPU can only handle ONE inference at a time. Without the lock,
+            # concurrent requests cause timeouts and cascade failures.
+            request_timeout = self.timeout
+            if img:
+                request_timeout = min(request_timeout * 1.5, 300)  # Vision needs more time
+                logger.info(f"Ollama: Extended timeout {request_timeout:.0f}s for vision request")
 
-                # Ollama native API returns: {"message": {"role": "assistant", "content": "..."}}
-                text = ""
-                if isinstance(data, dict):
-                    msg = data.get("message", {})
-                    text = msg.get("content", "") if isinstance(msg, dict) else ""
+            async with _ollama_lock:
+                try:
+                    response = await self._client.post(
+                        "/api/chat",
+                        json=payload,
+                        timeout=httpx.Timeout(request_timeout, connect=15.0),
+                    )
+                    response.raise_for_status()
+                    data = response.json()
 
-                if not text:
-                    # Try OpenAI-compatible endpoint as fallback
-                    try:
-                        oai_messages = self._build_messages(prompt, system_prompt, messages_history)
-                        oai_payload = {
-                            "model": try_model,
-                            "messages": oai_messages,
-                            "temperature": temperature,
-                            "max_tokens": max_tokens,
-                            "stream": False,
-                        }
-                        oai_resp = await self._client.post(
-                            "/v1/chat/completions",
-                            json=oai_payload,
-                            timeout=httpx.Timeout(self.timeout, connect=10.0),
+                    # Ollama native API returns: {"message": {"role": "assistant", "content": "..."}}
+                    text = ""
+                    if isinstance(data, dict):
+                        msg = data.get("message", {})
+                        text = msg.get("content", "") if isinstance(msg, dict) else ""
+
+                    if not text:
+                        last_error = ProviderError(
+                            self.name,
+                            f"Empty response from {try_model}",
+                            retryable=True,
                         )
-                        oai_resp.raise_for_status()
-                        oai_data = oai_resp.json()
-                        if "choices" in oai_data:
-                            text = oai_data["choices"][0].get("message", {}).get("content", "")
-                    except Exception:
-                        pass
+                        continue
 
-                if not text:
-                    last_error = ProviderError(
-                        self.name,
-                        f"Empty response from {try_model}",
-                        retryable=True,
-                    )
-                    continue
+                    # Clean up think tags (Qwen3 uses <think/> blocks)
+                    text = self._strip_think_tags(text)
 
-                # Clean up think tags (Qwen3 uses <think/> blocks)
-                text = self._strip_think_tags(text)
-
-                if not text:
-                    last_error = ProviderError(
-                        self.name,
-                        f"Empty content after cleaning from {try_model}",
-                        retryable=True,
-                    )
-                    continue
-
-                # Update available model if we found a working one
-                if not self._available_model:
-                    self._available_model = try_model
-                    self._available = True
-
-                return AIResponse(
-                    text=text,
-                    provider=self.name,
-                    model=f"ollama:{try_model}",
-                    tokens_used=0,
-                    metadata={
-                        "local": True,
-                        "vision": bool(image_base64 and self._vision_available),
-                    },
-                )
-
-            except httpx.ConnectError:
-                raise ProviderError(
-                    self.name,
-                    "Ollama server not running on localhost:11434",
-                    retryable=False,
-                )
-            except httpx.HTTPStatusError as exc:
-                status = exc.response.status_code
-                if status == 404:
-                    # Model not found — try to pull it
-                    logger.warning(f"Model {try_model} not found locally, attempting pull...")
-                    try:
-                        pull_resp = await self._client.post(
-                            "/api/pull",
-                            json={"name": try_model, "stream": False},
-                            timeout=httpx.Timeout(300.0, connect=10.0),
+                    if not text:
+                        last_error = ProviderError(
+                            self.name,
+                            f"Empty content after cleaning from {try_model}",
+                            retryable=True,
                         )
-                        if pull_resp.status_code == 200:
-                            logger.info(f"Successfully pulled model {try_model}")
-                            self._available_model = try_model
-                            # Retry the request
-                            continue
-                    except Exception as pull_err:
-                        logger.error(f"Failed to pull model {try_model}: {pull_err}")
+                        continue
 
+                    return AIResponse(
+                        text=text,
+                        provider=self.name,
+                        model=f"ollama:{try_model}",
+                        tokens_used=0,
+                        metadata={
+                            "local": True,
+                            "vision": is_vision_request,
+                        },
+                    )
+
+                except httpx.ConnectError:
+                    raise ProviderError(
+                        self.name,
+                        "Ollama server not running on localhost:11434",
+                        retryable=False,
+                    )
+                except httpx.HTTPStatusError as exc:
+                    status = exc.response.status_code
+                    if status == 404:
+                        # Model not found — DO NOT auto-pull! Just fail and try next model.
+                        logger.warning(f"Model {try_model} not found locally. Skipping (no auto-pull).")
+                        last_error = ProviderError(
+                            self.name,
+                            f"Model {try_model} not found locally",
+                            retryable=True,
+                        )
+                        continue
                     last_error = ProviderError(
                         self.name,
-                        f"Model {try_model} not found and pull failed",
+                        f"HTTP {status}: {exc.response.text[:200]}",
+                        retryable=status in (429, 500, 502, 503, 504),
+                    )
+                    continue
+                except httpx.TimeoutException:
+                    last_error = ProviderError(
+                        self.name,
+                        f"Request timed out for {try_model} (CPU inference can be slow)",
                         retryable=True,
                     )
                     continue
-                last_error = ProviderError(
-                    self.name,
-                    f"HTTP {status}: {exc.response.text[:200]}",
-                    retryable=status in (429, 500, 502, 503, 504),
-                )
-                continue
-            except httpx.TimeoutException:
-                last_error = ProviderError(
-                    self.name,
-                    f"Request timed out for {try_model} (CPU inference can be slow)",
-                    retryable=True,
-                )
-                continue
-            except Exception as exc:
-                last_error = ProviderError(
-                    self.name,
-                    f"Unexpected error with {try_model}: {exc}",
-                    retryable=True,
-                )
-                continue
+                except Exception as exc:
+                    last_error = ProviderError(
+                        self.name,
+                        f"Unexpected error with {try_model}: {exc}",
+                        retryable=True,
+                    )
+                    continue
 
         if last_error:
             raise last_error
