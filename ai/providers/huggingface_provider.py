@@ -53,8 +53,11 @@ class HuggingFaceProvider(BaseProvider):
 
     async def init(self) -> None:
         headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        # Only add Authorization header if api_key is truthy and non-whitespace.
+        # Sending "Authorization: Bearer " (empty) causes "Authentication Error,
+        # No api key passed in." from HuggingFace. No key = free tier, works fine.
+        if self.api_key and self.api_key.strip():
+            headers["Authorization"] = f"Bearer {self.api_key.strip()}"
 
         self._client = httpx.AsyncClient(
             base_url="https://api-inference.huggingface.co",
@@ -62,7 +65,7 @@ class HuggingFaceProvider(BaseProvider):
             timeout=httpx.Timeout(self.timeout, connect=10.0),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
-        key_status = "with API key" if self.api_key else "without API key (free tier)"
+        key_status = "with API key" if (self.api_key and self.api_key.strip()) else "without API key (free tier)"
         logger.info(f"HuggingFace provider initialized ({key_status})")
 
     def is_available(self) -> bool:

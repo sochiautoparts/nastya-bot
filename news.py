@@ -344,6 +344,7 @@ async def generate_nastya_comment(ai_router, title: str, summary: str = "") -> s
     """Generate Nastya's commentary on a news item using AI.
     
     Skips political/religious/war news — Nastya is APOLITICAL!
+    Also checks the AI-generated output for political content before returning.
     """
     # Skip political news
     text_lower = (title + " " + summary).lower()
@@ -370,6 +371,15 @@ async def generate_nastya_comment(ai_router, title: str, summary: str = "") -> s
 
         if len(text) > 200:
             text = text[:200]
+
+        # ── Check AI-generated output for political content ──
+        # Even on non-political news, the AI might generate political commentary.
+        # Filter it out — Nastya is APOLITICAL!
+        text_check = text.lower()
+        for kw in POLITICAL_KEYWORDS:
+            if kw.lower() in text_check:
+                logger.info(f"Filtering political AI commentary on: {title[:50]}...")
+                return ""
 
         return text
     except Exception as e:
@@ -411,6 +421,14 @@ async def generate_personality_post(ai_router, news_items: list = None) -> str:
 
         if len(text) > 500:
             text = text[:500]
+
+        # ── Check AI-generated output for political content ──
+        # Nastya is APOLITICAL — never post political content to channel
+        text_check = text.lower()
+        for kw in POLITICAL_KEYWORDS:
+            if kw.lower() in text_check:
+                logger.info("Filtering political content from personality post")
+                return ""
 
         return text
     except Exception as e:

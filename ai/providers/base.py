@@ -92,6 +92,8 @@ class BaseProvider:
         - System prompt first
         - Then conversation history (role/content pairs)
         - Then current user message (dedup check)
+        - Merge consecutive same-role messages (some providers reject them)
+        - Flatten list content to string for non-vision providers
 
         Args:
             prompt: Current user message
@@ -120,4 +122,39 @@ class BaseProvider:
         )
         if not last_is_current:
             result.append({"role": "user", "content": prompt})
+
+        # ── Merge consecutive same-role messages ──
+        # Some providers (e.g., OpenAI-compatible) reject messages with
+        # two "user" or two "assistant" messages in a row.
+        merged: List[Dict[str, Any]] = []
+        for msg in result:
+            if merged and merged[-1].get("role") == msg.get("role"):
+                # Merge content: concatenate with newline
+                prev_content = merged[-1].get("content", "")
+                new_content = msg.get("content", "")
+                # Handle list content (vision) vs string content
+                if isinstance(prev_content, list):
+                    # Convert list to string before merging
+                    text_parts = []
+                    for part in prev_content:
+                        if isinstance(part, dict) and part.get("type") == "text":
+                            text_parts.append(part.get("text", ""))
+                        elif isinstance(part, str):
+                            text_parts.append(part)
+                    prev_content = " ".join(text_parts)
+                if isinstance(new_content, list):
+                    text_parts = []
+                    for part in new_content:
+                        if isinstance(part, dict) and part.get("type") == "text":
+                            text_parts.append(part.get("text", ""))
+                        elif isinstance(part, str):
+                            text_parts.append(part)
+                    new_content = " ".join(text_parts)
+                merged[-1]["content"] = f"{prev_content}\n{new_content}"
+            else:
+                merged.append(msg)
+        # Ensure alternating roles: system → (user|assistant)* with no consecutive same-role
+        # If still have consecutive same-role after merge (shouldn't happen), skip extras
+        result = merged
+
         return result

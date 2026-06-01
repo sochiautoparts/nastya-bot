@@ -15,9 +15,11 @@ v7.0: Real Telegram polls + web search for channel content!
   - send_poll() creates real interactive polls with buttons
   - Web search integration for event reactions
   - More diverse and substantive posts
+  - _validate_post_text() safety net catches SSE/API artifacts before posting
 """
 import logging
 import random
+import re
 import time
 from typing import Dict, List, Optional
 
@@ -57,6 +59,72 @@ def _track_post(text: str) -> None:
     _recent_posts.append(text)
     while len(_recent_posts) > _MAX_RECENT:
         _recent_posts.pop(0)
+
+
+def _validate_post_text(text: str) -> bool:
+    """Final safety net: validate post text before sending to channel.
+
+    Catches SSE artifacts, API error messages, and other garbage patterns
+    that should NEVER appear in a channel post. Returns True if text is
+    safe to post, False if it contains artifacts.
+    """
+    if not text or not text.strip():
+        return False
+
+    text_lower = text.lower()
+
+    # ── SSE/streaming artifacts ──
+    sse_patterns = [
+        r'data:\s*\{',
+        r'data:\s*\[',
+        r'\[DONE\]',
+        r'"type"\s*:\s*"start"',
+        r'"type"\s*:\s*"error"',
+        r'"errortext"',
+        r'"type"\s*:\s*"content"',
+    ]
+    for pattern in sse_patterns:
+        if re.search(pattern, text_lower):
+            logger.warning(f"Channel post blocked: SSE artifact detected ({pattern})")
+            return False
+
+    # ── API error messages ──
+    error_patterns = [
+        "authentication error",
+        "no api key passed in",
+        "invalid prompt:",
+        "model not found",
+        "rate limit exceeded",
+        "internal server error",
+        "bad request",
+        "server error",
+        "modelmessage[] schema",
+        "the messages do not match",
+    ]
+    for pattern in error_patterns:
+        if pattern in text_lower:
+            logger.warning(f"Channel post blocked: API error detected ({pattern})")
+            return False
+
+    # ── Provider ad artifacts ──
+    ad_patterns = [
+        "pollinations.ai",
+        "powered by pollinations",
+        "support pollinations",
+        "🌸 ad 🌸",
+        "keep ai accessible",
+    ]
+    for pattern in ad_patterns:
+        if pattern in text_lower:
+            logger.warning(f"Channel post blocked: Ad artifact detected ({pattern})")
+            return False
+
+    # ── Raw JSON/code artifacts ──
+    if text.strip().startswith(('{', '[', '```', 'data:')):
+        logger.warning("Channel post blocked: Raw JSON/code artifact")
+        return False
+
+    return True
 
 
 # ── Channel Post Templates — lively, engaging, NOT boring ──
@@ -368,6 +436,13 @@ async def post_news_to_channel(bot: Bot, db, news_items: List[Dict]) -> int:
                 logger.debug(f"Skipping duplicate post: {item['title'][:50]}...")
                 continue
 
+            # ── Final safety validation ──
+            # Catch SSE artifacts, API errors, and other garbage before posting
+            if not _validate_post_text(post_text):
+                logger.warning(f"Skipping news post — validation failed: {item['title'][:50]}...")
+                await db.mark_news_posted(item["id"])
+                continue
+
             # Add inline button to discuss with Nastya bot
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(
@@ -415,6 +490,11 @@ async def post_personality_to_channel(bot: Bot, db, post_text: str) -> bool:
     try:
         formatted = format_personality_post(post_text)
 
+        # ── Final safety validation ──
+        if not _validate_post_text(formatted):
+            logger.warning("Skipping personality post — validation failed")
+            return False
+
         # Add discussion button for personality posts too
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
@@ -452,6 +532,11 @@ async def post_knowledge_to_channel(bot: Bot, db, fact: str) -> bool:
     post_text = format_knowledge_post(fact)
 
     if _is_recent_post(post_text):
+        return False
+
+    # ── Final safety validation ──
+    if not _validate_post_text(post_text):
+        logger.warning("Skipping knowledge post — validation failed")
         return False
 
     try:
@@ -666,30 +751,34 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
                 # NOTE: No @chasnastya signature — post is already IN the channel!
 
                 if not _is_recent_post(post_text):
-                    try:
-                        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(
-                                text="💬 Обсудить с Настей",
-                                url=f"https://t.me/{BOT_USERNAME}",
-                            )],
-                        ])
-                        await bot.send_message(
-                            chat_id=CHANNEL_ID,
-                            text=post_text,
-                            reply_markup=keyboard,
-                            parse_mode="HTML",
-                            disable_web_page_preview=True,
-                        )
-                        await db.add_channel_post(
-                            news_id=reaction_news.get("id", 0),
-                            post_text=post_text,
-                            post_type="event_reaction",
-                        )
-                        _track_post(post_text)
-                        posted += 1
-                        logger.info(f"Channel event reaction with link: {title[:50]}...")
-                    except Exception as e:
-                        logger.error(f"Channel event reaction post error: {e}")
+                    # ── Final safety validation ──
+                    if not _validate_post_text(post_text):
+                        logger.warning("Skipping event reaction post — validation failed")
+                    else:
+                        try:
+                            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                                [InlineKeyboardButton(
+                                    text="💬 Обсудить с Настей",
+                                    url=f"https://t.me/{BOT_USERNAME}",
+                                )],
+                            ])
+                            await bot.send_message(
+                                chat_id=CHANNEL_ID,
+                                text=post_text,
+                                reply_markup=keyboard,
+                                parse_mode="HTML",
+                                disable_web_page_preview=True,
+                            )
+                            await db.add_channel_post(
+                                news_id=reaction_news.get("id", 0),
+                                post_text=post_text,
+                                post_type="event_reaction",
+                            )
+                            _track_post(post_text)
+                            posted += 1
+                            logger.info(f"Channel event reaction with link: {title[:50]}...")
+                        except Exception as e:
+                            logger.error(f"Channel event reaction post error: {e}")
             else:
                 # No news with link — use template (still substantive)
                 reaction = random.choice(EVENT_REACTION_POSTS)
@@ -747,18 +836,22 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
     if posted < max_posts and random.random() < 0.03:
         try:
             promo = random.choice(PROMO_POSTS)
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
-                    text="💬 Написать Насте",
-                    url=f"https://t.me/{BOT_USERNAME}",
-                )],
-            ])
-            await bot.send_message(
-                chat_id=CHANNEL_ID,
-                text=promo,
-                reply_markup=keyboard,
-            )
-            posted += 1
+            # ── Final safety validation (even promo posts need it) ──
+            if not _validate_post_text(promo):
+                logger.warning("Skipping promo post — validation failed")
+            else:
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(
+                        text="💬 Написать Насте",
+                        url=f"https://t.me/{BOT_USERNAME}",
+                    )],
+                ])
+                await bot.send_message(
+                    chat_id=CHANNEL_ID,
+                    text=promo,
+                    reply_markup=keyboard,
+                )
+                posted += 1
         except Exception as e:
             logger.error(f"Channel promo post error: {e}")
 

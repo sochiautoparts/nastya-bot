@@ -276,8 +276,19 @@ class AIRouter:
                         messages=messages, image_base64=image_base64, **kwargs,
                     )
                     if result and result.text:
+                        # CRITICAL: Clean response before returning (SSE artifacts, API errors)
+                        cleaned = self.clean_ai_response(result.text)
+                        if not cleaned:
+                            logger.warning(f"Vision provider {vp_name} returned garbage after cleaning")
+                            continue
                         self._mark_success(vp_name)
-                        return result
+                        return AIResponse(
+                            text=cleaned,
+                            provider=result.provider,
+                            model=result.model,
+                            tokens_used=result.tokens_used,
+                            metadata=result.metadata,
+                        )
                 except ProviderError as e:
                     self._mark_failure(vp_name)
                     logger.warning(f"Vision provider {vp_name} failed: {e}")
@@ -290,26 +301,51 @@ class AIRouter:
         # ── PHASE 1: Try configured providers ──
         chain = self._get_ordered_chain()
 
+        # Strip image_base64 from kwargs for non-vision fallback providers.
+        # Non-vision providers receiving image_base64 can create invalid message
+        # formats (list content) that get rejected by the API.
+        safe_kwargs = {k: v for k, v in kwargs.items() if k != "image_base64"}
+
         for provider_name in chain:
             provider = self.providers.get(provider_name)
             if not provider:
                 continue
 
+            # Only pass image_base64 to vision-capable providers
+            provider_kwargs = safe_kwargs
+            if image_base64 and getattr(provider, 'supports_vision', False):
+                provider_kwargs = kwargs  # includes image_base64
+
             try:
                 result = await provider.generate(
                     prompt, system_prompt=system_prompt,
-                    messages=messages, **kwargs,
+                    messages=messages, **provider_kwargs,
                 )
                 if result and result.text:
+                    # CRITICAL: Clean response before returning (SSE artifacts, API errors)
+                    cleaned = self.clean_ai_response(result.text)
+                    if not cleaned:
+                        logger.warning(f"Provider {provider_name} returned garbage after cleaning")
+                        continue  # Treat as failed — don't return garbage
+
                     self._mark_success(provider_name)
+
+                    # Update result with cleaned text
+                    result = AIResponse(
+                        text=cleaned,
+                        provider=result.provider,
+                        model=result.model,
+                        tokens_used=result.tokens_used,
+                        metadata=result.metadata,
+                    )
 
                     # Only cache responses without conversation history
                     if not has_conversation and not image_base64:
-                        self._cache.put(prompt, system_prompt, result.text)
+                        self._cache.put(prompt, system_prompt, cleaned)
                         if self._db:
                             try:
                                 cache_key = hashlib.sha256(f"{system_prompt}:{prompt}".encode()).hexdigest()[:32]
-                                await self._db.cache_put(cache_key, "text", {"text": result.text})
+                                await self._db.cache_put(cache_key, "text", {"text": cleaned})
                             except Exception:
                                 pass
 
@@ -332,14 +368,28 @@ class AIRouter:
             provider = self.providers.get(provider_name)
             if not provider:
                 continue
+            # Only pass image_base64 to vision-capable providers
+            provider_kwargs = safe_kwargs
+            if image_base64 and getattr(provider, 'supports_vision', False):
+                provider_kwargs = kwargs
             try:
                 result = await provider.generate(
                     prompt, system_prompt=system_prompt,
-                    messages=messages, **kwargs,
+                    messages=messages, **provider_kwargs,
                 )
                 if result and result.text:
+                    # CRITICAL: Clean response before returning (SSE artifacts, API errors)
+                    cleaned = self.clean_ai_response(result.text)
+                    if not cleaned:
+                        continue
                     self._mark_success(provider_name)
-                    return result
+                    return AIResponse(
+                        text=cleaned,
+                        provider=result.provider,
+                        model=result.model,
+                        tokens_used=result.tokens_used,
+                        metadata=result.metadata,
+                    )
             except Exception:
                 pass
 
@@ -353,8 +403,18 @@ class AIRouter:
                         messages=None,
                     )
                     if result and result.text:
+                        # CRITICAL: Clean response before returning (SSE artifacts, API errors)
+                        cleaned = self.clean_ai_response(result.text)
+                        if not cleaned:
+                            continue
                         self._mark_success(free_name)
-                        return result
+                        return AIResponse(
+                            text=cleaned,
+                            provider=result.provider,
+                            model=result.model,
+                            tokens_used=result.tokens_used,
+                            metadata=result.metadata,
+                        )
                 except Exception as e:
                     logger.error(f"Even {free_name} failed: {e}")
 
