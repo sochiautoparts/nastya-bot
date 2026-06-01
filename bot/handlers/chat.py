@@ -672,7 +672,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     text_lower = text.lower()
 
     # v27: Per-user dedup — if user is spamming messages, skip old ones
-    # This prevents Ollama queue overflow when user sends 10 messages in 5 seconds
+    # This prevents AI queue overflow when user sends 10 messages in 5 seconds
     user_id = message.from_user.id
     now = time.time()
     if user_id in _user_processing:
@@ -978,7 +978,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     # v32: Memory extraction — УБРАНО из промпта (сканировало только 4 сообщения из-за limit=4)
     # GPT-4o-mini помнит контекст из истории чата и без подсказок
-    # Для Ollama: память хранится в истории сообщений, не в системном промпте
+    # Для AI: память хранится в истории сообщений, не в системном промпте
 
     # v34: Web search — МИНИМАЛЬНО, без инструкций
     # Малые модели путаются от инструкций в промпте

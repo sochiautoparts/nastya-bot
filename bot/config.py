@@ -1,12 +1,13 @@
-"""Nastya Bot 35.0 — Configuration (RSS-FIRST, NO AI for news!)
+"""Nastya Bot 36.0 — Configuration (LLAMA-CPP-PYTHON NATIVE!)
 
-v35.0: RSS-FIRST — новости через RSS-парсер, AI только для чата!
-- Ollama (qwen2.5:1.5b / qwen3:4b-instruct) = PRIMARY для чата
+v36.0: LLAMA-CPP-PYTHON — прямая загрузка GGUF модели!
+- Qwen3-4B-Instruct GGUF (Q4_K_M, ~2.4GB) = PRIMARY для чата
+- llama-cpp-python с AVX2 ускорением — в 2-3x быстрее Ollama!
+- Нет Ollama сервера — модель в процессе, нулевая задержка
 - Новости = RSS + шаблонные комментарии (БЕЗ AI!)
 - RSS-события сохраняются в JSON файл + SQLite
 - Pollinations = FALLBACK для чата (кулдаун 5 мин после 429)
 - РАЗДЕЛЬНЫЕ семафоры — чат не блокирует фон и наоборот
-- Сокращённый системный промпт (~100 токенов)
 - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
 - Глубокая ссылка 'Обсудить с Настей' для канала
 """
@@ -32,9 +33,13 @@ def _env_int(name: str, default: int = 0) -> int:
 # ── Bot Core ────────────────────────────────────────────────
 BOT_TOKEN: str = _env("BOT_TOKEN")
 
-# ── Ollama Local Model ─────────────────────────────────────
-OLLAMA_BASE_URL: str = _env("OLLAMA_BASE_URL", "http://localhost:11434")
-# v28: НЕТ VISION_TIMEOUT — бот чисто текстовый!
+# ── LlamaCpp Model Settings ─────────────────────────────────
+# Путь к GGUF модели — ПРЯМАЯ загрузка в процесс!
+MODEL_PATH: str = _env("MODEL_PATH", "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
+MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 2048)    # Размер контекста (токенов)
+MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 4) # Количество потоков CPU
+MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 80) # Максимум токенов в ответе
+
 OWNER_ID: int = _env_int("OWNER_ID", 0)
 ADMIN_IDS: List[int] = list(set(
     [OWNER_ID] + [int(x) for x in _env("ADMIN_IDS", str(OWNER_ID) if OWNER_ID else "").split(",") if x.strip().isdigit()]
@@ -235,9 +240,9 @@ KNOWLEDGE_TOPICS = {
 }
 
 # ── Nastya System Prompt ───────────────────────────────────
-# v34: Оптимизировано для малых моделей (1.5B-4B)
-# Короткий, конкретный, с примерами — малые модели понимают лучше
-# Ключевое: чем короче промпт — тем быстрее и качественнее ответ
+# v36: Оптимизировано для Qwen3-4B GGUF через llama-cpp-python
+# Короткий, конкретный, с примерами — модель понимает лучше
+# /no_think добавляется автоматически в провайдере
 NASTYA_SYSTEM_PROMPT = """Ты Настя — девушка из Москвы, не бот. Говори 1-2 фразы, живо, как в мессенджере.
 Примеры: "Прикинь!" "Неа." "Офигеть, серьёзно?" "Точняк!" "Блин, не знаю."
 С парнями флирти, с девушками подруга. Без политики и markdown."""
@@ -248,4 +253,6 @@ def validate_config() -> List[str]:
     missing = []
     if not BOT_TOKEN:
         missing.append("BOT_TOKEN")
+    if not MODEL_PATH:
+        missing.append("MODEL_PATH")
     return missing

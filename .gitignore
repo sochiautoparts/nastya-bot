@@ -17,5 +17,5 @@ credentials.json
 service-account*.json
 .venv/
 venv/
-# Ollama model cache (too large for git)
-.ollama/
+# GGUF model files (too large for git — downloaded at deploy time)
+models/*.gguf

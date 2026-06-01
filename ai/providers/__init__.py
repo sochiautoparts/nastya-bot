@@ -1,29 +1,21 @@
-"""AI Providers v23.0 — Production Cluster Edition.
+"""AI Providers v36.0 — llama-cpp-python Native!
 
-ТОЛЬКО ЛОКАЛЬНЫЙ OLLAMA КЛАСТЕР!
-Все внешние API-провайдеры УДАЛЕНЫ:
-  - GitHub Models (401 auth error)
-  - Pollinations (unstable, 429 rate limits)
-  - Chutes (429 rate limits)
-  - Blackbox (garbage responses)
-  - HuggingFace (DNS errors)
-  - OpenRouter (rate limits + 404s)
-  - Cloudflare (400 model missing)
-  - Groq (401 auth)
-  - Cerebras (401 auth)
-  - Sambanova (429 rate limits)
-  - Mistral (rate limits)
-  - Gemini (rate limits)
+v36: ПЕРЕХОД НА LLAMA-CPP-PYTHON!
+Убран Ollama сервер — модель загружается ПРЯМО в процесс.
 
-ЕДИНСТВЕННЫЙ провайдер: OllamaClusterProvider
-- Локальный inference — БЕЗ внешних API
-- Бесплатный, безлимитный, без авторизации
-- Vision + Text
-- Кэширование + семафоры
+PRIMARY: LlamaCppProvider
+  - Qwen3-4B-Instruct GGUF (Q4_K_M, ~2.4GB)
+  - AVX2/AVX512 ускорение — в 2-3x быстрее Ollama
+  - Нет HTTP-сервера — нулевая задержка
+  - Полный контроль над параметрами
+
+FALLBACK: PollinationsProvider
+  - Бесплатный, без API ключа
+  - Если локальная модель недоступна
 """
 from ai.providers.base import BaseProvider, AIResponse, ProviderError
-from ai.providers.ollama_cluster_provider import OllamaClusterProvider
+from ai.providers.llama_cpp_provider import LlamaCppProvider
 
 ALL_PROVIDERS = {
-    "ollama_cluster": OllamaClusterProvider,
+    "llama_cpp": LlamaCppProvider,
 }

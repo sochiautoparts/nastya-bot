@@ -4,7 +4,7 @@ v8.0 KEY CHANGES:
   - RSS + template-based commentary — NO AI for news posts!
   - Personality posts — template only, NO AI generation
   - AI is ONLY used for user chat, not for channel posts
-  - This frees Ollama from background load, improves chat quality
+  - This frees model from background load, improves chat quality
 """
 import logging
 import random
@@ -709,7 +709,7 @@ async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
     if posted < max_posts and (roll >= 0.45 or posted == 0):
         try:
             # v35: Только шаблоны — AI НЕ используется для постов
-            # Это быстрее (мгновенно), надёжнее (нет мусора), не грузит Ollama
+            # Это быстрее (мгновенно), надёжнее (нет мусора), не грузит модель
             time_posts = _get_time_posts()
             post_text = random.choice(time_posts)
 

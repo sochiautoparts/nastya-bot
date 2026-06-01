@@ -1,23 +1,16 @@
-name: Nastya Bot — PURE TEXT BOT v30
+name: Nastya Bot — LLAMA-CPP-PYTHON v36
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v30.0 — PURE TEXT BOT
+# Nastya Bot v36.0 — LLAMA-CPP-PYTHON NATIVE!
 #
 # Architecture:
-#   - LOCAL OLLAMA as PRIMARY AI provider
-#   - POLLINATIONS as FALLBACK (text only)
-#   - Models: Qwen3-4B-instruct (PRIMARY, no thinking) + Vikhr-Llama-1B (RESERVE)
-#   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
-#   - Глубокая ссылка 'Обсудить с Настей' из канала
-#   - Живое и естественное общение
-#   - Bot runs continuously with UNLIMITED auto-restart
-#   - Every 5 hours cron kicks off a fresh runner
+#   - llama-cpp-python as PRIMARY AI provider (GGUF model in-process!)
+#   - NO OLLAMA SERVER — model loaded directly into Python process
+#   - AVX2/AVX512 acceleration — 2-3x faster than Ollama on CPU
+#   - Qwen3-4B-Instruct Q4_K_M (~2.4GB) — best quality/speed balance
+#   - Pollinations as FALLBACK (if model unavailable)
+#   - RSS + template commentary for news (NO AI for news!)
 #   - Single concurrency group — ONE bot instance only!
-#
-# v30.0 CHANGES vs v29.0:
-#   - FIX: Vikhr model tag — :1b обязателен! (было pull error)
-#   - FIX: io import для voice handler
-#   - Обновлён кэш-ключ для новых моделей
 #
 # Schedule (UTC, Moscow = UTC+3):
 #   Every 5 hours: 00:00, 05:00, 10:00, 15:00, 20:00
@@ -43,7 +36,6 @@ permissions:
 
 env:
   PYTHONUNBUFFERED: "1"
-  OLLAMA_BASE_URL: "http://localhost:11434"
 
 jobs:
   run-bot:
@@ -99,61 +91,58 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ── Ollama for LOCAL model inference ──
-      - name: Install Ollama
+      # ── Install llama-cpp-python with AVX2 acceleration ──
+      - name: Install llama-cpp-python with AVX2
         run: |
-          curl -fsSL https://ollama.com/install.sh | sh
+          echo "=== Installing llama-cpp-python with AVX2 support ==="
+          CMAKE_ARGS="-DGGML_AVX2=on" pip install llama-cpp-python --force-reinstall --no-cache-dir 2>&1 || {
+            echo "WARNING: AVX2 build failed, trying without..."
+            pip install llama-cpp-python --force-reinstall --no-cache-dir
+          }
+          python3 -c "from llama_cpp import Llama; print('llama-cpp-python OK!')"
 
-      - name: Start Ollama server
-        run: |
-          # Start with keep_alive=-1 to keep model in memory permanently
-          OLLAMA_KEEP_ALIVE=-1 ollama serve &
-          for i in $(seq 1 30); do
-            if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
-              echo "Ollama server is ready!"
-              break
-            fi
-            echo "Waiting for Ollama... ($i/30)"
-            sleep 2
-          done
-
-      - name: Cache Ollama Models
-        id: cache-models
+      # ── Download GGUF model ──
+      - name: Cache GGUF model
+        id: cache-model
         uses: actions/cache@v4
         with:
-          path: /home/runner/.ollama
-          key: ollama-qwen3-instruct-vikhr-1b-v2
-          restore-keys: |
-            ollama-qwen3-instruct-vikhr-
+          path: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+          key: qwen3-4b-instruct-q4km-v1
 
-      - name: Pull models
-        if: steps.cache-models.outputs.cache-hit != 'true'
+      - name: Download Qwen3-4B-Instruct GGUF model
+        if: steps.cache-model.outputs.cache-hit != 'true'
         run: |
-          echo "=== Pulling Qwen3-4B-instruct (PRIMARY text model — NO thinking, fast responses) ==="
-          ollama pull qwen3:4b-instruct
-          echo "=== Pulling Vikhr-Llama-1B (RESERVE text model — Russian optimized, fast) ==="
-          ollama pull lakomoor/vikhr-llama-3.2-1b-instruct:1b
+          echo "=== Downloading Qwen3-4B-Instruct Q4_K_M model (~2.4GB) ==="
+          mkdir -p models
+          python3 -c "
+          from huggingface_hub import hf_hub_download
+          path = hf_hub_download(
+              repo_id='unsloth/Qwen3-4B-Instruct-2507-GGUF',
+              filename='Qwen3-4B-Instruct-2507-Q4_K_M.gguf',
+              local_dir='models',
+          )
+          print('Downloaded to:', path)
+          "
 
-      - name: Verify Ollama and models
+      - name: Verify model
         run: |
-          echo "=== Installed models ==="
-          ollama list
-          echo ""
-          echo "=== Quick test: Qwen3-4B-instruct (PRIMARY text model, NO thinking) ==="
-          curl -s http://localhost:11434/api/chat -d '{
-            "model": "qwen3:4b-instruct",
-            "messages": [{"role": "user", "content": "Привет! Скажи что-нибудь."}],
-            "stream": false,
-            "options": {"num_predict": 20}
-          }' | python3 -m json.tool || true
-          echo ""
-          echo "=== Quick test: Vikhr-Llama-1B (RESERVE text model) ==="
-          curl -s http://localhost:11434/api/chat -d '{
-            "model": "lakomoor/vikhr-llama-3.2-1b-instruct:1b",
-            "messages": [{"role": "user", "content": "Привет! Скажи что-нибудь."}],
-            "stream": false,
-            "options": {"num_predict": 20}
-          }' | python3 -m json.tool || true
+          MODEL_FILE="models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+          if [ ! -f "$MODEL_FILE" ] || [ ! -s "$MODEL_FILE" ]; then
+            echo "ERROR: Model file missing or empty!"
+            exit 1
+          fi
+          MODEL_SIZE=$(du -h "$MODEL_FILE" | cut -f1)
+          echo "Model: Qwen3-4B-Instruct Q4_K_M (${MODEL_SIZE})"
+          # Quick test
+          python3 -c "
+          from llama_cpp import Llama
+          llm = Llama(model_path='$MODEL_FILE', n_ctx=512, n_threads=2, verbose=False)
+          resp = llm.create_chat_completion(
+              messages=[{'role': 'user', 'content': '/no_think\nПривет'}],
+              max_tokens=10,
+          )
+          print('Model test OK:', resp['choices'][0]['message']['content'][:50])
+          "
 
       - name: Create data directory
         run: mkdir -p data
@@ -162,7 +151,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v30
+          key: nastya-db-v36
           restore-keys: |
             nastya-db-
 
@@ -173,7 +162,10 @@ jobs:
           OWNER_ID: ${{ secrets.OWNER_ID }}
           ADMIN_IDS: ${{ secrets.OWNER_ID }}
           BOT_USERNAME: asnastya_bot
-          OLLAMA_BASE_URL: http://localhost:11434
+          MODEL_PATH: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+          MODEL_N_CTX: 2048
+          MODEL_N_THREADS: 4
+          MODEL_MAX_TOKENS: 80
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           CHANNEL_USERNAME: ${{ secrets.CHANNEL_USERNAME }}
@@ -181,11 +173,10 @@ jobs:
           LOG_LEVEL: INFO
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
-          OLLAMA_KEEP_ALIVE: -1
         run: |
-          echo "=== Starting Nastya Bot 30.0 (PURE TEXT BOT — v30) ==="
-          echo "Ollama status:"
-          curl -s http://localhost:11434/api/tags | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  Model: {m[\"name\"]}') for m in d.get('models',[])]" 2>/dev/null || echo "  Ollama not responding"
+          echo "=== Starting Nastya Bot 36.0 (LLAMA-CPP-PYTHON — v36) ==="
+          echo "Model: Qwen3-4B-Instruct Q4_K_M"
+          ls -lh models/*.gguf 2>/dev/null || echo "WARNING: No GGUF models found!"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -193,21 +184,6 @@ jobs:
           while true; do
             RETRY=$((RETRY+1))
             echo "--- Attempt $RETRY ---"
-
-            # Check Ollama before starting bot
-            if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
-              echo "WARNING: Ollama not responding! Trying to restart..."
-              pkill ollama 2>/dev/null || true
-              sleep 3
-              OLLAMA_KEEP_ALIVE=-1 ollama serve &
-              sleep 15
-              if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
-                echo "CRITICAL: Ollama still not responding after restart!"
-                sleep 30
-                continue
-              fi
-              echo "Ollama restarted successfully!"
-            fi
 
             python3 -m bot.main
             EXIT_CODE=$?
@@ -218,11 +194,8 @@ jobs:
               echo "Persistent conflicts — restarting in 10s..."
               sleep 10
             elif [ $EXIT_CODE -eq 3 ]; then
-              echo "Health check failure — restarting Ollama + bot in 20s..."
-              pkill ollama 2>/dev/null || true
-              sleep 5
-              OLLAMA_KEEP_ALIVE=-1 ollama serve &
-              sleep 15
+              echo "Health check failure — restarting in 20s..."
+              sleep 20
             elif [ $EXIT_CODE -eq 0 ]; then
               echo "Session timeout — restarting in 5s..."
               sleep 5
@@ -244,7 +217,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v30-${{ github.run_id }}
+          key: nastya-db-v36-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation
@@ -274,4 +247,3 @@ jobs:
         if: always()
         run: |
           echo "=== Bot session ended ==="
-          pkill ollama || true

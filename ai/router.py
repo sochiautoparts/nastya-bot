@@ -1,23 +1,25 @@
-"""AI Router v35.0 — RSS-FIRST, NO AI for news!
+"""AI Router v36.0 — LLAMA-CPP-PYTHON NATIVE!
 
-АРХИТЕКТУРА v35: RSS для новостей, AI ТОЛЬКО для чата!
+АРХИТЕКТУРА v36: Полный переход на llama-cpp-python!
 
-  ЧАТ (пользовательские сообщения — приоритет СКОРОСТЬ):
-    1. OllamaClusterProvider (автоопределяет лучшую модель)
-    2. PollinationsProvider (fallback — если Ollama недоступен)
+  ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
+    1. LlamaCppProvider (Qwen3-4B-Instruct GGUF — ПРЯМАЯ загрузка в память!)
+    2. PollinationsProvider (fallback — если локальная модель упала)
     3. Static fallback — бот ВСЕГДА отвечает
 
   ФОН (новости, канал — БЕЗ AI!):
-    - Новости: RSS-парсер + шаблонные комментарии
-    - Канал: шаблонные посты, опросы, факты
+    - Новости: RSS-парсер + шаблонные комментарии (news.py)
+    - Канал: шаблонные посты, опросы, факты (channel.py)
     - AI НЕ вызывается для фоновых задач!
 
-  Ключевые изменения v35:
-    - Новости через RSS + JSON кэш + шаблоны (news.py)
-    - AI используется ТОЛЬКО для пользовательского чата
-    - Ollama полностью свободен от фоновой нагрузки
-    - Кулдаун Pollinations после 429 (5 минут)
+  Ключевые преимущества llama-cpp-python:
+    - Нет Ollama HTTP-сервера — модель в процессе, нулевая задержка
+    - AVX2/AVX512 векторизация — в 2-3x быстрее на CPU
+    - Меньше памяти — нет overhead на Ollama
+    - Полный контроль над параметрами — точная настройка
+    - Проще деплой — pip install вместо отдельного сервера
 """
+
 import logging
 import asyncio
 import random
@@ -26,14 +28,14 @@ import re
 from typing import Any, Dict, List, Optional
 
 from ai.providers.base import AIResponse, ProviderError
-from ai.providers.ollama_cluster_provider import OllamaClusterProvider
+from ai.providers.llama_cpp_provider import LlamaCppProvider
 from ai.providers.pollinations_provider import PollinationsProvider
 from ai.voice import transcribe_voice_ogg
-from bot.config import OLLAMA_BASE_URL
+from bot.config import MODEL_PATH, MODEL_N_CTX, MODEL_N_THREADS, MODEL_MAX_TOKENS
 
 logger = logging.getLogger(__name__)
 
-# Fallback — если даже Pollinations + Ollama упали
+# Fallback — если даже все провайдеры упали
 FALLBACK_RESPONSES = [
     "Ммм... Настя задумалась. Повтори? 🤔",
     "Ой, Настя отвлеклась... Что ты сказал? 😅",
@@ -44,34 +46,51 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """Центральный AI-маршрутизатор — v35.0 RSS-FIRST.
+    """Центральный AI-маршрутизатор — v36.0 LLAMA-CPP-PYTHON.
 
-    Чат: Ollama → Pollinations (если не на кулдауне) → static fallback.
+    Чат: LlamaCppProvider → Pollinations → static fallback.
     Фон: НЕ использует AI — RSS + шаблоны!
 
-    Кулдаун Pollinations: после 429 не пробуем 5 минут.
+    Pollinations кулдаун: после 429 не пробуем 5 минут.
     """
 
     def __init__(self, db=None):
-        self.provider: Optional[OllamaClusterProvider] = None
+        self.provider: Optional[LlamaCppProvider] = None
         self._pollinations: Optional[PollinationsProvider] = None
         self._db = db
         self._total_requests: int = 0
         self._total_fallbacks: int = 0
         self._pollinations_requests: int = 0
-        self._ollama_requests: int = 0
+        self._llama_requests: int = 0
+        # Pollinations 429 cooldown
+        self._pollinations_429_until: float = 0
+        self._POLLINATIONS_429_COOLDOWN: float = 300.0
 
     async def init(self) -> None:
         """Инициализация провайдеров."""
-        # Ollama — PRIMARY для ВСЕГО (автоопределяет лучшую модель!)
-        self.provider = OllamaClusterProvider(
-            timeout=120.0,
-            base_url=OLLAMA_BASE_URL,
-            pollinations_fallback=None,
+        # LlamaCppProvider — PRIMARY для чата
+        self.provider = LlamaCppProvider(
+            model_path=MODEL_PATH,
+            timeout=60.0,
+            model_config={
+                "n_ctx": MODEL_N_CTX,
+                "n_threads": MODEL_N_THREADS,
+                "n_gpu_layers": 0,
+                "verbose": False,
+                "use_mmap": True,
+                "use_mlock": False,
+            },
+            gen_config={
+                "max_tokens": MODEL_MAX_TOKENS,
+                "temperature": 0.85,
+                "top_p": 0.9,
+                "top_k": 40,
+                "repeat_penalty": 1.15,
+            },
         )
         await self.provider.init()
 
-        # Pollinations — FALLBACK (не primary!)
+        # Pollinations — FALLBACK
         try:
             self._pollinations = PollinationsProvider(timeout=25.0)
             await self._pollinations.init()
@@ -82,12 +101,10 @@ class AIRouter:
 
         # Логируем статус
         pollinations_status = "active" if self._pollinations else "unavailable"
-        primary_model = self.provider.get_stats().get("primary_model", "none")
-        reserve_model = self.provider.get_stats().get("reserve_model", "none")
+        model_name = MODEL_PATH.split("/")[-1] if MODEL_PATH else "none"
         logger.info(
-            f"AI Router v35.0 (RSS-FIRST) initialized: "
-            f"chat_primary=ollama({primary_model}), "
-            f"reserve=ollama({reserve_model}), "
+            f"AI Router v36.0 (LLAMA-CPP-PYTHON) initialized: "
+            f"chat_primary=llama_cpp({model_name}), "
             f"pollinations={pollinations_status} (fallback only), "
             f"news=RSS+templates (no AI)"
         )
@@ -107,7 +124,7 @@ class AIRouter:
 
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
-        """Маршрутизация чата — Ollama → Pollinations → static fallback."""
+        """Маршрутизация чата — LlamaCpp → Pollinations → static fallback."""
         self._total_requests += 1
         priority = kwargs.get("priority", "high")
 
@@ -118,21 +135,20 @@ class AIRouter:
 
     async def _route_chat(self, prompt: str, system_prompt: str,
                           messages: Optional[List[Dict]], **kwargs) -> AIResponse:
-        """Маршрут для чата: Ollama → Pollinations → static fallback."""
-        # ── 1. Ollama (PRIMARY для чата) ──
-        if self.provider:
+        """Маршрут для чата: LlamaCpp → Pollinations → static fallback."""
+        # ── 1. LlamaCppProvider (PRIMARY) ──
+        if self.provider and self.provider.is_available():
             try:
-                gen_kwargs = {"priority": "high"}
                 result = await self.provider.generate(
                     prompt,
                     system_prompt=system_prompt,
                     messages=messages,
-                    **gen_kwargs,
+                    **kwargs,
                 )
                 if result and result.text:
                     cleaned = self.clean_ai_response(result.text)
                     if cleaned:
-                        self._ollama_requests += 1
+                        self._llama_requests += 1
                         return AIResponse(
                             text=cleaned,
                             provider=result.provider,
@@ -141,12 +157,12 @@ class AIRouter:
                             metadata=result.metadata,
                         )
             except ProviderError as e:
-                logger.warning(f"Ollama chat error: {e}")
+                logger.warning(f"LlamaCpp chat error: {e}")
             except Exception as e:
-                logger.error(f"Unexpected Ollama chat error: {e}")
+                logger.error(f"Unexpected LlamaCpp chat error: {e}")
 
-        # ── 2. Pollinations (FALLBACK для чата) — с кулдауном ──
-        if self._pollinations and not self.provider.is_pollinations_on_cooldown():
+        # ── 2. Pollinations (FALLBACK) — с кулдауном ──
+        if self._pollinations and not self.is_pollinations_on_cooldown():
             try:
                 result = await self._pollinations.generate(
                     prompt,
@@ -168,9 +184,8 @@ class AIRouter:
             except ProviderError as e:
                 err_str = str(e)
                 if "429" in err_str:
-                    cooldown_until = time.time() + 300
-                    self.provider.set_pollinations_429_cooldown(cooldown_until)
-                    logger.warning(f"Pollinations rate-limited (429)! Cooldown until {cooldown_until:.0f}")
+                    self._pollinations_429_until = time.time() + self._POLLINATIONS_429_COOLDOWN
+                    logger.warning(f"Pollinations rate-limited (429)! Cooldown for {self._POLLINATIONS_429_COOLDOWN}s")
                 else:
                     logger.warning(f"Pollinations chat error: {e}")
             except Exception as e:
@@ -188,21 +203,20 @@ class AIRouter:
 
     async def _route_background(self, prompt: str, system_prompt: str,
                                 messages: Optional[List[Dict]], **kwargs) -> AIResponse:
-        """Маршрут для фона: Ollama → Pollinations → skip."""
-        # ── 1. Ollama (PRIMARY для фона) ──
-        if self.provider:
+        """Маршрут для фона: LlamaCpp → Pollinations → skip."""
+        # ── 1. LlamaCppProvider (PRIMARY) ──
+        if self.provider and self.provider.is_available():
             try:
-                gen_kwargs = {"priority": "low"}
                 result = await self.provider.generate(
                     prompt,
                     system_prompt=system_prompt,
                     messages=messages,
-                    **gen_kwargs,
+                    **kwargs,
                 )
                 if result and result.text:
                     cleaned = self.clean_ai_response(result.text)
                     if cleaned:
-                        self._ollama_requests += 1
+                        self._llama_requests += 1
                         return AIResponse(
                             text=cleaned,
                             provider=result.provider,
@@ -211,12 +225,12 @@ class AIRouter:
                             metadata=result.metadata,
                         )
             except ProviderError as e:
-                logger.warning(f"Ollama background error: {e}")
+                logger.warning(f"LlamaCpp background error: {e}")
             except Exception as e:
-                logger.error(f"Unexpected Ollama background error: {e}")
+                logger.error(f"Unexpected LlamaCpp background error: {e}")
 
-        # ── 2. Pollinations (FALLBACK для фона) ──
-        if self._pollinations:
+        # ── 2. Pollinations (FALLBACK) ──
+        if self._pollinations and not self.is_pollinations_on_cooldown():
             try:
                 result = await self._pollinations.generate(
                     prompt,
@@ -251,6 +265,10 @@ class AIRouter:
             metadata={"skipped": True},
         )
 
+    def is_pollinations_on_cooldown(self) -> bool:
+        """Проверить, на кулдауне ли Pollinations."""
+        return time.time() < self._pollinations_429_until
+
     async def transcribe_voice(self, ogg_bytes: bytes) -> Optional[str]:
         """Транскрипция голосового сообщения."""
         return await transcribe_voice_ogg(ogg_bytes)
@@ -276,6 +294,9 @@ class AIRouter:
         text = re.sub(r'<thinking\b[^>]*>.*?</thinking\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'</?think[^>]*>', '', text, flags=re.IGNORECASE)
         text = re.sub(r'</?thinking[^>]*>', '', text, flags=re.IGNORECASE)
+
+        # Strip /no_think prefix (наша команда)
+        text = re.sub(r'^/no_think\s*', '', text)
 
         # Strip AI disclaimers
         text = re.sub(r'(?:As an AI|Как AI|Как искусственный интеллект)[^.]*\.', '', text, flags=re.IGNORECASE)
@@ -312,18 +333,18 @@ class AIRouter:
         status = {}
         if self.provider:
             stats = self.provider.get_stats()
-            status["ollama_cluster"] = {
-                "available": True,
-                "healthy": self.provider.is_available(),
+            status["llama_cpp"] = {
+                "available": self.provider.is_available(),
                 **stats,
             }
         status["pollinations"] = {
             "available": self._pollinations is not None,
+            "on_cooldown": self.is_pollinations_on_cooldown(),
         }
         status["_stats"] = {
             "total_requests": self._total_requests,
             "total_fallbacks": self._total_fallbacks,
             "pollinations_requests": self._pollinations_requests,
-            "ollama_requests": self._ollama_requests,
+            "llama_requests": self._llama_requests,
         }
         return status

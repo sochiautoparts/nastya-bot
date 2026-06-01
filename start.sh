@@ -1,91 +1,76 @@
 #!/bin/bash
-# Nastya Bot v35 — RSS-FIRST, NO AI for news!
-# Новости через RSS + шаблоны. AI только для чата.
-# Модели автоматически определяются из установленных!
-# Приоритет: qwen2.5:1.5b > qwen3:4b-instruct
-# vikhr-1B УБРАН — генерирует бред на русском
+# Nastya Bot v36 — LLAMA-CPP-PYTHON NATIVE!
+# GGUF модель загружается ПРЯМО в процесс — нет Ollama сервера!
+# Qwen3-4B-Instruct Q4_K_M — лучший баланс качества/скорости
+# AVX2 ускорение — в 2-3x быстрее Ollama на CPU
 
 set -e
 
-echo "=== Nastya Bot v35 (RSS-FIRST) ==="
+echo "=== Nastya Bot v36 (LLAMA-CPP-PYTHON) ==="
 
-# Install Ollama if not found
-if ! command -v ollama &> /dev/null; then
-    echo "Installing Ollama..."
-    curl -fsSL https://ollama.com/install.sh | sh
+# ── Install llama-cpp-python with AVX2 acceleration ──
+if ! python3 -c "import llama_cpp" 2>/dev/null; then
+    echo "Installing llama-cpp-python with AVX2 support..."
+    CMAKE_ARGS="-DGGML_AVX2=on" pip install llama-cpp-python 2>&1 || {
+        echo "WARNING: AVX2 build failed, trying without..."
+        pip install llama-cpp-python 2>&1 || {
+            echo "ERROR: Failed to install llama-cpp-python!"
+            exit 1
+        }
+    }
 fi
 
-# Start Ollama server if not running
-if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
-    echo "Starting Ollama server..."
-    OLLAMA_KEEP_ALIVE=-1 ollama serve &
-    sleep 5
-fi
+echo "llama-cpp-python: $(python3 -c 'import llama_cpp; print(llama_cpp.__version__)' 2>/dev/null || echo 'not installed')"
 
-# Remove old vikhr-1B model (generates garbage in Russian)
-echo "Removing old vikhr-1B model (generates garbage)..."
-ollama rm lakomoor/vikhr-llama-3.2-1b-instruct:1b 2>/dev/null || true
+# ── Download GGUF model if not present ──
+MODEL_DIR="models"
+MODEL_FILE="Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+MODEL_PATH="${MODEL_DIR}/${MODEL_FILE}"
 
-# ── Pull required models with RETRIES ──
-# v35: Улучшенная установка — больше попыток, лучше логирование
+if [ ! -f "$MODEL_PATH" ] || [ ! -s "$MODEL_PATH" ]; then
+    echo "Downloading Qwen3-4B-Instruct Q4_K_M model (~2.4GB)..."
+    mkdir -p "$MODEL_DIR"
 
-pull_model() {
-    local model="$1"
-    local max_retries=5
-    local retry=0
+    # Try huggingface_hub first (most reliable)
+    python3 -c "
+from huggingface_hub import hf_hub_download
+path = hf_hub_download(
+    repo_id='unsloth/Qwen3-4B-Instruct-2507-GGUF',
+    filename='${MODEL_FILE}',
+    local_dir='${MODEL_DIR}',
+)
+print('Downloaded to:', path)
+" 2>&1 || {
+        echo "WARNING: huggingface_hub download failed, trying wget..."
+        # Fallback: direct download
+        wget -q --show-progress \
+            "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/${MODEL_FILE}" \
+            -O "$MODEL_PATH" 2>&1 || {
+            echo "ERROR: Failed to download model!"
+            exit 1
+        }
+    }
 
-    # Check if already installed
-    if ollama list 2>/dev/null | grep -q "$model"; then
-        echo "OK: $model already installed"
-        return 0
+    # Verify model file
+    if [ ! -s "$MODEL_PATH" ]; then
+        echo "ERROR: Model file is empty!"
+        rm -f "$MODEL_PATH"
+        exit 1
     fi
+fi
 
-    while [ $retry -lt $max_retries ]; do
-        echo "Pulling $model (attempt $((retry+1))/$max_retries)..."
-        if ollama pull "$model" 2>&1; then
-            # Verify it's actually installed
-            if ollama list 2>/dev/null | grep -q "$model"; then
-                echo "SUCCESS: $model pulled and verified"
-                return 0
-            else
-                echo "WARNING: $model pull seemed OK but not in list. Retrying..."
-            fi
-        fi
-        retry=$((retry+1))
-        if [ $retry -lt $max_retries ]; then
-            local wait_time=$((10 + retry * 5))
-            echo "RETRY: waiting ${wait_time}s before next attempt..."
-            sleep $wait_time
-        fi
-    done
+MODEL_SIZE=$(du -h "$MODEL_PATH" | cut -f1)
+echo "Model: ${MODEL_FILE} (${MODEL_SIZE})"
 
-    echo "WARNING: Failed to pull $model after $max_retries attempts"
-    return 1
+# ── Install Python dependencies ──
+echo "Installing Python dependencies..."
+pip install -r requirements.txt 2>&1 || {
+    echo "WARNING: Some dependencies may have issues, continuing..."
 }
 
-# Primary model — qwen2.5:1.5b (0.9GB, fast, good Russian)
-# Это ЛУЧШАЯ модель для чата на CPU — быстрая и хороший русский
-pull_model "qwen2.5:1.5b" || echo "WARNING: qwen2.5:1.5b not available, will use qwen3:4b-instruct"
-
-# Reserve model — qwen3:4b-instruct (2.5GB, smarter, slower)
-# Используется если qwen2.5:1.5b не установлена
-pull_model "qwen3:4b-instruct" || echo "WARNING: qwen3:4b-instruct not available!"
-
-# Verify at least one model is available
-echo ""
-echo "=== Installed models ==="
-ollama list
-echo ""
-
-MODEL_COUNT=$(ollama list 2>/dev/null | grep -c "^" || echo "0")
-if [ "$MODEL_COUNT" -le 1 ]; then
-    echo "ERROR: No models installed! Bot will not work properly."
-    echo "Trying to pull qwen2.5:1.5b one more time..."
-    ollama pull qwen2.5:1.5b || true
-fi
-
-# Create data directory for JSON cache
+# ── Create data directory ──
 mkdir -p data
 
+# ── Start bot ──
 echo "=== Starting bot ==="
 python3 -m bot.main

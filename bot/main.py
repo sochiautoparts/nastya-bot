@@ -1,15 +1,14 @@
-"""Nastya Bot 35.0 — RSS-FIRST, NO AI for news. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 36.0 — LLAMA-CPP-PYTHON NATIVE! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v35.0 (RSS-FIRST):
+Architecture v36.0 (LLAMA-CPP-PYTHON):
   - Новости: RSS-парсер + шаблонные комментарии (БЕЗ AI!)
-  - Чат: Ollama (qwen2.5:1.5b / qwen3:4b-instruct) + Pollinations fallback
+  - Чат: llama-cpp-python (Qwen3-4B-Instruct GGUF) + Pollinations fallback
   - Канал: шаблонные посты, опросы, факты (БЕЗ AI!)
-  - RSS-события сохраняются в JSON файл + SQLite
-  - Индивидуальные параметры для каждой модели (top_p, repeat_penalty)
-  - THINKING OFF для всех моделей — экономия токенов
-  - vikhr-1B УБРАН — генерирует бред на русском
+  - GGUF модель загружается ПРЯМО в процесс — нет Ollama сервера!
+  - AVX2/AVX512 ускорение — в 2-3x быстрее на CPU
+  - /no_think для Qwen3 — короткие ответы без thinking
   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
-  - HEALTH WATCHDOG: monitors Telegram API + Ollama
+  - HEALTH WATCHDOG: monitors Telegram API + model health
 """
 import asyncio
 import fcntl
@@ -46,6 +45,7 @@ logger = logging.getLogger("nastya-bot")
 from bot.config import (
     BOT_TOKEN, ADMIN_IDS, DB_PATH, SESSION_DURATION_SECONDS, OWNER_ID,
     NEWS_FETCH_INTERVAL, CHANNEL_POST_INTERVAL, CHANNEL_ID, CHANNEL_USERNAME,
+    MODEL_PATH,
 )
 
 if not BOT_TOKEN:
@@ -67,9 +67,9 @@ _should_exit = False  # Flag for conflict_monitor to signal main loop
 
 # ── Health watchdog state ──
 _last_successful_update: float = 0  # Timestamp of last successful Telegram update
-_HEALTH_CHECK_INTERVAL = 300  # v24.0: Check health every 300s (was 120s — too frequent, wastes Ollama)
+_HEALTH_CHECK_INTERVAL = 300  # Check health every 300s
 _MAX_UNRESPONSIVE_SECONDS = 120  # Restart if no response for 2 minutes
-_ollama_restart_count: int = 0  # Track Ollama restarts
+_model_reload_count: int = 0  # Track model reload attempts
 
 
 def record_conflict() -> bool:
@@ -253,12 +253,12 @@ async def news_scheduler(bot_instance: Bot) -> None:
     """Background task: periodically fetch news and generate Nastya's commentary.
 
     v31: Увеличены задержки между AI-запросами чтобы не блокировать чат.
-    Фоновые задачи должны ждать дольше между запросами к Ollama.
+    Фоновые задачи не используют AI — RSS + шаблоны.
     """
     from news import run_news_cycle
 
     # Wait for startup
-    await asyncio.sleep(60)  # v31: 60с вместо 30 — даём время Ollama прогреться
+    await asyncio.sleep(60)  # Даём время модели прогреться
 
     while True:
         try:
@@ -277,7 +277,7 @@ async def news_scheduler(bot_instance: Bot) -> None:
 async def channel_scheduler(bot_instance: Bot) -> None:
     """Background task: periodically post to Telegram channel @chasnastya.
 
-    v31: Увеличена задержка старта чтобы не мешать прогреву Ollama.
+    v36: Увеличена задержка старта чтобы модель успела загрузиться.
     """
     from channel import run_channel_cycle
 
@@ -393,11 +393,9 @@ async def conflict_monitor() -> None:
 async def health_watchdog() -> None:
     """Background task: monitor bot health.
 
-    v32: Ollama is no longer critical — Pollinations handles chat.
-    Ollama failures no longer cause os._exit(3).
+    v36: No more Ollama — model is loaded in-process via llama-cpp-python.
+    Only checks Telegram API health now.
     """
-    global _ollama_restart_count
-
     await asyncio.sleep(30)  # Give startup time to settle
     logger.info("Health watchdog started")
 
@@ -405,29 +403,20 @@ async def health_watchdog() -> None:
         try:
             await asyncio.sleep(_HEALTH_CHECK_INTERVAL)
 
-            # ── Check 1: Ollama health (non-critical — Pollinations handles chat) ──
+            # ── Check 1: Model health (non-critical — Pollinations handles chat) ──
             if ai_router and ai_router.provider:
-                ollama_ok = await ai_router.provider.health_check()
-                if not ollama_ok:
-                    logger.warning("Ollama health check FAILED! Chat uses Pollinations. Background may be slower.")
+                model_ok = ai_router.provider.is_available()
+                if not model_ok:
+                    logger.warning("Model not available! Chat uses Pollinations fallback.")
+                    # Попробовать перезагрузить модель
                     try:
-                        import subprocess
-                        subprocess.Popen(["pkill", "ollama"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        await asyncio.sleep(3)
-                        subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        await asyncio.sleep(15)
-                        ollama_ok = await ai_router.provider.health_check()
-                        if ollama_ok:
-                            _ollama_restart_count += 1
-                            logger.info(f"Ollama restarted (attempt #{_ollama_restart_count})")
-                            try:
-                                await ai_router.provider.init()
-                            except Exception:
-                                pass
+                        await ai_router.provider.init()
+                        if ai_router.provider.is_available():
+                            logger.info("Model reloaded successfully!")
                         else:
-                            logger.warning("Ollama still down. Chat works via Pollinations. Will retry later.")
+                            logger.warning("Model still down. Chat works via Pollinations.")
                     except Exception as e:
-                        logger.error(f"Ollama restart attempt failed: {e}")
+                        logger.error(f"Model reload attempt failed: {e}")
 
             # ── Check 2: Telegram API health ──
             if bot:
@@ -470,7 +459,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 35.0 Starting (RSS-FIRST — v35) ===")
+    logger.info("=== Nastya Bot 36.0 Starting (LLAMA-CPP-PYTHON — v36) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -481,7 +470,7 @@ async def on_startup(**kwargs) -> None:
 
     ai_router = AIRouter(db)
     await ai_router.init()
-    logger.info(f"AI Router: OllamaClusterProvider, status={ai_router.get_status()}")
+    logger.info(f"AI Router: LlamaCppProvider, status={ai_router.get_status()}")
 
     try:
         await db.get_or_create_user(OWNER_ID, "owner", "Owner")
@@ -517,7 +506,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 35.0 Ready (RSS-FIRST — v35) ===")
+    logger.info("=== Nastya Bot 36.0 Ready (LLAMA-CPP-PYTHON — v36) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

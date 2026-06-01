@@ -356,7 +356,7 @@ def generate_template_commentary(title: str, category: str = "general") -> str:
     v3.0: Шаблонные комментарии вместо AI-генерации.
     - Мгновенная генерация (0 мс вместо 15-47 сек)
     - Нет мусора от маленьких моделей
-    - Не грузит CPU — Ollama свободен для чата
+    - Не грузит CPU — модель свободна для чата
     - Качество гарантировано — шаблоны написаны вручную
     """
     # Get templates for category, fallback to general

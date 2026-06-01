@@ -47,22 +47,23 @@ async def cmd_providers(message: Message, db=None, ai_router=None) -> None:
         return
 
     status = ai_router.get_status()
-    lines = ["🤖 Ollama Cluster Насти:\n"]
+    lines = ["🤖 AI Провайдеры Насти:\n"]
 
     for name, info in status.items():
         if name == "_stats":
             continue
         if isinstance(info, dict):
-            available = "✅" if info.get("available") else "❌"
-            healthy = "💚" if info.get("healthy") else "💔"
-            url = info.get('active_url', '?')
-            primary_model = info.get('primary_model', '?')
-            reserve_model = info.get('reserve_model', '?')
-            warm = "🔥" if info.get('warm') else "❄️"
-            lines.append(f"  {available}{healthy} {name} {warm}")
-            lines.append(f"    URL: {url}")
-            lines.append(f"    Primary: {primary_model} | Reserve: {reserve_model}")
-            lines.append(f"    Requests: {info.get('request_count', 0)} | Primary: {info.get('primary_requests', 0)} | Reserve: {info.get('reserve_requests', 0)} | Errors: {info.get('error_count', 0)}")
+            available = "✅" if info.get("available") or info.get("model_loaded") else "❌"
+            model_path = info.get('model_path', '?')
+            model_name = model_path.split('/')[-1] if model_path != '?' else '?'
+            lines.append(f"  {available} {name}")
+            if name == "llama_cpp":
+                lines.append(f"    Model: {model_name}")
+                lines.append(f"    Loaded: {info.get('model_loaded', False)} | n_ctx: {info.get('n_ctx', 0)} | n_threads: {info.get('n_threads', 0)}")
+                lines.append(f"    Requests: {info.get('request_count', 0)} | Avg time: {info.get('avg_gen_time', 0):.1f}s | Errors: {info.get('error_count', 0)}")
+            elif name == "pollinations":
+                on_cooldown = "🔒" if info.get('on_cooldown') else "🔓"
+                lines.append(f"    Available: {available} {on_cooldown}")
 
     stats = status.get("_stats", {})
     lines.append(f"\n📊 Запросов: {stats.get('total_requests', 0)}")
@@ -81,11 +82,16 @@ async def cmd_reset(message: Message, db=None, ai_router=None) -> None:
     if not ai_router:
         return
 
-    # Очистка состояния провайдера
+    # Перезагрузка модели
     if ai_router.provider:
-        # Reset warm-up so model reloads on next request
-        ai_router.provider._warm = False
-    await message.answer("🔄 AI провайдер сброшен!")
+        try:
+            await ai_router.provider.close()
+            await ai_router.provider.init()
+            await message.answer("🔄 Модель перезагружена!")
+        except Exception as e:
+            await message.answer(f"❌ Ошибка перезагрузки: {e}")
+    else:
+        await message.answer("❌ Провайдер не найден!")
 
 
 @router.message(Command("fetchnews"))

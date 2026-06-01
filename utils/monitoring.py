@@ -25,14 +25,20 @@ def monitor(func):
     return wrapper
 
 
-async def check_cluster_health(base_url: str = "http://localhost:11434") -> dict:
-    """Проверка здоровья кластера Ollama."""
-    import httpx
+async def check_model_health(ai_router) -> dict:
+    """Проверка здоровья модели llama-cpp-python."""
+    if not ai_router or not ai_router.provider:
+        return {"status": "down", "error": "No provider"}
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
-            async with client.get(f"{base_url}/api/tags") as resp:
-                if resp.status_code == 200:
-                    return {"status": "healthy", "models": resp.json().get("models", [])}
-                return {"status": "degraded", "code": resp.status_code}
+        available = ai_router.provider.is_available()
+        if available:
+            stats = ai_router.provider.get_stats()
+            return {
+                "status": "healthy",
+                "model_loaded": True,
+                "avg_gen_time": stats.get("avg_gen_time", 0),
+                "request_count": stats.get("request_count", 0),
+            }
+        return {"status": "degraded", "model_loaded": False}
     except Exception as e:
         return {"status": "down", "error": str(e)}
