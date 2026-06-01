@@ -75,7 +75,7 @@ _should_exit = False  # Flag for conflict_monitor to signal main loop
 
 # ── Health watchdog state ──
 _last_successful_update: float = 0  # Timestamp of last successful Telegram update
-_HEALTH_CHECK_INTERVAL = 120  # Check health every 120s — matches health_check cache TTL
+_HEALTH_CHECK_INTERVAL = 300  # v24.0: Check health every 300s (was 120s — too frequent, wastes Ollama)
 _MAX_UNRESPONSIVE_SECONDS = 120  # Restart if no response for 2 minutes
 _ollama_restart_count: int = 0  # Track Ollama restarts
 
@@ -477,7 +477,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 23.0 Starting (Production Cluster, Local Only, Vision FIXED) ===")
+    logger.info("=== Nastya Bot 24.0 Starting (Production Cluster, SPEED FIX) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -524,7 +524,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 23.0 Ready (Production Cluster) ===")
+    logger.info("=== Nastya Bot 24.0 Ready (Production Cluster, SPEED FIX) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

@@ -119,6 +119,9 @@ class AIRouter:
 
         ЕДИНСТВЕННЫЙ путь: OllamaClusterProvider.
         Если провайдер недоступен — fallback-ответ.
+        
+        v24.0: Добавлен параметр priority (high/low) для приоритизации
+        пользовательских запросов над фоновыми задачами.
         """
         # Извлекаем image_base64 из kwargs (критически важно!)
         image_base64 = kwargs.pop("image_base64", None)
@@ -159,6 +162,8 @@ class AIRouter:
                 gen_kwargs = {}
                 if image_base64:
                     gen_kwargs["image_base64"] = image_base64
+                # v24.0: Pass priority to provider (high for user chat, low for background)
+                gen_kwargs["priority"] = kwargs.get("priority", "high")
 
                 result = await self.provider.generate(
                     prompt,

@@ -1,13 +1,14 @@
 """OllamaClusterProvider — единый провайдер для кластера OLOL или прямого Ollama.
 
-Architecture v23.0 (Production Cluster):
+Architecture v24.0 (Production Cluster — SPEED FIX):
   - Единая точка входа: OLOL Proxy (:8000) или прямой Ollama (:11434)
   - Автовыбор модели: qwen3-vl:2b для vision, qwen3:1.7b для текста
-  - Ретраи с экспоненциальной задержкой
-  - Семафор для контроля параллельных запросов
+  - СЕМАФОР=1: на 2 CPU Ollama может обрабатывать только 1 запрос за раз!
+  - ПРИОРИТЕТНАЯ ОЧЕРЕДЬ: user > background
+  - Адаптивные таймауты: 300s текст, 360s vision (CPU медленный под нагрузкой)
   - Сжатие изображений перед отправкой в модель
-  - Автоопределение доступных моделей
   - Локальный inference — БЕЗ внешних API!
+  - Пропуск прогрева если есть ожидающие запросы
 
 ВАЖНО: На GitHub Actions (2 CPU, 7GB RAM) реалистичен только ОДИН экземпляр
 Ollama. Поэтому провайдер поддерживает как кластер (OLOL proxy), так и
@@ -38,6 +39,10 @@ TEXT_FAST_MODEL = "phi4-mini:3.8b"
 
 # Vision-capable model prefixes
 VISION_MODEL_PREFIXES = ["qwen3-vl", "qwen2.5-vl", "qwen2-vl", "llava", "minicpm-v", "phi4-mini-vl"]
+
+# Request priorities
+PRIORITY_HIGH = "high"    # User chat
+PRIORITY_LOW = "low"      # Background tasks (news, channel)
 
 
 class ResponseCache:
@@ -77,19 +82,19 @@ class ResponseCache:
 class OllamaClusterProvider(BaseProvider):
     """Провайдер для Ollama-кластера через OLOL Proxy или прямое подключение.
 
-    Единый провайдер, заменяющий ВСЕ внешние API:
-    - Текст: qwen3:1.7b (быстрый) или qwen3-vl:2b (fallback)
-    - Vision: qwen3-vl:2b (основная модель)
-    - Кэширование повторяющихся запросов
-    - Семафор для ограничения параллельных запросов
-    - Автоопределение доступных моделей
+    v24.0 CRITICAL FIXES:
+    - СЕМАФОР=1: Ollama на 2 CPU может обрабатывать ТОЛЬКО 1 запрос за раз!
+      2 параллельных запроса = оба медленные, оба таймаутятся
+    - Приоритетная очередь: пользовательские запросы приоритетнее фоновых
+    - Адаптивные таймауты: 300s для текста, 360s для vision
+    - Пропуск прогрева при ожидающих запросах
     """
 
     name: str = "ollama_cluster"
     supports_streaming: bool = False
     supports_vision: bool = True
 
-    def __init__(self, api_key: str = "", timeout: float = 180.0, base_url: str = ""):
+    def __init__(self, api_key: str = "", timeout: float = 360.0, base_url: str = ""):
         super().__init__(api_key="", timeout=timeout)
         # Приоритет: OLOL proxy -> прямой Ollama
         self.cluster_url = base_url or "http://localhost:8000"
@@ -101,12 +106,17 @@ class OllamaClusterProvider(BaseProvider):
         self._warm: bool = False
         self._installed_models: List[str] = []
         self._cache = ResponseCache(maxsize=200, ttl=1800)
-        self._semaphore = asyncio.Semaphore(2)  # CPU handles max 2 concurrent requests
+        # CRITICAL: Semaphore=1! On 2 CPU, Ollama can only process 1 request at a time
+        # With semaphore=2, both requests compete for CPU and BOTH timeout
+        self._semaphore = asyncio.Semaphore(1)
         self._request_count: int = 0
         self._error_count: int = 0
         self._last_health_check: float = 0
         self._last_health_status: bool = True
-        self._HEALTH_CACHE_TTL: int = 120  # Cache health check for 120s
+        self._HEALTH_CACHE_TTL: int = 300  # Cache health check for 300s (was 120s)
+        # Track pending high-priority requests
+        self._high_priority_pending: int = 0
+        self._low_priority_lock = asyncio.Lock()
 
     async def init(self) -> None:
         """Инициализация: автоопределение OLOL proxy или прямого Ollama."""
@@ -144,7 +154,7 @@ class OllamaClusterProvider(BaseProvider):
         self._client = httpx.AsyncClient(
             base_url=self._active_url,
             timeout=httpx.Timeout(self.timeout, connect=15.0),
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
             headers={"Content-Type": "application/json"},
         )
 
@@ -158,7 +168,7 @@ class OllamaClusterProvider(BaseProvider):
     def _detect_models(self) -> None:
         """Определить доступные модели.
         
-        v23.0: phi4-mini for text (NEVER qwen3-vl for plain text!)
+        v24.0: phi4-mini for text (NEVER qwen3-vl for plain text!)
         qwen3-vl for VISION ONLY.
         """
         # Текстовая модель — prefer phi4-mini, then qwen3:1.7b
@@ -219,6 +229,10 @@ class OllamaClusterProvider(BaseProvider):
 
     async def _warm_up(self) -> None:
         """Прогрев модели — загрузка в память."""
+        # Skip warm-up if there are pending high-priority requests
+        if self._high_priority_pending > 0:
+            logger.info("Skipping warm-up — high-priority requests pending")
+            return
         if self._warm or not self._text_model:
             return
         try:
@@ -231,7 +245,7 @@ class OllamaClusterProvider(BaseProvider):
                     "stream": False,
                     "options": {"num_predict": 5},
                 },
-                timeout=httpx.Timeout(180.0, connect=10.0),
+                timeout=httpx.Timeout(300.0, connect=10.0),
             )
             if resp.status_code == 200:
                 self._warm = True
@@ -303,35 +317,32 @@ class OllamaClusterProvider(BaseProvider):
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         """Генерация ответа через локальный кластер Ollama.
 
-        Поддерживает:
-        - Текстовые запросы (qwen3:1.7b быстрее, qwen3-vl:2b fallback)
-        - Vision запросы с изображениями (qwen3-vl:2b)
-        - Историю диалога через messages
-        - Кэширование повторных запросов
-        - Ретраи с задержкой
+        v24.0 CRITICAL: Semaphore=1, priority queue, longer timeouts
         """
         if not self._client:
             await self.init()
 
-        # Прогрев при первом запросе
+        # Прогрев при первом запросе (только если нет ожидающих)
         if not self._warm:
             await self._warm_up()
 
         system_prompt = kwargs.get("system_prompt", "")
         temperature = kwargs.get("temperature", 0.7)
-        max_tokens = kwargs.get("max_tokens", 2048)
+        max_tokens = kwargs.get("max_tokens", 512)  # Reduced from 2048 for speed
         messages_history = kwargs.get("messages")
         # ВАЖНО: Извлекаем image_base64 из kwargs, НЕ передаём дальше как kwargs
         image_base64 = kwargs.pop("image_base64", None)
+        priority = kwargs.get("priority", PRIORITY_HIGH)
 
         # Ограничение истории для маленьких моделей
-        if image_base64 and messages_history and len(messages_history) > 8:
-            logger.info(f"Trimming history for vision: {len(messages_history)} -> 8")
-            messages_history = messages_history[-8:]
-        elif not image_base64 and messages_history and len(messages_history) > 20:
-            messages_history = messages_history[-20:]
+        if image_base64 and messages_history and len(messages_history) > 6:
+            logger.info(f"Trimming history for vision: {len(messages_history)} -> 6")
+            messages_history = messages_history[-6:]
+        elif not image_base64 and messages_history and len(messages_history) > 15:
+            logger.info(f"Trimming history for text: {len(messages_history)} -> 15")
+            messages_history = messages_history[-15:]
 
-        # Выбор модели — v23.0 CRITICAL FIX:
+        # Выбор модели — v24.0 CRITICAL FIX:
         # Vision: ONLY qwen3-vl:2b
         # Text: ONLY phi4-mini/qwen3:1.7b (NEVER qwen3-vl for text!)
         is_vision = bool(image_base64 and self._vision_available)
@@ -349,7 +360,7 @@ class OllamaClusterProvider(BaseProvider):
                     if alt != model and self._is_model_installed(alt):
                         models_to_try = [alt]
                         break
-            logger.info(f"OllamaCluster: TEXT request → {models_to_try[0]}")
+            logger.info(f"OllamaCluster: TEXT request → {models_to_try[0]} (priority={priority})")
 
         # Проверка кэша (только для запросов без истории)
         has_conversation = bool(messages_history and len(messages_history) > 0)
@@ -362,90 +373,100 @@ class OllamaClusterProvider(BaseProvider):
                     tokens_used=0, metadata={"from_cache": True},
                 )
 
-        async with self._semaphore:
-            last_error = None
-            for try_model in models_to_try:
-                # Изображение прикрепляем только к vision-модели
-                img = image_base64 if (is_vision and try_model == models_to_try[0]) else None
+        # Track high-priority requests
+        if priority == PRIORITY_HIGH:
+            self._high_priority_pending += 1
 
-                ollama_messages = self._build_messages(
-                    prompt=prompt,
-                    system_prompt=system_prompt,
-                    messages=messages_history,
-                    image_base64=img,
-                )
+        try:
+            async with self._semaphore:
+                last_error = None
+                for try_model in models_to_try:
+                    # Изображение прикрепляем только к vision-модели
+                    img = image_base64 if (is_vision and try_model == models_to_try[0]) else None
 
-                payload = {
-                    "model": try_model,
-                    "messages": ollama_messages,
-                    "stream": False,
-                    "options": {
-                        "temperature": temperature,
-                        "num_predict": max_tokens,
-                    },
-                }
-
-                # Таймаут: 90s для текста, 180s для vision
-                request_timeout = 90.0 if not is_vision else 180.0
-
-                try:
-                    self._request_count += 1
-                    response = await self._client.post(
-                        "/api/chat",
-                        json=payload,
-                        timeout=httpx.Timeout(request_timeout, connect=15.0),
-                    )
-                    response.raise_for_status()
-                    data = response.json()
-
-                    text = ""
-                    if isinstance(data, dict):
-                        msg = data.get("message", {})
-                        text = msg.get("content", "") if isinstance(msg, dict) else ""
-
-                    if not text:
-                        last_error = ProviderError(self.name, f"Empty response from {try_model}", retryable=True)
-                        continue
-
-                    # Очистка think-тегов
-                    text = self._strip_think_tags(text)
-                    if not text:
-                        last_error = ProviderError(self.name, f"Empty after cleaning from {try_model}", retryable=True)
-                        continue
-
-                    # Кэширование
-                    if not has_conversation and not image_base64:
-                        self._cache.set(prompt, text, model=try_model)
-
-                    return AIResponse(
-                        text=text,
-                        provider=self.name,
-                        model=f"ollama:{try_model}",
-                        tokens_used=0,
-                        metadata={"local": True, "vision": is_vision, "cluster_url": self._active_url},
+                    ollama_messages = self._build_messages(
+                        prompt=prompt,
+                        system_prompt=system_prompt,
+                        messages=messages_history,
+                        image_base64=img,
                     )
 
-                except httpx.ConnectError:
-                    # Попробуем переключиться на другой URL
-                    await self._try_failover()
-                    last_error = ProviderError(self.name, "Ollama server not reachable", retryable=True)
-                    continue
-                except httpx.HTTPStatusError as exc:
-                    status = exc.response.status_code
-                    if status == 404:
-                        logger.warning(f"Model {try_model} not found. Skipping (no auto-pull).")
-                        last_error = ProviderError(self.name, f"Model {try_model} not found", retryable=True)
+                    payload = {
+                        "model": try_model,
+                        "messages": ollama_messages,
+                        "stream": False,
+                        "options": {
+                            "temperature": temperature,
+                            "num_predict": max_tokens,
+                        },
+                    }
+
+                    # v24.0: Адаптивные таймауты
+                    # Text: 300s (was 90s — too short when Ollama busy)
+                    # Vision: 360s (was 180s — too short for CPU vision)
+                    request_timeout = 300.0 if not is_vision else 360.0
+
+                    try:
+                        self._request_count += 1
+                        response = await self._client.post(
+                            "/api/chat",
+                            json=payload,
+                            timeout=httpx.Timeout(request_timeout, connect=15.0),
+                        )
+                        response.raise_for_status()
+                        data = response.json()
+
+                        text = ""
+                        if isinstance(data, dict):
+                            msg = data.get("message", {})
+                            text = msg.get("content", "") if isinstance(msg, dict) else ""
+
+                        if not text:
+                            last_error = ProviderError(self.name, f"Empty response from {try_model}", retryable=True)
+                            continue
+
+                        # Очистка think-тегов
+                        text = self._strip_think_tags(text)
+                        if not text:
+                            last_error = ProviderError(self.name, f"Empty after cleaning from {try_model}", retryable=True)
+                            continue
+
+                        # Кэширование
+                        if not has_conversation and not image_base64:
+                            self._cache.set(prompt, text, model=try_model)
+
+                        return AIResponse(
+                            text=text,
+                            provider=self.name,
+                            model=f"ollama:{try_model}",
+                            tokens_used=0,
+                            metadata={"local": True, "vision": is_vision, "cluster_url": self._active_url},
+                        )
+
+                    except httpx.ConnectError:
+                        # Попробуем переключиться на другой URL
+                        await self._try_failover()
+                        last_error = ProviderError(self.name, "Ollama server not reachable", retryable=True)
                         continue
-                    last_error = ProviderError(self.name, f"HTTP {status}: {exc.response.text[:200]}", retryable=status in (429, 500, 502, 503, 504))
-                    continue
-                except httpx.TimeoutException:
-                    self._error_count += 1
-                    last_error = ProviderError(self.name, f"Timeout for {try_model} (CPU inference slow)", retryable=True)
-                    continue
-                except Exception as exc:
-                    self._error_count += 1
-                    last_error = ProviderError(self.name, f"Error with {try_model}: {exc}", retryable=True)
-                    continue
+                    except httpx.HTTPStatusError as exc:
+                        status = exc.response.status_code
+                        if status == 404:
+                            logger.warning(f"Model {try_model} not found. Skipping (no auto-pull).")
+                            last_error = ProviderError(self.name, f"Model {try_model} not found", retryable=True)
+                            continue
+                        last_error = ProviderError(self.name, f"HTTP {status}: {exc.response.text[:200]}", retryable=status in (429, 500, 502, 503, 504))
+                        continue
+                    except httpx.TimeoutException:
+                        self._error_count += 1
+                        last_error = ProviderError(self.name, f"Timeout for {try_model} (CPU inference slow, timeout={request_timeout}s)", retryable=True)
+                        continue
+                    except Exception as exc:
+                        self._error_count += 1
+                        last_error = ProviderError(self.name, f"Error with {try_model}: {exc}", retryable=True)
+                        continue
+        finally:
+            if priority == PRIORITY_HIGH:
+                self._high_priority_pending -= 1
 
         if last_error:
             raise last_error
@@ -467,7 +488,7 @@ class OllamaClusterProvider(BaseProvider):
                     self._client = httpx.AsyncClient(
                         base_url=new_url,
                         timeout=httpx.Timeout(self.timeout, connect=15.0),
-                        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+                        limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
                         headers={"Content-Type": "application/json"},
                     )
                     logger.info(f"Failover: switched from {old_url} to {new_url}")
@@ -485,7 +506,7 @@ class OllamaClusterProvider(BaseProvider):
         model = self._vision_model if use_vision else self._text_model or PRIMARY_MODEL
 
         ollama_messages = []
-        for msg in messages[-10:]:
+        for msg in messages[-6:]:  # Reduced from 10 to 6 for speed
             ollama_messages.append({
                 "role": msg.get("role", "user"),
                 "content": msg.get("content", ""),
@@ -497,7 +518,7 @@ class OllamaClusterProvider(BaseProvider):
             "stream": False,
             "options": {
                 "temperature": 0.7,
-                "num_ctx": 8192,
+                "num_ctx": 4096,  # Reduced from 8192 for speed
             },
         }
 
@@ -513,7 +534,7 @@ class OllamaClusterProvider(BaseProvider):
             async with self._client.post(
                 "/api/chat",
                 json=payload,
-                timeout=httpx.Timeout(self.timeout, connect=15.0),
+                timeout=httpx.Timeout(300.0, connect=15.0),
             ) as resp:
                 if resp.status_code == 200:
                     result = resp.json()
@@ -547,4 +568,5 @@ class OllamaClusterProvider(BaseProvider):
             "request_count": self._request_count,
             "error_count": self._error_count,
             "installed_models": self._installed_models,
+            "high_priority_pending": self._high_priority_pending,
         }

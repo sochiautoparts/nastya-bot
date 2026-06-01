@@ -390,6 +390,7 @@ async def generate_nastya_comment(ai_router, title: str, summary: str = "") -> s
             prompt=prompt,
             system_prompt="Ты Настя. Пиши коротко, эмоционально, как живая девушка. 1-2 предложения. Как в мессенджере. Говори НОРМАЛЬНО и ПОНЯТНО. Используй реальные разговорные слова (Точняк, Офигеть, Жесть, Капец и т.д.), но НЕ выдумывай непонятные слова!",
             messages=None,  # No history for commentary
+            priority="low",  # v24.0: Low priority — don't block user requests
         )
         text = result.text.strip()
 
@@ -441,6 +442,7 @@ async def generate_personality_post(ai_router, news_items: list = None) -> str:
             prompt=PERSONALITY_POST_PROMPT + news_context,
             system_prompt="Ты Настя. Пиши пост для своего канала @chasnastya. СОДЕРЖАТЕЛЬНО, 3-5 предложений, с мнением и вопросом. Как настоящий Telegram пост. Если упоминаешь новость — ОБЯЗАТЕЛЬНО добавь ссылку! Говори НОРМАЛЬНО и ПОНЯТНО. Используй реальные разговорные слова (Точняк, Офигеть, Жесть, Капец, Бомба, Отпад и т.д.), но НЕ выдумывай непонятные слова!",
             messages=None,
+            priority="low",  # v24.0: Low priority — don't block user requests
         )
         text = result.text.strip()
 
@@ -488,7 +490,7 @@ async def run_news_cycle(db, ai_router) -> int:
         async with conn.execute(
             """SELECT id, title, summary FROM news_items
             WHERE nastya_comment IS NULL OR nastya_comment = ''
-            ORDER BY created_at DESC LIMIT 3""",
+            ORDER BY created_at DESC LIMIT 2""",  # v24.0: Reduced from 3 to 2
         ) as cur:
             uncommented = []
             async for row in cur:
@@ -499,8 +501,9 @@ async def run_news_cycle(db, ai_router) -> int:
             if comment:
                 await db.update_news_comment(item["id"], comment)
                 commented += 1
-            # Small delay between commentary generations to avoid blocking user chat
-            await asyncio.sleep(2)
+            # v24.0: Increased delay between commentary generations to 5s
+            # This prevents background tasks from blocking user chat
+            await asyncio.sleep(5)
 
     except Exception as e:
         logger.error(f"Commentary generation cycle error: {e}")

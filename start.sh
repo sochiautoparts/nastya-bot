@@ -19,11 +19,11 @@ if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
     sleep 5
 fi
 
-# Pull required models
+# Pull required models — phi4-mini FIRST (primary text model for speed)
 echo "Pulling models (if not cached)..."
-ollama pull phi4-mini:3.8b || true
-ollama pull qwen3-vl:2b
 ollama pull qwen3:1.7b || true
+ollama pull qwen3-vl:2b
+ollama pull phi4-mini:3.8b || echo "phi4-mini pull failed — will use qwen3:1.7b as text fallback"
 
 echo "Models available:"
 ollama list

@@ -883,6 +883,9 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
+    # v24.0: Track response time for Stars decision
+    _ai_start_time = time.time()
+
     # Get mood
     mood = "капризная"
     try:
@@ -960,11 +963,12 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     # ── Add user's name for personalization (already included in user_context above) ──
 
-    # CRITICAL FIX: Get history BEFORE saving user message
-    # Increased limit from 20 to 40 for better context retention
+    # v24.0 CRITICAL FIX: Reduced history from 40 to 15 for small models!
+    # 40 messages = massive prompt = 30-300s inference on CPU with 1.7B model
+    # 15 messages = reasonable context + fast inference
     history = []
     try:
-        history = await db.get_history(user_id, limit=40)
+        history = await db.get_history(user_id, limit=15)
     except Exception:
         pass
 
@@ -978,10 +982,11 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                 system_prompt += f"\n\nВАЖНО: Собеседник говорил что его знак — {sign.capitalize()}. Запомни это и используй! Не переспрашивай!"
                 break
 
-    # ── KNOWLEDGE INJECTION — expand Nastya's intelligence! ──
-    # Detect topics in user message and inject relevant knowledge
-    text_lower_for_knowledge = text.lower()
-    knowledge_injected = False
+    # ── KNOWLEDGE INJECTION — v24.0: DISABLED for speed!
+    # Small models (1.7B) are too slow with long prompts.
+    # Knowledge injection adds 500+ tokens to system prompt = 2-3x slower inference.
+    # Re-enable when using larger models (7B+).
+    knowledge_injected = True  # Pretend injected to skip random injection below
     topic_keywords = {
         "auto": ["авто", "машин", "запчаст", "ремонт", "двигател", "масл", "фильтр", "тормоз",
                   "шин", "колёс", "toyota", "honda", "nissan", "сервис", "сто", "тачк", "кузов",
@@ -1176,7 +1181,16 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         pass
 
     # Maybe ask for stars (AFTER the main response)
-    should_stars, stars_want = await _maybe_ask_stars_check(user_id, msg_count, db, message)
+    # v24.0 CRITICAL: DON'T send Stars invoice if response was slow!
+    # A Stars popup after a 30s+ wait is terrible UX
+    should_stars = False
+    stars_want = ""
+    elapsed = time.time() - _ai_start_time
+    if elapsed < 10:  # Only ask for Stars if response was fast (<10s)
+        should_stars, stars_want = await _maybe_ask_stars_check(user_id, msg_count, db, message)
+    else:
+        # Slow response — don't add insult to injury with a payment popup
+        logger.info(f"Skipping Stars ask for user {user_id} — slow response ({elapsed:.1f}s)")
 
     # Update proactive tracker
     _proactive_tracker[user_id] = {
