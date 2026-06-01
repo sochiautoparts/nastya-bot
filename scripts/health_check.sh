@@ -46,7 +46,7 @@ echo ""
 echo "── Model Test ──"
 RESPONSE=$(curl -s -m 60 -X POST "$ENDPOINT/api/chat" \
     -H "Content-Type: application/json" \
-    -d '{"model":"qwen3-vl:2b","messages":[{"role":"user","content":"Скажи ОК"}],"stream":false,"options":{"num_predict":5}}' \
+    -d '{"model":"phi4-mini:3.8b","messages":[{"role":"user","content":"Скажи ОК"}],"stream":false,"options":{"num_predict":5}}' \
     2>/dev/null)
 
 if echo "$RESPONSE" | python3 -c "

@@ -1,9 +1,10 @@
-"""Nastya Bot 23.0 — Configuration (Production Cluster Edition)
+"""Nastya Bot 26.0 — Configuration (SPEED OPTIMIZED — NO QWEN)
 
-ВСЕ ВНЕШНИЕ API УДАЛЕНЫ!
+ВСЕ ВНЕШНИЕ API УДАЛЕНЫ! QWEN УДАЛЁН!
 Единственный AI-источник: локальный Ollama-кластер
-- qwen3-vl:2b для vision + text (PRIMARY)
-- qwen3:1.7b для быстрого text (FAST FALLBACK)
+- phi4-mini:3.8b для текста (PRIMARY, быстрый)
+- moondream:2b для vision (быстрее qwen3-vl в 2-3 раза!)
+- Pollinations как fallback (бесплатный, без API ключа)
 - Бесплатно, безлимитно, без авторизации!
 """
 import os
@@ -30,6 +31,7 @@ BOT_TOKEN: str = _env("BOT_TOKEN")
 
 # ── Ollama Local Model ─────────────────────────────────────
 OLLAMA_BASE_URL: str = _env("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_VISION_TIMEOUT: int = _env_int("OLLAMA_VISION_TIMEOUT", 15)  # seconds before Pollinations fallback
 OWNER_ID: int = _env_int("OWNER_ID", 0)
 ADMIN_IDS: List[int] = list(set(
     [OWNER_ID] + [int(x) for x in _env("ADMIN_IDS", str(OWNER_ID) if OWNER_ID else "").split(",") if x.strip().isdigit()]

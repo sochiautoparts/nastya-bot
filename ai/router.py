@@ -1,20 +1,22 @@
-"""AI Router v25.0 — Production Cluster Edition.
+"""AI Router v26.0 — SPEED OPTIMIZED Edition.
 
 АРХИТЕКТУРА: Локальный Ollama + Pollinations fallback!
   - PRIMARY провайдер: OllamaClusterProvider (локальный inference)
-  - FALLBACK провайдер: PollinationsProvider (только текст, бесплатный)
-  - Модели: phi4-mini:3.8b (text), qwen3-vl:2b (vision)
+  - FALLBACK провайдер: PollinationsProvider (текст + vision по таймауту)
+  - Модели: phi4-mini:3.8b (text), moondream:2b (vision)
+  - НИКАКИХ QWEN МОДЕЛЕЙ — полностью удалены!
   - Кэширование повторяющихся запросов
   - НИКАКИХ каскадных ошибок через 12 провайдеров
   - НИКАКИХ таймаутов на 260+ секунд
-  - Vision РАБОТАЕТ — image_base64 корректно передаётся
-  - Pollinations ТОЛЬКО для текста — vision всегда через Ollama
+  - Vision: moondream локально (быстро!), при таймауте 15с → Pollinations
+  - Pollinations ВСЕГДА доступен как резерв для текста и vision
 
-Изменения v25.0 vs v23.0:
-  - ДОБАВЛЕН PollinationsProvider как fallback (бесплатный, без API ключа)
-  - Если Ollama недоступен для текста — Pollinations берёт на себя
-  - Vision запросы ВСЕГДА через Ollama (Pollinations НЕ используется для vision)
-  - Модель текста: phi4-mini:3.8b (вместо qwen3:1.7b)
+Изменения v26.0 vs v25.0:
+  - qwen3-vl:2b → moondream:2b (2-3x быстрее на CPU!)
+  - qwen3:1.7b удалён (phi4-mini единственная текстовая модель)
+  - Раздельные семафоры для текста (4) и vision (1)
+  - Vision таймаут 15с + Pollinations fallback
+  - Сжатие фото до 448x448 для скорости
 """
 import logging
 import random
@@ -31,7 +33,7 @@ from bot.config import OLLAMA_BASE_URL, CACHE_TTL_TEXT, CACHE_MAX_MEMORY
 
 logger = logging.getLogger(__name__)
 
-# Fallback — если даже Ollama упал
+# Fallback — если даже Ollama + Pollinations упали
 FALLBACK_RESPONSES = [
     "Ммм... Настя задумалась. Повтори? 🤔",
     "Ой, Настя отвлеклась... Что ты сказал? 😅",
@@ -74,11 +76,11 @@ class AICache:
 
 
 class AIRouter:
-    """Центральный AI-маршрутизатор — v25.0 Production Cluster.
+    """Центральный AI-маршрутизатор — v26.0 SPEED OPTIMIZED.
 
     Primary: OllamaClusterProvider (локальный inference).
-    Fallback: PollinationsProvider (только текст, бесплатный).
-    Vision: ВСЕГДА через Ollama.
+    Fallback: PollinationsProvider (текст + vision при таймауте Ollama).
+    NO QWEN — phi4-mini (text) + moondream (vision).
     """
 
     def __init__(self, db=None):
@@ -92,26 +94,27 @@ class AIRouter:
 
     async def init(self) -> None:
         """Инициализация провайдеров — OllamaClusterProvider + Pollinations fallback."""
-        self.provider = OllamaClusterProvider(
-            timeout=180.0,
-            base_url=OLLAMA_BASE_URL,
-        )
-        await self.provider.init()
-
-        # Try to initialize PollinationsProvider as text fallback
-        # Don't fail if it doesn't work — it's optional
+        # Сначала инициализируем Pollinations — он нужен как fallback
         try:
             self._pollinations = PollinationsProvider(timeout=30.0)
             await self._pollinations.init()
-            logger.info("PollinationsProvider initialized as text fallback")
+            logger.info("PollinationsProvider initialized as fallback")
         except Exception as e:
             logger.warning(f"PollinationsProvider init failed (non-critical): {e}")
             self._pollinations = None
 
+        # Инициализируем OllamaClusterProvider с Pollinations fallback
+        self.provider = OllamaClusterProvider(
+            timeout=180.0,
+            base_url=OLLAMA_BASE_URL,
+            pollinations_fallback=self._pollinations,
+        )
+        await self.provider.init()
+
         stats = self.provider.get_stats()
         pollinations_status = "active" if self._pollinations else "unavailable"
         logger.info(
-            f"AI Router v25.0 initialized: "
+            f"AI Router v26.0 initialized: "
             f"url={stats['active_url']}, "
             f"text_model={stats['text_model']}, "
             f"vision_model={stats['vision_model']}, "
@@ -136,11 +139,8 @@ class AIRouter:
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
         """Маршрутизация текстового/vision чата.
 
-        ЕДИНСТВЕННЫЙ путь: OllamaClusterProvider.
-        Если провайдер недоступен — fallback-ответ.
-        
-        v24.0: Добавлен параметр priority (high/low) для приоритизации
-        пользовательских запросов над фоновыми задачами.
+        ПУТЬ: OllamaClusterProvider → Pollinations → static fallback.
+        Vision таймаут 15с автоматически переключает на Pollinations.
         """
         # Извлекаем image_base64 из kwargs (критически важно!)
         image_base64 = kwargs.pop("image_base64", None)
@@ -181,7 +181,7 @@ class AIRouter:
                 gen_kwargs = {}
                 if image_base64:
                     gen_kwargs["image_base64"] = image_base64
-                # v25.0: Pass priority to provider (high for user chat, low for background)
+                # Pass priority to provider (high for user chat, low for background)
                 gen_kwargs["priority"] = kwargs.get("priority", "high")
 
                 result = await self.provider.generate(
@@ -215,15 +215,18 @@ class AIRouter:
             except Exception as e:
                 logger.error(f"Unexpected AI error: {e}")
 
-        # ── FALLBACK 1: PollinationsProvider (text only!) ──
-        # Only use Pollinations for text requests, NEVER for vision
-        if self._pollinations and not image_base64:
+        # ── FALLBACK 1: PollinationsProvider (text + vision!) ──
+        if self._pollinations:
             try:
-                logger.info("Trying PollinationsProvider as text fallback...")
+                logger.info("Trying PollinationsProvider as fallback...")
+                gen_kwargs = {}
+                if image_base64:
+                    gen_kwargs["image_base64"] = image_base64
                 result = await self._pollinations.generate(
                     prompt,
                     system_prompt=system_prompt,
                     messages=messages,
+                    **gen_kwargs,
                 )
                 if result and result.text:
                     cleaned = self.clean_ai_response(result.text)
@@ -257,11 +260,7 @@ class AIRouter:
                               system_prompt: str = "", **kwargs) -> AIResponse:
         """Vision-запрос с изображением.
 
-        v25.0: ПЕРЕДАЁТ image_base64 КОРРЕКТНО — через kwargs в chat(),
-        который делает kwargs.pop("image_base64"), а затем передаёт
-        как именованный аргумент в provider.generate().
-
-        Vision ВСЕГДА через Ollama — Pollinations НЕ используется.
+        v26.0: Сначала Ollama (moondream, быстро!), при таймауте → Pollinations.
         """
         logger.info(
             f"chat_with_image: prompt={prompt[:50]}, "
@@ -269,9 +268,9 @@ class AIRouter:
         )
         # Ограничиваем историю для vision
         messages = kwargs.get("messages")
-        if messages and len(messages) > 10:
-            logger.info(f"Trimming messages from {len(messages)} to 10 for vision")
-            kwargs["messages"] = messages[-10:]
+        if messages and len(messages) > 8:
+            logger.info(f"Trimming messages from {len(messages)} to 8 for vision")
+            kwargs["messages"] = messages[-8:]
 
         return await self.chat(
             prompt=prompt,
@@ -300,7 +299,7 @@ class AIRouter:
         for pattern in sse_patterns:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-        # Strip think tags (Qwen3)
+        # Strip think tags
         text = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<thinking\b[^>]*>.*?</thinking\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'</?think[^>]*>', '', text, flags=re.IGNORECASE)

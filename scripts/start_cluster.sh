@@ -60,9 +60,8 @@ if [ "$SINGLE_MODE" = true ]; then
 
     # Загрузка моделей
     echo "Pulling models..."
-    ollama pull qwen3-vl:2b || echo "qwen3-vl:2b pull failed (may already exist)"
-    ollama pull qwen3:1.7b || echo "qwen3:1.7b pull failed (may already exist)"
     ollama pull phi4-mini:3.8b || echo "phi4-mini:3.8b pull failed (may already exist)"
+    ollama pull moondream:2b || echo "moondream:2b pull failed (may already exist)"
 
     echo ""
     echo "✅ Single instance cluster started!"
@@ -84,14 +83,12 @@ else
     # Загрузка моделей на все ноды
     echo "Pulling models on all nodes..."
     for port in 11435 11436 11437; do
-        curl -s -X POST http://localhost:$port/api/pull -d '{"name": "qwen3-vl:2b"}' > /dev/null &
+        curl -s -X POST http://localhost:$port/api/pull -d '{"name": "moondream:2b"}' > /dev/null &
     done
     wait
     sleep 5
 
-    # Лёгкая модель на fallback ноду
-    curl -s -X POST http://localhost:11437/api/pull -d '{"name": "qwen3:1.7b"}' > /dev/null
-    # Phi-4-mini — primary text model (better quality than qwen3:1.7b)
+    # Primary text model
     curl -s -X POST http://localhost:11437/api/pull -d '{"name": "phi4-mini:3.8b"}' > /dev/null
 
     # Проверка OLOL

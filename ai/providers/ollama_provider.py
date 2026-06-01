@@ -1,12 +1,11 @@
-"""Ollama Local Provider — Optimized for Nastya Bot v23.0.
+"""Ollama Local Provider — v26.0 (NO QWEN).
 
-Architecture v7.0:
+Architecture v26.0:
   - phi4-mini:3.8b as FAST text model (best quality/speed on CPU)
-  - qwen3:1.7b as text fallback (fast but less capable)  
-  - qwen3-vl:2b for VISION ONLY (never for plain text!)
-  - Semaphore(2) instead of Lock — allows 2 concurrent inferences
+  - moondream:2b for VISION (2-3x faster than qwen3-vl on CPU!)
+  - Semaphore(2) — allows 2 concurrent inferences
   - Smart model selection: vision model NEVER used for plain text
-  - Reduced timeouts: 90s text, 180s vision
+  - Reduced timeouts: 90s text, 15s vision + Pollinations fallback
   - Health check caching — no more spam every 30s
 """
 import logging
@@ -24,11 +23,11 @@ logger = logging.getLogger(__name__)
 OLLAMA_BASE_URL = "http://localhost:11434"
 
 # Model priority for TEXT (fastest first)
-TEXT_MODELS = ["phi4-mini:3.8b", "qwen3:1.7b"]
-# Model for VISION (must support images)
-VISION_MODELS = ["qwen3-vl:2b"]
+TEXT_MODELS = ["phi4-mini:3.8b"]
+# Model for VISION — moondream is 2-3x faster than qwen3-vl on CPU!
+VISION_MODELS = ["moondream:2b"]
 
-VISION_MODEL_PREFIXES = ["qwen3-vl", "qwen2.5-vl", "qwen2-vl", "llava", "minicpm-v", "phi4-mini-vl"]
+VISION_MODEL_PREFIXES = ["moondream", "llava", "minicpm-v", "phi4-mini-vl"]
 
 # Semaphore allows 2 concurrent Ollama requests (CPU can handle 2 small models)
 _ollama_semaphore = asyncio.Semaphore(2)
@@ -40,10 +39,10 @@ _HEALTH_CACHE_TTL = 120  # Cache health check for 120 seconds
 
 
 class OllamaProvider(BaseProvider):
-    """Ollama local provider — optimized model selection.
+    """Ollama local provider — v26.0 (NO QWEN).
 
-    v7.0: phi4-mini for text, qwen3-vl for vision ONLY.
-    Never uses vision model for plain text — fixes 188-799s response times!
+    phi4-mini for text, moondream for vision.
+    Never uses vision model for plain text.
     """
 
     name: str = "ollama"
@@ -77,7 +76,7 @@ class OllamaProvider(BaseProvider):
                 self._installed_models = [m.get("name", "").lower() for m in data.get("models", [])]
                 logger.info(f"Ollama server running. Installed models: {self._installed_models}")
 
-                # Select TEXT model — prefer phi4-mini, then qwen3:1.7b, NEVER qwen3-vl for text!
+                # Select TEXT model — phi4-mini only, NEVER vision model for text!
                 for model in TEXT_MODELS:
                     if self._is_model_installed(model):
                         self._text_model = model
@@ -90,8 +89,8 @@ class OllamaProvider(BaseProvider):
                         self._text_model = self._installed_models[0]
                         logger.warning(f"Ollama: no preferred text model, using {self._text_model}")
                     else:
-                        self._text_model = "qwen3:1.7b"
-                        logger.warning("Ollama: no models found, defaulting to qwen3:1.7b")
+                        self._text_model = "phi4-mini:3.8b"
+                        logger.warning("Ollama: no models found, defaulting to phi4-mini:3.8b")
 
                 # Select VISION model
                 for model in VISION_MODELS:
@@ -256,8 +255,8 @@ class OllamaProvider(BaseProvider):
         """Generate text via local Ollama instance.
 
         v7.0: CRITICAL FIX — vision model NEVER used for plain text!
-        Text always goes to phi4-mini or qwen3:1.7b.
-        Vision goes to qwen3-vl:2b.
+        Text always goes to phi4-mini.
+        Vision goes to moondream.
         """
         if not self._client:
             await self.init()
@@ -276,23 +275,21 @@ class OllamaProvider(BaseProvider):
 
         # ── CRITICAL: Model selection ──
         # Vision requests: ONLY use vision model
-        # Text requests: ONLY use text model (NEVER qwen3-vl for text!)
+        # Text requests: ONLY use text model (NEVER vision model for text!)
         is_vision_request = bool(image_base64 and self._vision_available)
 
         if is_vision_request:
-            model_to_use = self._vision_model or "qwen3-vl:2b"
+            model_to_use = self._vision_model or "moondream:2b"
             models_to_try = [model_to_use]
             request_timeout = 180.0  # Vision needs more time
             logger.info(f"Ollama: VISION request → {model_to_use}")
         else:
-            model_to_use = self._text_model or "qwen3:1.7b"
-            # NEVER add qwen3-vl to text models!
+            model_to_use = self._text_model or "phi4-mini:3.8b"
+            # NEVER add vision model to text models!
             models_to_try = [model_to_use]
-            # If text model is the same as vision model, try qwen3:1.7b instead
+            # If text model is the same as vision model, use phi4-mini instead
             if model_to_use == self._vision_model:
-                if self._is_model_installed("qwen3:1.7b"):
-                    models_to_try = ["qwen3:1.7b"]
-                elif self._is_model_installed("phi4-mini:3.8b"):
+                if self._is_model_installed("phi4-mini:3.8b"):
                     models_to_try = ["phi4-mini:3.8b"]
             request_timeout = 90.0  # Text should be faster
             logger.info(f"Ollama: TEXT request → {model_to_use}")

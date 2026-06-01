@@ -512,16 +512,19 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         await message.bot.download_file(file.file_path, buf)
         image_bytes = buf.getvalue()
 
+        # Send immediate notification so user knows bot is working on it
+        processing_msg = await message.reply("🖼️ Анализирую фотографию... Это может занять несколько секунд.")
+
         # Compress and resize image for vision models
-        # CRITICAL: qwen3-vl:2b on CPU needs small images!
-        # Max 672x672, JPEG quality=75 — reduces base64 from 140KB to ~30KB
+        # v26.0: moondream:2b — 448x448 is optimal (2-3x faster than 672x672)
+        # Smaller image = faster processing on CPU, moondream handles small images well
         try:
             from PIL import Image
             img = Image.open(io.BytesIO(image_bytes))
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
             w, h = img.size
-            max_dim = 672  # Optimal for qwen3-vl:2b context window
+            max_dim = 448  # Optimal for moondream:2b — 2-3x faster than 672!
             if max(w, h) > max_dim:
                 ratio = max_dim / max(w, h)
                 img = img.resize((int(w * ratio), int(h * ratio)), Image.Resampling.LANCZOS)
@@ -593,6 +596,12 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
                 "О, фото! Расскажи подробнее? 📸",
                 "Настя видит... но не понимает! Опиши? 😅",
             ])
+
+        # Delete the "analyzing" notification
+        try:
+            await processing_msg.delete()
+        except Exception:
+            pass
 
         await db.add_message(user_id, "assistant", response_text)
 

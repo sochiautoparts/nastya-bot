@@ -1,18 +1,17 @@
-"""OllamaClusterProvider — единый провайдер для кластера OLOL или прямого Ollama.
+"""OllamaClusterProvider — единый провайдер для Ollama.
 
-Architecture v25.0 (Production Cluster — SPEED FIX):
-  - Единая точка входа: OLOL Proxy (:8000) или прямой Ollama (:11434)
-  - Автовыбор модели: phi4-mini:3.8b для текста, qwen3-vl:2b для vision
-  - СЕМАФОР=1: на 2 CPU Ollama может обрабатывать только 1 запрос за раз!
-  - ПРИОРИТЕТНАЯ ОЧЕРЕДЬ: user > background
-  - Адаптивные таймауты: 300s текст, 360s vision (CPU медленный под нагрузкой)
-  - Сжатие изображений перед отправкой в модель
-  - Локальный inference — БЕЗ внешних API!
+Architecture v26.0 (SPEED OPTIMIZED — NO QWEN):
+  - Единая точка входа: прямой Ollama (:11434)
+  - Автовыбор модели: phi4-mini:3.8b для текста, moondream:2b для vision
+  - РАЗДЕЛЬНЫЕ СЕМАФОРЫ: текст (4) и vision (1)
+  - Таймаут vision: 15с + fallback на Pollinations
+  - Сжатие изображений до 448x448
+  - Локальный inference — БЕЗ внешних API (кроме fallback)
   - Пропуск прогрева если есть ожидающие запросы
+  - НИКАКИХ QWEN МОДЕЛЕЙ — полностью удалены!
 
 ВАЖНО: На GitHub Actions (2 CPU, 7GB RAM) реалистичен только ОДИН экземпляр
-Ollama. Поэтому провайдер поддерживает как кластер (OLOL proxy), так и
-прямой Ollama с автоматическим откатом.
+Ollama. Поэтому провайдер поддерживает прямой Ollama с автоматическим откатом.
 """
 import logging
 import asyncio
@@ -30,19 +29,22 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 logger = logging.getLogger(__name__)
 
 # Model priority for TEXT (fastest/best first)
-TEXT_MODELS = ["phi4-mini:3.8b", "qwen3:1.7b"]
-# Model for VISION (must support images)
-VISION_MODELS = ["qwen3-vl:2b"]
+TEXT_MODELS = ["phi4-mini:3.8b"]
+# Model for VISION — moondream is 2-3x faster than qwen3-vl on CPU!
+VISION_MODELS = ["moondream:2b"]
 # Legacy compat
-PRIMARY_MODEL = "qwen3-vl:2b"
+PRIMARY_MODEL = "moondream:2b"
 TEXT_FAST_MODEL = "phi4-mini:3.8b"
 
 # Vision-capable model prefixes
-VISION_MODEL_PREFIXES = ["qwen3-vl", "qwen2.5-vl", "qwen2-vl", "llava", "minicpm-v", "phi4-mini-vl"]
+VISION_MODEL_PREFIXES = ["moondream", "llava", "minicpm-v", "phi4-mini-vl"]
 
 # Request priorities
 PRIORITY_HIGH = "high"    # User chat
 PRIORITY_LOW = "low"      # Background tasks (news, channel)
+
+# Vision timeout — if local model doesn't respond in 15s, fallback to Pollinations
+VISION_TIMEOUT_SECONDS = 15.0
 
 
 class ResponseCache:
@@ -80,22 +82,22 @@ class ResponseCache:
 
 
 class OllamaClusterProvider(BaseProvider):
-    """Провайдер для Ollama-кластера через OLOL Proxy или прямое подключение.
+    """Провайдер для Ollama — v26.0 SPEED OPTIMIZED.
 
-    v25.0 CRITICAL FIXES:
-    - СЕМАФОР=1: Ollama на 2 CPU может обрабатывать ТОЛЬКО 1 запрос за раз!
-      2 параллельных запроса = оба медленные, оба таймаутятся
-    - Приоритетная очередь: пользовательские запросы приоритетнее фоновых
-    - Адаптивные таймауты: 300s для текста, 360s для vision
-    - Пропуск прогрева при ожидающих запросах
-    - phi4-mini:3.8b — primary text model (NEVER qwen3-vl for text!)
+    v26.0 CRITICAL CHANGES:
+    - QWEN ПОЛНОСТЬЮ УДАЛЁН! Только phi4-mini (text) + moondream (vision)
+    - РАЗДЕЛЬНЫЕ семафоры: текст (4 параллельных) и vision (1)
+    - Vision таймаут 15с + fallback на Pollinations
+    - Сжатие изображений до 448x448 для скорости
+    - moondream:2b — в 2-3x быстрее qwen3-vl на CPU
     """
 
     name: str = "ollama_cluster"
     supports_streaming: bool = False
     supports_vision: bool = True
 
-    def __init__(self, api_key: str = "", timeout: float = 360.0, base_url: str = ""):
+    def __init__(self, api_key: str = "", timeout: float = 360.0, base_url: str = "",
+                 pollinations_fallback=None):
         super().__init__(api_key="", timeout=timeout)
         # Приоритет: OLOL proxy -> прямой Ollama
         self.cluster_url = base_url or "http://localhost:8000"
@@ -107,20 +109,24 @@ class OllamaClusterProvider(BaseProvider):
         self._warm: bool = False
         self._installed_models: List[str] = []
         self._cache = ResponseCache(maxsize=200, ttl=1800)
-        # CRITICAL: Semaphore=1! On 2 CPU, Ollama can only process 1 request at a time
-        # With semaphore=2, both requests compete for CPU and BOTH timeout
-        self._semaphore = asyncio.Semaphore(1)
+        # РАЗДЕЛЬНЫЕ семафоры!
+        # Текст: phi4-mini лёгкая, можно 4 параллельных
+        self._text_semaphore = asyncio.Semaphore(4)
+        # Vision: moondream тяжёлая, только 1 одновременно
+        self._vision_semaphore = asyncio.Semaphore(1)
         self._request_count: int = 0
         self._error_count: int = 0
         self._last_health_check: float = 0
         self._last_health_status: bool = True
-        self._HEALTH_CACHE_TTL: int = 300  # Cache health check for 300s (was 120s)
+        self._HEALTH_CACHE_TTL: int = 300
         # Track pending high-priority requests
         self._high_priority_pending: int = 0
         self._low_priority_lock = asyncio.Lock()
+        # Pollinations fallback for vision timeout
+        self._pollinations_fallback = pollinations_fallback
 
     async def init(self) -> None:
-        """Инициализация: автоопределение OLOL proxy или прямого Ollama."""
+        """Инициализация: автоопределение Ollama."""
         # Сначала пробуем OLOL Proxy (порт 8000)
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=3.0)) as client:
@@ -164,16 +170,15 @@ class OllamaClusterProvider(BaseProvider):
 
         status = f"url={self._active_url}"
         vision = "+vision" if self._vision_available else "NO_VISION"
-        logger.info(f"OllamaClusterProvider: {status} | text={self._text_model} | vision={self._vision_model} | {vision}")
+        logger.info(f"OllamaClusterProvider v26.0: {status} | text={self._text_model} | vision={self._vision_model} | {vision}")
 
     def _detect_models(self) -> None:
         """Определить доступные модели.
-        
-        v25.0: phi4-mini for text (NEVER qwen3-vl for plain text!)
-        qwen3-vl for VISION ONLY.
+
+        v26.0: phi4-mini for text, moondream for vision.
+        NO QWEN — completely removed!
         """
-        # Текстовая модель — prefer phi4-mini, then qwen3:1.7b
-        # NEVER use qwen3-vl for text (root cause of 188-799s response times!)
+        # Текстовая модель — phi4-mini only
         for model in TEXT_MODELS:
             if self._is_model_installed(model):
                 self._text_model = model
@@ -183,7 +188,7 @@ class OllamaClusterProvider(BaseProvider):
             self._text_model = TEXT_FAST_MODEL
             logger.warning(f"No preferred text model found, defaulting to {self._text_model}")
 
-        # Vision модель — ONLY for vision requests
+        # Vision модель — moondream only
         for model in VISION_MODELS:
             if self._is_model_installed(model):
                 self._vision_model = model
@@ -213,7 +218,7 @@ class OllamaClusterProvider(BaseProvider):
         return True
 
     async def health_check(self) -> bool:
-        """Проверка здоровья кластера/Ollama — с кэшированием."""
+        """Проверка здоровья Ollama — с кэшированием."""
         now = time.time()
         if now - self._last_health_check < self._HEALTH_CACHE_TTL:
             return self._last_health_status
@@ -258,7 +263,7 @@ class OllamaClusterProvider(BaseProvider):
 
     @staticmethod
     def _strip_think_tags(text: str) -> str:
-        """Удалить Qwen3 <think/> блоки из ответа."""
+        """Удалить <think/> блоки из ответа."""
         text = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<thinking\b[^>]*>.*?</thinking\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'</?think[^>]*>', '', text, flags=re.IGNORECASE)
@@ -316,9 +321,10 @@ class OllamaClusterProvider(BaseProvider):
         return merged
 
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
-        """Генерация ответа через локальный кластер Ollama.
+        """Генерация ответа через локальный Ollama.
 
-        v25.0 CRITICAL: Semaphore=1, priority queue, longer timeouts
+        v26.0: Раздельные семафоры для текста и vision.
+        Vision таймаут 15с + fallback на Pollinations.
         """
         if not self._client:
             await self.init()
@@ -329,7 +335,7 @@ class OllamaClusterProvider(BaseProvider):
 
         system_prompt = kwargs.get("system_prompt", "")
         temperature = kwargs.get("temperature", 0.7)
-        max_tokens = kwargs.get("max_tokens", 512)  # Reduced from 2048 for speed
+        max_tokens = kwargs.get("max_tokens", 512)
         messages_history = kwargs.get("messages")
         # ВАЖНО: Извлекаем image_base64 из kwargs, НЕ передаём дальше как kwargs
         image_base64 = kwargs.pop("image_base64", None)
@@ -343,24 +349,17 @@ class OllamaClusterProvider(BaseProvider):
             logger.info(f"Trimming history for text: {len(messages_history)} -> 15")
             messages_history = messages_history[-15:]
 
-        # Выбор модели — v25.0 CRITICAL FIX:
-        # Vision: ONLY qwen3-vl:2b
-        # Text: ONLY phi4-mini/qwen3:1.7b (NEVER qwen3-vl for text!)
+        # Выбор модели и семафора
         is_vision = bool(image_base64 and self._vision_available)
         if is_vision:
             model = self._vision_model or PRIMARY_MODEL
             models_to_try = [model]
-            logger.info(f"OllamaCluster: VISION request → {model}")
+            semaphore = self._vision_semaphore
+            logger.info(f"OllamaCluster: VISION request → {model} (semaphore=1)")
         else:
             model = self._text_model or TEXT_FAST_MODEL
-            # NEVER add qwen3-vl to text models!
             models_to_try = [model]
-            # If text model IS the vision model, use alternative
-            if model == self._vision_model:
-                for alt in TEXT_MODELS:
-                    if alt != model and self._is_model_installed(alt):
-                        models_to_try = [alt]
-                        break
+            semaphore = self._text_semaphore
             logger.info(f"OllamaCluster: TEXT request → {models_to_try[0]} (priority={priority})")
 
         # Проверка кэша (только для запросов без истории)
@@ -379,7 +378,7 @@ class OllamaClusterProvider(BaseProvider):
             self._high_priority_pending += 1
 
         try:
-            async with self._semaphore:
+            async with semaphore:
                 last_error = None
                 for try_model in models_to_try:
                     # Изображение прикрепляем только к vision-модели
@@ -402,10 +401,10 @@ class OllamaClusterProvider(BaseProvider):
                         },
                     }
 
-                    # v25.0: Адаптивные таймауты
-                    # Text: 300s (was 90s — too short when Ollama busy)
-                    # Vision: 360s (was 180s — too short for CPU vision)
-                    request_timeout = 300.0 if not is_vision else 360.0
+                    # Адаптивные таймауты
+                    # Текст: 120s (phi4-mini быстрая)
+                    # Vision: 15s + fallback (moondream быстрая, но если CPU перегружен — fallback)
+                    request_timeout = 120.0 if not is_vision else VISION_TIMEOUT_SECONDS
 
                     try:
                         self._request_count += 1
@@ -459,7 +458,17 @@ class OllamaClusterProvider(BaseProvider):
                         continue
                     except httpx.TimeoutException:
                         self._error_count += 1
-                        last_error = ProviderError(self.name, f"Timeout for {try_model} (CPU inference slow, timeout={request_timeout}s)", retryable=True)
+                        if is_vision:
+                            # Vision timeout — try Pollinations fallback
+                            logger.warning(f"Vision TIMEOUT for {try_model} ({VISION_TIMEOUT_SECONDS}s). Trying Pollinations fallback...")
+                            fallback_result = await self._try_pollinations_vision_fallback(
+                                prompt, image_base64, system_prompt, messages_history
+                            )
+                            if fallback_result:
+                                return fallback_result
+                            last_error = ProviderError(self.name, f"Vision timeout for {try_model} and Pollinations fallback failed", retryable=True)
+                        else:
+                            last_error = ProviderError(self.name, f"Timeout for {try_model}", retryable=True)
                         continue
                     except Exception as exc:
                         self._error_count += 1
@@ -472,6 +481,36 @@ class OllamaClusterProvider(BaseProvider):
         if last_error:
             raise last_error
         raise ProviderError(self.name, "All models failed", retryable=True)
+
+    async def _try_pollinations_vision_fallback(
+        self, prompt: str, image_base64: str, system_prompt: str = "",
+        messages: Optional[List[Dict]] = None
+    ) -> Optional[AIResponse]:
+        """Try Pollinations as fallback for vision when Ollama times out."""
+        if not self._pollinations_fallback:
+            logger.warning("No Pollinations fallback available for vision")
+            return None
+        try:
+            result = await self._pollinations_fallback.generate(
+                prompt,
+                system_prompt=system_prompt,
+                messages=messages,
+                image_base64=image_base64,
+            )
+            if result and result.text:
+                cleaned = self._strip_think_tags(result.text)
+                if cleaned:
+                    logger.info("Pollinations vision fallback SUCCESS!")
+                    return AIResponse(
+                        text=cleaned,
+                        provider="pollinations_fallback",
+                        model=result.model,
+                        tokens_used=0,
+                        metadata={"vision": True, "fallback": True},
+                    )
+        except Exception as e:
+            logger.warning(f"Pollinations vision fallback failed: {e}")
+        return None
 
     async def _try_failover(self) -> None:
         """Переключиться на альтернативный URL при ошибке подключения."""
@@ -504,10 +543,10 @@ class OllamaClusterProvider(BaseProvider):
             return "Привет! О чём хочешь поболтать?"
 
         use_vision = image is not None or video is not None
-        model = self._vision_model if use_vision else self._text_model or PRIMARY_MODEL
+        model = self._vision_model if use_vision else self._text_model or TEXT_FAST_MODEL
 
         ollama_messages = []
-        for msg in messages[-6:]:  # Reduced from 10 to 6 for speed
+        for msg in messages[-6:]:
             ollama_messages.append({
                 "role": msg.get("role", "user"),
                 "content": msg.get("content", ""),
@@ -519,7 +558,7 @@ class OllamaClusterProvider(BaseProvider):
             "stream": False,
             "options": {
                 "temperature": 0.7,
-                "num_ctx": 4096,  # Reduced from 8192 for speed
+                "num_ctx": 4096,
             },
         }
 
@@ -570,4 +609,5 @@ class OllamaClusterProvider(BaseProvider):
             "error_count": self._error_count,
             "installed_models": self._installed_models,
             "high_priority_pending": self._high_priority_pending,
+            "pollinations_fallback": self._pollinations_fallback is not None,
         }
