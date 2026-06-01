@@ -422,25 +422,32 @@ async def main():
         timeout_task = asyncio.create_task(session_timeout())
 
         # ═══════════════════════════════════════════════════════
-        #  AGGRESSIVE TAKEOVER — kill old bot instance via API
+        #  SMART TAKEOVER — resolve TelegramConflictError
         # ═══════════════════════════════════════════════════════
         # Problem: When GitHub Actions cancels old run, the Python
-        # process gets SIGTERM but may take 10-20s to actually die.
+        # process gets SIGTERM but may take time to actually die.
         # During this time, BOTH instances call getUpdates → Conflict.
+        #
+        # Root cause: Telegram only allows ONE getUpdates connection.
+        # If the old process is still long-polling, any new
+        # getUpdates call returns TelegramConflictError.
         #
         # Solution:
         # 1. Call delete_webhook(drop_pending_updates=True) — this
-        #    FORCES the old instance's long-poll getUpdates to return
-        #    with a TelegramConflictError (because we claimed the webhook).
-        #    The old process sees the error and (eventually) exits.
-        # 2. Wait for the old process to die (exponential backoff).
-        # 3. Call delete_webhook AGAIN to make sure WE control the bot.
-        # 4. Test with get_updates() to verify we're sole instance.
+        #    forces the old instance's long-poll to return immediately
+        #    with a Conflict error, causing it to exit.
+        # 2. Wait for the old process to die.
+        # 3. Call get_updates with timeout=0 to quickly test if
+        #    we're the sole instance (no long-poll needed).
+        # 4. If still conflict, wait and retry.
         #
-        # This is the same technique used by bot hosting platforms.
+        # KEY INSIGHT: Use timeout=0 for testing, not timeout=3.
+        # timeout=0 makes getUpdates return immediately, so if
+        # there's no conflict we get a fast response. If there
+        # IS a conflict, the error comes back quickly too.
         # ═══════════════════════════════════════════════════════
 
-        MAX_TAKEOVER_ATTEMPTS = 8
+        MAX_TAKEOVER_ATTEMPTS = 12
         takeover_success = False
 
         for attempt in range(1, MAX_TAKEOVER_ATTEMPTS + 1):
@@ -451,15 +458,22 @@ async def main():
             except Exception as e:
                 logger.warning(f"[Takeover {attempt}] delete_webhook failed: {e}")
 
-            # Step 2: Wait with exponential backoff
-            # Old process needs time to: receive SIGTERM → close connections → exit
-            backoff = min(attempt * 5, 30)  # 5, 10, 15, 20, 25, 30, 30, 30 seconds
-            logger.info(f"[Takeover {attempt}] Waiting {backoff}s for old instance to die...")
-            await asyncio.sleep(backoff)
+            # Step 2: Short wait — don't waste time
+            # Start with short waits, increase gradually
+            if attempt <= 3:
+                wait = 3
+            elif attempt <= 6:
+                wait = 5
+            elif attempt <= 9:
+                wait = 10
+            else:
+                wait = 15
+            logger.info(f"[Takeover {attempt}] Waiting {wait}s...")
+            await asyncio.sleep(wait)
 
-            # Step 3: Try getUpdates to see if we're the sole instance
+            # Step 3: Try getUpdates with timeout=0 for instant check
             try:
-                test_updates = await bot.get_updates(limit=1, timeout=3)
+                test_updates = await bot.get_updates(limit=1, timeout=0)
                 logger.info(f"[Takeover {attempt}] getUpdates SUCCESS — we are the sole instance!")
                 takeover_success = True
                 break

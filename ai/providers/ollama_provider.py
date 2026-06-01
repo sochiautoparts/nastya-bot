@@ -204,27 +204,16 @@ class OllamaProvider(BaseProvider):
         # Build messages
         messages = self._build_messages(prompt, system_prompt, messages_history)
 
-        # Handle vision via multimodal content
+        # Handle vision — Ollama native API uses "images" field at message level
+        # NOT the OpenAI format with content list!
+        # See: https://github.com/ollama/ollama/blob/main/docs/api.md
+        ollama_images = None
         if image_base64 and self._vision_available:
             model = VISION_MODEL
-            # Modify last user message for vision
-            for i in range(len(messages) - 1, -1, -1):
-                if messages[i].get("role") == "user":
-                    existing_content = messages[i].get("content", "")
-                    if isinstance(existing_content, str):
-                        messages[i] = {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/jpeg;base64,{image_base64}"
-                                    },
-                                },
-                                {"type": "text", "text": existing_content},
-                            ],
-                        }
-                    break
+            # Ollama native API expects images as an array of base64 strings
+            # attached to the user message as a separate "images" field
+            ollama_images = [image_base64]
+            logger.info(f"Ollama: Sending image with vision model {model} (image size: {len(image_base64)} chars)")
         elif image_base64 and not self._vision_available:
             # No vision model available — describe without image
             logger.warning("Ollama: Image provided but no vision model. Processing text only.")
@@ -238,9 +227,20 @@ class OllamaProvider(BaseProvider):
 
         last_error = None
         for try_model in models_to_try:
+            # Build Ollama-native messages format
+            # Ollama expects: {"role": "user", "content": "text", "images": ["base64..."]}
+            ollama_messages = []
+            for msg in messages:
+                ollama_msg = {"role": msg["role"], "content": msg["content"]}
+                # Add images to the last user message
+                if (ollama_images and msg["role"] == "user" and
+                    not any(m.get("images") for m in ollama_messages if m["role"] == "user")):
+                    ollama_msg["images"] = ollama_images
+                ollama_messages.append(ollama_msg)
+
             payload = {
                 "model": try_model,
-                "messages": messages,
+                "messages": ollama_messages,
                 "stream": False,  # CRITICAL: No streaming — clean JSON response!
                 "options": {
                     "temperature": temperature,
