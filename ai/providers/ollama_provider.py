@@ -39,9 +39,10 @@ TEXT_MODELS = {
     "fallback": "qwen2.5:3b",      # Fallback: stable Qwen2.5
 }
 
-# Vision-capable models
+# Vision-capable model prefixes — ANY model starting with these is vision-capable
+# CRITICAL: "qwen3-vl" must be here! Without it, photos are not sent to Ollama!
+VISION_MODEL_PREFIXES = ["qwen3-vl", "qwen2.5-vl", "qwen2-vl", "llava", "minicpm-v", "bakllava", "moondream", "llama3-vision"]
 VISION_MODEL = "qwen3-vl:2b"
-VISION_FALLBACKS = ["llava:7b", "minicpm-v:8b"]
 
 
 class OllamaProvider(BaseProvider):
@@ -101,11 +102,13 @@ class OllamaProvider(BaseProvider):
                     if self._available:
                         break
 
-                # Check for vision model
-                for vmodel in [VISION_MODEL] + VISION_FALLBACKS:
+                # Check for vision model — use prefix list for robust detection
+                # This ensures qwen3-vl:2b is correctly detected as vision-capable
+                for prefix in VISION_MODEL_PREFIXES:
                     for installed in installed_models:
-                        if installed.startswith(vmodel.split(":")[0]):
+                        if installed.startswith(prefix):
                             self._vision_available = True
+                            logger.info(f"Ollama: vision model detected: {installed} (prefix: {prefix})")
                             break
                     if self._vision_available:
                         break
@@ -127,8 +130,8 @@ class OllamaProvider(BaseProvider):
             self._available = False
 
         status = "available" if self._available else "not available"
-        vision = "+vision" if self._vision_available else ""
-        logger.info(f"Ollama provider: {status}{vision}")
+        vision = "+vision" if self._vision_available else " NO_VISION"
+        logger.info(f"Ollama provider: {status}{vision} | model={self._available_model} | vision_detected={self._vision_available}")
 
     def is_available(self) -> bool:
         """Check if Ollama is potentially available.

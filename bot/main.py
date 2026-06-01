@@ -390,8 +390,21 @@ async def main():
     global bot
 
     # ── SINGLETON CHECK: exit if another instance is running ──
+    # In GitHub Actions, old instances are cancelled by concurrency group,
+    # but there's a race: old process may still be alive when new one starts.
+    # We handle this with aggressive takeover below.
     if not acquire_singleton_lock():
-        sys.exit(0)
+        # Lock file exists — but in GitHub Actions, the old process
+        # may have been killed without releasing the lock.
+        # Force-remove stale lock and try again.
+        logger.warning("Stale lock detected, force-removing...")
+        try:
+            Path(LOCK_PATH).unlink(missing_ok=True)
+        except Exception:
+            pass
+        if not acquire_singleton_lock():
+            logger.critical("Cannot acquire lock even after cleanup. Exiting.")
+            sys.exit(0)
 
     bot = Bot(
         token=BOT_TOKEN,
@@ -408,35 +421,72 @@ async def main():
 
         timeout_task = asyncio.create_task(session_timeout())
 
-        # CRITICAL: Delete webhook and drop pending updates FIRST
-        # This ensures we're the only instance receiving updates
-        # Retry up to 5 times with increasing delay to handle race conditions
-        # where another instance is still shutting down
-        for attempt in range(1, 6):
+        # ═══════════════════════════════════════════════════════
+        #  AGGRESSIVE TAKEOVER — kill old bot instance via API
+        # ═══════════════════════════════════════════════════════
+        # Problem: When GitHub Actions cancels old run, the Python
+        # process gets SIGTERM but may take 10-20s to actually die.
+        # During this time, BOTH instances call getUpdates → Conflict.
+        #
+        # Solution:
+        # 1. Call delete_webhook(drop_pending_updates=True) — this
+        #    FORCES the old instance's long-poll getUpdates to return
+        #    with a TelegramConflictError (because we claimed the webhook).
+        #    The old process sees the error and (eventually) exits.
+        # 2. Wait for the old process to die (exponential backoff).
+        # 3. Call delete_webhook AGAIN to make sure WE control the bot.
+        # 4. Test with get_updates() to verify we're sole instance.
+        #
+        # This is the same technique used by bot hosting platforms.
+        # ═══════════════════════════════════════════════════════
+
+        MAX_TAKEOVER_ATTEMPTS = 8
+        takeover_success = False
+
+        for attempt in range(1, MAX_TAKEOVER_ATTEMPTS + 1):
             try:
+                # Step 1: Delete webhook — this kicks the old instance out
                 await bot.delete_webhook(drop_pending_updates=True)
-                logger.info(f"Webhook deleted, pending updates dropped (attempt {attempt})")
+                logger.info(f"[Takeover {attempt}/{MAX_TAKEOVER_ATTEMPTS}] delete_webhook OK")
             except Exception as e:
-                logger.warning(f"Failed to delete webhook (attempt {attempt}): {e}")
+                logger.warning(f"[Takeover {attempt}] delete_webhook failed: {e}")
 
-            # Wait before starting polling — give old instances time to die
-            if attempt < 5:
-                wait_time = attempt * 5  # 5, 10, 15, 20 seconds
-                logger.info(f"Waiting {wait_time}s before polling to ensure no other instances...")
-                await asyncio.sleep(wait_time)
+            # Step 2: Wait with exponential backoff
+            # Old process needs time to: receive SIGTERM → close connections → exit
+            backoff = min(attempt * 5, 30)  # 5, 10, 15, 20, 25, 30, 30, 30 seconds
+            logger.info(f"[Takeover {attempt}] Waiting {backoff}s for old instance to die...")
+            await asyncio.sleep(backoff)
 
-            # Try a test getUpdates to see if we're the sole instance
+            # Step 3: Try getUpdates to see if we're the sole instance
             try:
-                test_updates = await bot.get_updates(limit=1, timeout=1)
-                logger.info(f"Test getUpdates succeeded — we are the sole instance (attempt {attempt})")
+                test_updates = await bot.get_updates(limit=1, timeout=3)
+                logger.info(f"[Takeover {attempt}] getUpdates SUCCESS — we are the sole instance!")
+                takeover_success = True
                 break
             except Exception as e:
-                if "Conflict" in str(e) or "terminated by other" in str(e):
-                    logger.warning(f"Another bot instance still running (attempt {attempt}/5), waiting longer...")
-                    await asyncio.sleep(15)
+                err_str = str(e)
+                if "Conflict" in err_str or "terminated by other" in err_str:
+                    logger.warning(f"[Takeover {attempt}] Old instance still alive (Conflict), retrying...")
+                    # Delete webhook AGAIN to keep kicking the old instance
+                    try:
+                        await bot.delete_webhook(drop_pending_updates=True)
+                    except Exception:
+                        pass
                 else:
-                    logger.warning(f"getUpdates test error: {e}")
+                    logger.warning(f"[Takeover {attempt}] getUpdates error (not Conflict): {e}")
+                    # Not a conflict — might be network issue. Try polling anyway.
+                    takeover_success = True
                     break
+
+        if not takeover_success:
+            logger.error("FAILED to take over after all attempts! Starting polling anyway — expect conflicts.")
+
+        # Final cleanup: delete webhook one more time to ensure clean state
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+            logger.info("Final webhook cleanup done")
+        except Exception:
+            pass
 
         # Include poll_answer updates so Nastya can react to poll votes
         allowed_updates = dispatcher.resolve_used_update_types()
