@@ -81,10 +81,11 @@ async def cmd_reset(message: Message, db=None, ai_router=None) -> None:
     if not ai_router:
         return
 
-    # Очистка кэша провайдера
+    # Очистка состояния провайдера
     if ai_router.provider:
-        ai_router.provider._cache.clear()
-    await message.answer("🔄 Кэш AI сброшен!")
+        # Reset warm-up so model reloads on next request
+        ai_router.provider._warm = False
+    await message.answer("🔄 AI провайдер сброшен!")
 
 
 @router.message(Command("fetchnews"))
@@ -100,7 +101,7 @@ async def cmd_fetch_news(message: Message, db=None, ai_router=None) -> None:
 
     try:
         from news import run_news_cycle
-        commented = await run_news_cycle(db, ai_router)
+        commented = await run_news_cycle(db)  # v35: ai_router not needed, templates only!
         await message.answer(f"📰 Готово! Новых с комментариями: {commented}")
     except Exception as e:
         logger.error(f"Fetch news error: {e}")
@@ -133,20 +134,18 @@ async def cmd_post_channel(message: Message, db=None, ai_router=None) -> None:
 
 @router.message(Command("testnews"))
 async def cmd_test_news(message: Message, db=None, ai_router=None) -> None:
-    """Test news commentary generation."""
+    """Test news commentary generation — template-based, no AI!"""
     if message.from_user.id not in ADMIN_IDS:
         return
 
-    if not ai_router:
-        return
-
     test_title = "В Москве открыли новый торговый центр"
+    test_category = "general"
     await message.answer(f"🧪 Генерю реакцию на: {test_title}")
 
     try:
-        from news import generate_nastya_comment
-        comment = await generate_nastya_comment(ai_router, test_title)
-        await message.answer(f"💬 Реакция Насти: {comment}")
+        from news import generate_template_commentary
+        comment = generate_template_commentary(test_title, test_category)
+        await message.answer(f"💬 Реакция Насти (template): {comment}")
     except Exception as e:
         logger.error(f"Test news error: {e}")
-        await message.answer("❌ Настя пока не может реагировать на новости... AI провайдеры спят!")
+        await message.answer("❌ Настя пока не может реагировать на новости...")

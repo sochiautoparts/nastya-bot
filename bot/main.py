@@ -1,10 +1,12 @@
-"""Nastya Bot 34.0 — SMART MODEL AUTO-DETECTION. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 35.0 — RSS-FIRST, NO AI for news. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v34.0 (SMART AUTO-DETECT):
-  - OllamaClusterProvider САМ определяет лучшую модель из установленных
-  - Приоритет моделей: qwen2.5:1.5b > qwen3:4b-instruct
-  - Индивидуальные параметры для каждой модели (num_predict, timeout, think)
-  - Pollinations = FALLBACK (после 429 кулдаун 5 минут)
+Architecture v35.0 (RSS-FIRST):
+  - Новости: RSS-парсер + шаблонные комментарии (БЕЗ AI!)
+  - Чат: Ollama (qwen2.5:1.5b / qwen3:4b-instruct) + Pollinations fallback
+  - Канал: шаблонные посты, опросы, факты (БЕЗ AI!)
+  - RSS-события сохраняются в JSON файл + SQLite
+  - Индивидуальные параметры для каждой модели (top_p, repeat_penalty)
+  - THINKING OFF для всех моделей — экономия токенов
   - vikhr-1B УБРАН — генерирует бред на русском
   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
   - HEALTH WATCHDOG: monitors Telegram API + Ollama
@@ -468,7 +470,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 34.0 Starting (SMART AUTO-DETECT — v34) ===")
+    logger.info("=== Nastya Bot 35.0 Starting (RSS-FIRST — v35) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -515,7 +517,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 34.0 Ready (SMART AUTO-DETECT — v34) ===")
+    logger.info("=== Nastya Bot 35.0 Ready (RSS-FIRST — v35) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

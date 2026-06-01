@@ -1,21 +1,10 @@
-"""Nastya Channel Manager 7.0 — diverse, substantive posts to @chasnastya.
+"""Nastya Channel Manager 8.0 — RSS-first, NO AI for posts!
 
-Architecture:
-  - Posts news with Nastya's commentary to the channel
-  - Posts personality-only content (no news) — EXPANDED variety
-  - Mixes news posts with personal posts for variety (50/50)
-  - Deduplication: tracks recent posts, avoids repeats
-  - Posts more frequently — events are happening all the time!
-  - Knowledge posts: interesting facts, quizzes, REAL Telegram polls!
-  - Time-aware content: morning/day/evening/night moods
-  - Invites users to channel from private chats
-  - Cross-references channel content in conversations
-
-v7.0: Real Telegram polls + web search for channel content!
-  - send_poll() creates real interactive polls with buttons
-  - Web search integration for event reactions
-  - More diverse and substantive posts
-  - _validate_post_text() safety net catches SSE/API artifacts before posting
+v8.0 KEY CHANGES:
+  - RSS + template-based commentary — NO AI for news posts!
+  - Personality posts — template only, NO AI generation
+  - AI is ONLY used for user chat, not for channel posts
+  - This frees Ollama from background load, improves chat quality
 """
 import logging
 import random
@@ -684,16 +673,16 @@ async def post_real_poll_to_channel(bot: Bot, db) -> bool:
         return False
 
 
-async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
+async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
     """Full channel posting cycle.
 
-    Strategy v7.0:
-    - 40% news posts (if available) — MORE news, more events!
-    - 20% personality posts (AI-generated or template)
+    v35: RSS-FIRST — новости через RSS + шаблоны, AI НЕ используется!
+    Strategy v8.0:
+    - 45% news posts (if available) — RSS + template commentary
+    - 20% personality posts (template only, NO AI!)
     - 15% knowledge posts (interesting facts)
     - 10% event reaction posts
     - 10% REAL Telegram polls (interactive buttons!)
-    - 5% quiz/text posts
     - Max 3 posts per cycle to keep channel active
     - Deduplication: never repeat same content
     - Time-aware content selection
@@ -716,21 +705,13 @@ async def run_channel_cycle(bot: Bot, db, ai_router) -> int:
         except Exception as e:
             logger.error(f"Channel news cycle error: {e}")
 
-    # Personality posts (20% chance)
+    # Personality posts (20% chance) — v35: ВСЕГДА шаблоны, БЕЗ AI!
     if posted < max_posts and (roll >= 0.45 or posted == 0):
         try:
-            # 60% AI-generated, 40% template
-            if random.random() < 0.60:
-                from news import generate_personality_post
-                # Pass recent news with links so AI can reference them
-                try:
-                    recent_for_post = await db.get_recent_news_with_links(limit=3, max_age_hours=6)
-                except Exception:
-                    recent_for_post = []
-                post_text = await generate_personality_post(ai_router, news_items=recent_for_post)
-            else:
-                time_posts = _get_time_posts()
-                post_text = random.choice(time_posts)
+            # v35: Только шаблоны — AI НЕ используется для постов
+            # Это быстрее (мгновенно), надёжнее (нет мусора), не грузит Ollama
+            time_posts = _get_time_posts()
+            post_text = random.choice(time_posts)
 
             if post_text and await post_personality_to_channel(bot, db, post_text):
                 posted += 1

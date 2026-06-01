@@ -1,13 +1,13 @@
-"""OllamaClusterProvider v34.0 — SMART MODEL AUTO-DETECTION.
+"""OllamaClusterProvider v35.0 — SMART MODEL AUTO-DETECTION + RSS-first.
 
-КЛЮЧЕВЫЕ ИСПРАВЛЕНИЯ v34:
-  - АВТООПРЕДЕЛЕНИЕ моделей: если qwen2.5:1.5b не установлена, используем
-    лучшую из доступных (qwen3:4b-instruct, и т.д.)
-  - РАЗДЕЛЬНЫЕ параметры для каждой модели: num_predict, timeout, think
-  - Qwen3 thinking mode: num_predict=250 (было 100 — мало, думать+отвечать)
-  - Корректная обработка /think=false для Qwen3 (Ollama поддерживает)
+КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ v35:
+  - Новости теперь через RSS-парсер + шаблоны, БЕЗ AI!
+  - Ollama свободен для чата — не тратит время на news commentary
+  - Уменьшен num_ctx до 1536 — быстрее на CPU
+  - Уменьшен num_predict до 100-150 — Настины ответы короткие
+  - Добавлены top_p и repeat_penalty против повторов
+  - THINKING OFF для всех моделей — экономия токенов
   - vikhr-1B полностью игнорируется (даже если установлен)
-  - Прогрев модели при старте с правильными параметрами
 
 МОДЕЛИ (по приоритету):
   1. qwen2.5:1.5b — быстрый, отличный русский (0.9GB)
@@ -47,32 +47,40 @@ BANNED_MODELS = [
 # Параметры для каждой модели (индивидуальные!)
 MODEL_CONFIGS = {
     "qwen2.5:1.5b": {
-        "num_predict": 150,      # Короткие ответы Насти, но не слишком мало
-        "num_ctx": 2048,
-        "timeout": 25.0,         # Быстрая модель
+        "num_predict": 100,      # Короткие ответы Насти — 1-2 предложения
+        "num_ctx": 1536,         # Меньше контекст = быстрее генерация
+        "timeout": 20.0,         # Быстрая модель — 20с хватит
         "think": False,          # Нет thinking mode
-        "temperature": 0.8,
+        "temperature": 0.85,     # Чуть выше = разнообразнее
+        "top_p": 0.9,           # Nucleus sampling для качества
+        "repeat_penalty": 1.1,   # Чтобы не повторялась
     },
     "qwen3:4b-instruct": {
-        "num_predict": 250,      # Больше! Thinking + ответ = нужно больше токенов
-        "num_ctx": 2048,
-        "timeout": 60.0,         # Медленнее, 4B на CPU
-        "think": False,          # Отключаем thinking для скорости!
-        "temperature": 0.7,
+        "num_predict": 150,      # Отключён thinking — можно меньше
+        "num_ctx": 1536,         # Меньше = быстрее на CPU
+        "timeout": 45.0,         # 4B на CPU — медленнее
+        "think": False,          # ВЫКЛЮЧАЕМ thinking — он жрёт токены!
+        "temperature": 0.8,
+        "top_p": 0.9,
+        "repeat_penalty": 1.1,
     },
     "qwen2.5:3b": {
-        "num_predict": 200,
-        "num_ctx": 2048,
-        "timeout": 45.0,
-        "think": False,
-        "temperature": 0.7,
-    },
-    "default": {
-        "num_predict": 150,
-        "num_ctx": 2048,
-        "timeout": 45.0,
+        "num_predict": 120,
+        "num_ctx": 1536,
+        "timeout": 35.0,
         "think": False,
         "temperature": 0.8,
+        "top_p": 0.9,
+        "repeat_penalty": 1.1,
+    },
+    "default": {
+        "num_predict": 100,
+        "num_ctx": 1536,
+        "timeout": 35.0,
+        "think": False,
+        "temperature": 0.85,
+        "top_p": 0.9,
+        "repeat_penalty": 1.1,
     },
 }
 
@@ -90,7 +98,7 @@ def _get_model_config(model_name: str) -> dict:
     for key in MODEL_CONFIGS:
         if key in model_name:
             return MODEL_CONFIGS[key]
-    return MODEL_CONFIGS["default"])
+    return MODEL_CONFIGS["default"]
 
 
 def _is_model_banned(model_name: str) -> bool:
@@ -385,11 +393,13 @@ class OllamaClusterProvider(BaseProvider):
                     messages=messages_history,
                 )
 
-                # v34: Индивидуальные параметры для каждой модели!
+                # v35: Индивидуальные параметры для каждой модели!
                 options = {
                     "temperature": temperature,
                     "num_predict": min(max_tokens, config["num_predict"]),
                     "num_ctx": config["num_ctx"],
+                    "top_p": config.get("top_p", 0.9),
+                    "repeat_penalty": config.get("repeat_penalty", 1.1),
                 }
                 payload = {
                     "model": model,

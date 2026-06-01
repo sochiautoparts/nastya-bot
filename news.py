@@ -1,19 +1,28 @@
-"""Nastya News Engine 2.1 — RSS news fetching + AI summarization.
+"""Nastya News Engine 3.0 — RSS-only, NO AI for news!
+
+КЛЮЧЕВОЕ ИЗМЕНЕНИЕ v3.0:
+  - УБРАНА генерация AI-комментариев к новостям
+  - Комментарии генерируются из ШАБЛОНОВ (быстро, качественно, без мусора)
+  - RSS-парсер сохраняет события в JSON-файл + SQLite
+  - Бот читает JSON/SQLite и применяет новости в контекст
+  - AI НЕ используется для новостей — только для ЧАТА
 
 Architecture:
   - Fetches RSS feeds from configured sources using feedparser (robust)
   - Falls back to XML parsing if feedparser fails
   - Extracts titles, summaries, and categories
-  - AI generates Nastya's personal commentary on each news item
-  - Stores in DB for channel posting + conversation context
+  - Template-based Nastya commentary — NO AI, instant and clean
+  - Stores in DB + JSON file for channel posting + conversation context
   - Runs periodically as background task
   - Picks interesting items by category priority
-  - v2.1: More reliable RSS sources, better error handling, Moscow time
 """
+
 import asyncio
+import json
 import logging
 import time
 import random
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import httpx
@@ -28,6 +37,9 @@ try:
 except ImportError:
     HAS_FEEDPARSER = False
     from xml.etree import ElementTree
+
+# JSON file for news cache — bot can read this directly
+NEWS_JSON_PATH = Path("data/news_cache.json")
 
 
 # ── RSS Parser ──────────────────────────────────────────────
@@ -180,7 +192,7 @@ POLITICAL_KEYWORDS = [
 
 def _score_news_interest(item: Dict) -> float:
     """Score how interesting a news item is for Nastya (0-1).
-    
+
     Political/religious/war news gets score 0 — Nastya is apolitical!
     """
     # Check if news is political — Nastya avoids these!
@@ -215,7 +227,7 @@ async def fetch_all_news() -> List[Dict]:
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(15.0, connect=5.0),
         follow_redirects=True,
-        headers={"User-Agent": "Mozilla/5.0 (compatible; NastyaBot/2.1; RSS Reader)"},
+        headers={"User-Agent": "Mozilla/5.0 (compatible; NastyaBot/3.0; RSS Reader)"},
     ) as client:
         # Fetch all sources concurrently
         tasks = []
@@ -240,8 +252,6 @@ async def fetch_all_news() -> List[Dict]:
         item.pop("_interest_score", None)
 
     # Filter out political/religious/war news — Nastya is APOLITICAL!
-    filtered = [item for item in all_items if item.get("_skip_political") is not True]
-    # Already filtered by score=0.0 above, but double-check
     final_items = []
     for item in all_items:
         text = (item.get("title", "") + " " + item.get("summary", "")).lower()
@@ -268,7 +278,6 @@ async def _fetch_single_source(client: httpx.AsyncClient, source: Dict) -> List[
         return []
 
 
-
 async def store_news_items(db, items: List[Dict]) -> int:
     """Store news items in DB. Returns count of NEW items stored."""
     new_count = 0
@@ -285,135 +294,201 @@ async def store_news_items(db, items: List[Dict]) -> int:
     return new_count
 
 
-# ── AI Commentary Generation ────────────────────────────────
+# ── Template-Based Commentary — NO AI! ──────────────────────
+# v3.0: Вместо AI-генерации комментариев используем шаблоны.
+# Это быстрее (мгновенно), надёжнее (нет мусора), и не грузит CPU.
 
-# v34: Ещё более короткие промпты для генерации
-# Малые модели (1.5B-4B) дают лучший результат с короткими конкретными промптами
-# Примеры помогают модели понять стиль
-NASTYA_COMMENTARY_PROMPT = """Ты Настя — девушка из Москвы. Канал @chasnastya.
-Напиши СВОЁ мнение о новости. 2-3 предложения. Живо! Пример стиля: "Офигеть! Прикинь, какая новость! Капец просто."
-Слова: точняк, офигеть, жесть, капец, блин, прикинь. Без markdown. Упомяни @chasnastya.
-Если политика — не комментируй.
+# Шаблоны комментариев по категориям — Настя говорит живо и коротко
+COMMENTARY_TEMPLATES = {
+    "auto": [
+        "Прикинь, автоновости! Настя в курсе!",
+        "О, про машины! Точняк, надо знать!",
+        "Автомобильная тема! Настя следит!",
+        "Круто, про тачки! Настя разбирается!",
+        "Жесть, про авто! Запомни!",
+    ],
+    "tech": [
+        "Офигеть, технологии! Настя в шоке!",
+        "Капец, техно-новость! Кайф!",
+        "Ничего себе, технологии! Настя впечатлена!",
+        "Прикинь, что придумали! Будущее уже тут!",
+        "Техно-жесть! Настя не верит!",
+    ],
+    "science": [
+        "Офигеть, наука! Настя умная!",
+        "Капец, открытие! Реально круто!",
+        "Ничего себе, наука! Настя в шоке!",
+        "Прикинь, учёные выяснили! Жесть!",
+        "Умная новость! Настя оценила!",
+    ],
+    "gaming": [
+        "О, гейминг! Настя играет!",
+        "Круто, игровая новость! Кто в деле?",
+        "Капец, про игры! Настя хочет!",
+        "Жесть, геймерская тема! Точняк!",
+        "Прикинь, про игры! Настя в деле!",
+    ],
+    "general": [
+        "Прикинь, новость! Настя в курсе!",
+        "Офигеть! Настя только что узнала!",
+        "Капец, новость! Реально!",
+        "Ничего себе! Настя в шоке!",
+        "Жесть! Настя не верит!",
+        "Круто! Настя следит!",
+        "Точняк, интересно! Настя одобряет!",
+        "Блин, новость! Настя в курсе!",
+    ],
+}
 
-Новость: {title}
-{summary}
-
-Настя:"""
-
-PERSONALITY_POST_PROMPT = """Ты Настя — девушка из Москвы. Канал @chasnastya.
-Напиши пост для канала. 3-4 предложения. С мнением + вопрос подписчикам.
-Пример стиля: "Блин, прикинь какая тема! А вы как думаете?"
-Слова: точняк, офигеть, жесть, капец. Без markdown. Не про политику.
-
-Пост Насти:"""
+# Шаблоны для personality-постов — тоже без AI
+PERSONALITY_COMMENTARY = [
+    "Настя тут подумала... А вы как считаете?",
+    "Прикинь, какая тема! Делитесь мнением!",
+    "Офигеть, Настя не может молчать!",
+    "Котятки, что думаете по этому поводу?",
+    "Блин, Настя в шоке! А вы?",
+]
 
 
-async def generate_nastya_comment(ai_router, title: str, summary: str = "") -> str:
-    """Generate Nastya's commentary on a news item using AI.
-    
-    Skips political/religious/war news — Nastya is APOLITICAL!
-    Also checks the AI-generated output for political content before returning.
+def generate_template_commentary(title: str, category: str = "general") -> str:
+    """Generate Nastya's commentary from TEMPLATES — NO AI!
+
+    v3.0: Шаблонные комментарии вместо AI-генерации.
+    - Мгновенная генерация (0 мс вместо 15-47 сек)
+    - Нет мусора от маленьких моделей
+    - Не грузит CPU — Ollama свободен для чата
+    - Качество гарантировано — шаблоны написаны вручную
     """
-    # Skip political news
-    text_lower = (title + " " + summary).lower()
+    # Get templates for category, fallback to general
+    templates = COMMENTARY_TEMPLATES.get(category, COMMENTARY_TEMPLATES["general"])
+    comment = random.choice(templates)
+
+    # Add a reaction based on keywords in the title
+    title_lower = title.lower()
+
+    # Interesting keywords get extra enthusiasm
+    for keyword in ["кот", "котик", "собак", "щен"]:
+        if keyword in title_lower:
+            comment = random.choice([
+                "Ой, ми-ми-ми! Настя тащится!",
+                "Капец, мило! Настя не может!",
+                "Офигеть, какие милые! Настя в восторге!",
+            ])
+            return comment
+
+    for keyword in ["авто", "машин", "запчаст", "ремонт", "toyota", "honda"]:
+        if keyword in title_lower:
+            comment = random.choice([
+                "О, про тачки! Настя разбирается в авто!",
+                "Авто-тема! Точняк, Настя в курсе!",
+                "Прикинь, про машины! Настя знает!",
+            ])
+            return comment
+
+    for keyword in ["скидк", "распродаж", "акци", "free"]:
+        if keyword in title_lower:
+            comment = random.choice([
+                "Скидки?! Настя бежит!",
+                "Распродажа! Настя уже смотрит!",
+                "Офигеть, акция! Надо брать!",
+            ])
+            return comment
+
+    for keyword in ["айфон", "apple", "телефон", "гаджет"]:
+        if keyword in title_lower:
+            comment = random.choice([
+                "О, Apple! Настя хочет!",
+                "Гаджеты! Настя следит за техником!",
+                "Капец,新技术! Настя в восторге!",
+            ])
+            return comment
+
+    for keyword in ["кино", "фильм", "сериал", "netflix"]:
+        if keyword in title_lower:
+            comment = random.choice([
+                "О, кино! Настя обожает!",
+                "Сериал! Настя смотрит!",
+                "Фильмы! Настя знает что смотреть!",
+            ])
+            return comment
+
+    # Check for political content — return empty (skip)
     for kw in POLITICAL_KEYWORDS:
-        if kw.lower() in text_lower:
-            return ""  # No comment on political news
-    prompt = NASTYA_COMMENTARY_PROMPT.format(
-        title=title,
-        summary=summary[:300] if summary else "(нет описания)",
-    )
+        if kw.lower() in title_lower:
+            return ""
 
-    try:
-        result = await ai_router.chat(
-            prompt=prompt,
-            system_prompt="Ты Настя. Пиши коротко, эмоционально. 2-3 предложения. Как в мессенджере.",
-            messages=None,  # No history for commentary
-            priority="low",  # Low priority — don't block user chat
-        )
-        text = result.text.strip()
-
-        # Clean up response
-        for prefix in ["Настя:", "НАСТЯ:", "Реакция Насти:", "Реакция:", "Comment:", "Nastya:"]:
-            if text.startswith(prefix):
-                text = text[len(prefix):].strip()
-
-        if len(text) > 200:
-            text = text[:200]
-
-        # ── Check AI-generated output for political content ──
-        # Even on non-political news, the AI might generate political commentary.
-        # Filter it out — Nastya is APOLITICAL!
-        text_check = text.lower()
-        for kw in POLITICAL_KEYWORDS:
-            if kw.lower() in text_check:
-                logger.info(f"Filtering political AI commentary on: {title[:50]}...")
-                return ""
-
-        return text
-    except Exception as e:
-        logger.error(f"Commentary generation error: {e}")
-        return ""
+    return comment
 
 
-async def generate_personality_post(ai_router, news_items: list = None) -> str:
-    """Generate a personal post from Nastya for her channel.
+# ── JSON Cache File ─────────────────────────────────────────
 
-    If news_items are provided, the AI may reference them WITH LINKS.
+def save_news_to_json(items: List[Dict], max_items: int = 100) -> None:
+    """Save recent news to a JSON file for easy access.
+
+    The bot can read this file to get news context without querying the DB.
+    This is useful for:
+    - Quick access to recent news
+    - Debugging and monitoring
+    - Channel posting (no DB query needed)
     """
     try:
-        # Build news context for the AI if available
-        news_context = ""
-        if news_items:
-            news_lines = []
-            for item in news_items[:3]:
-                title = item.get("title", "")
-                link = item.get("link", "")
-                if title and link:
-                    news_lines.append(f"- {title} [ссылка: {link}]")
-            if news_lines:
-                news_context = (
-                    "\n\nСвежие новости (можешь упомянуть! ОБЯЗАТЕЛЬНО с ссылкой!):\n"
-                    + "\n".join(news_lines)
-                )
+        NEWS_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-        result = await ai_router.chat(
-            prompt=PERSONALITY_POST_PROMPT + news_context,
-            system_prompt="Ты Настя. Пиши пост для канала @chasnastya. 3-4 предложения, с мнением и вопросом.",
-            messages=None,
-            priority="low",  # Low priority — don't block user chat
-        )
-        text = result.text.strip()
+        # Load existing data
+        existing = []
+        if NEWS_JSON_PATH.exists():
+            try:
+                with open(NEWS_JSON_PATH, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                existing = []
 
-        for prefix in ["Настя:", "НАСТЯ:", "Пост Насти:", "Пост:", "Post:"]:
-            if text.startswith(prefix):
-                text = text[len(prefix):].strip()
+        # Merge new items (by link dedup)
+        existing_links = {item.get("link", "") for item in existing}
+        for item in items:
+            if item.get("link", "") not in existing_links:
+                existing.append(item)
 
-        if len(text) > 500:
-            text = text[:500]
+        # Sort by interest score (if available) or just keep recent
+        # Keep only max_items
+        existing = existing[-max_items:]
 
-        # ── Check AI-generated output for political content ──
-        # Nastya is APOLITICAL — never post political content to channel
-        text_check = text.lower()
-        for kw in POLITICAL_KEYWORDS:
-            if kw.lower() in text_check:
-                logger.info("Filtering political content from personality post")
-                return ""
+        # Save
+        with open(NEWS_JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(existing, f, ensure_ascii=False, indent=2)
 
-        return text
+        logger.info(f"Saved {len(existing)} news items to {NEWS_JSON_PATH}")
+
     except Exception as e:
-        logger.error(f"Personality post generation error: {e}")
-        return "Котятки, Настя сегодня ленится... Но завтра точно напишу что-то интересное! Подписывайтесь! 😴💅"
+        logger.error(f"Failed to save news JSON: {e}")
 
 
-# ── Main News Cycle ─────────────────────────────────────────
+def load_news_from_json() -> List[Dict]:
+    """Load recent news from JSON cache file.
 
-async def run_news_cycle(db, ai_router) -> int:
-    """Full news cycle: fetch → store → generate comments.
-
-    Returns count of new items with comments generated.
+    Returns list of news items with title, link, summary, category, etc.
     """
-    logger.info("News cycle: fetching...")
+    try:
+        if NEWS_JSON_PATH.exists():
+            with open(NEWS_JSON_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"Failed to load news JSON: {e}")
+    return []
+
+
+# ── Main News Cycle — NO AI! ────────────────────────────────
+
+async def run_news_cycle(db, ai_router=None) -> int:
+    """Full news cycle: fetch → store → generate template comments.
+
+    v3.0: NO AI for news commentary!
+    - RSS fetch → SQLite + JSON file
+    - Template-based commentary — instant, no CPU load
+    - AI is NOT called at all for news
+    - ai_router parameter kept for compatibility but NOT used
+    """
+    logger.info("News cycle: fetching RSS feeds...")
     items = await fetch_all_news()
     if not items:
         logger.info("News cycle: no items fetched")
@@ -422,27 +497,36 @@ async def run_news_cycle(db, ai_router) -> int:
     new_count = await store_news_items(db, items)
     logger.info(f"News cycle: {new_count} new items stored")
 
-    # Generate Nastya's commentary for recent un-commented items
+    # Save to JSON file for easy access
+    try:
+        save_news_to_json(items)
+    except Exception as e:
+        logger.warning(f"JSON save error: {e}")
+
+    # Generate Nastya's commentary using TEMPLATES (NO AI!)
     commented = 0
     try:
         conn = await db._get_conn()
         async with conn.execute(
-            """SELECT id, title, summary FROM news_items
+            """SELECT id, title, summary, category FROM news_items
             WHERE nastya_comment IS NULL OR nastya_comment = ''
-            ORDER BY created_at DESC LIMIT 2""",  # v24.0: Reduced from 3 to 2
+            ORDER BY created_at DESC LIMIT 5""",
         ) as cur:
             uncommented = []
             async for row in cur:
-                uncommented.append({"id": row[0], "title": row[1], "summary": row[2] or ""})
+                uncommented.append({
+                    "id": row[0],
+                    "title": row[1],
+                    "summary": row[2] or "",
+                    "category": row[3] or "general",
+                })
 
         for item in uncommented:
-            comment = await generate_nastya_comment(ai_router, item["title"], item["summary"])
+            # Template-based commentary — NO AI, instant!
+            comment = generate_template_commentary(item["title"], item["category"])
             if comment:
                 await db.update_news_comment(item["id"], comment)
                 commented += 1
-            # v34: Increased delay to 15s between commentary generations
-            # CPU contention with chat — longer delay = better chat quality
-            await asyncio.sleep(15)
 
     except Exception as e:
         logger.error(f"Commentary generation cycle error: {e}")
@@ -453,16 +537,15 @@ async def run_news_cycle(db, ai_router) -> int:
     except Exception:
         pass
 
-    logger.info(f"News cycle done: {new_count} new, {commented} commented")
+    logger.info(f"News cycle done: {new_count} new, {commented} commented (templates, no AI)")
     return commented
 
 
 def format_news_for_context(news_items: List[Dict]) -> str:
     """Format recent news for injection into system prompt.
 
-    v34: Максимально коротко — только 2 заголовка без ссылок.
-    Малые модели путаются от лишней информации.
-    Ссылки добавляются пост-процессором в chat.py если нужно.
+    v3.0: Short — only 2 headlines with links.
+    Bot can use this to reference news naturally in chat.
     """
     if not news_items:
         return ""
@@ -470,8 +553,12 @@ def format_news_for_context(news_items: List[Dict]) -> str:
     parts = []
     for item in news_items[:2]:
         title = item.get("title", "")
+        link = item.get("link", "")
         if title:
-            parts.append(title)
+            entry = title
+            if link:
+                entry += f" ({link})"
+            parts.append(entry)
 
     if parts:
         return f"Новости: {'; '.join(parts)}."

@@ -1,20 +1,21 @@
-"""AI Router v34.0 — SMART MODEL AUTO-DETECTION.
+"""AI Router v35.0 — RSS-FIRST, NO AI for news!
 
-АРХИТЕКТУРА v34: Умная маршрутизация с автоопределением моделей!
+АРХИТЕКТУРА v35: RSS для новостей, AI ТОЛЬКО для чата!
 
   ЧАТ (пользовательские сообщения — приоритет СКОРОСТЬ):
     1. OllamaClusterProvider (автоопределяет лучшую модель)
     2. PollinationsProvider (fallback — если Ollama недоступен)
     3. Static fallback — бот ВСЕГДА отвечает
 
-  ФОН (новости, канал — приоритет НАДЁЖНОСТЬ):
-    1. OllamaClusterProvider (локальный, без rate-limit)
-    2. PollinationsProvider (облачный fallback)
+  ФОН (новости, канал — БЕЗ AI!):
+    - Новости: RSS-парсер + шаблонные комментарии
+    - Канал: шаблонные посты, опросы, факты
+    - AI НЕ вызывается для фоновых задач!
 
-  Ключевые изменения v34:
-    - OllamaClusterProvider САМ определяет лучшую модель из установленных
-    - Индивидуальные параметры для каждой модели (num_predict, timeout, think)
-    - Qwen3 thinking mode корректно обрабатывается
+  Ключевые изменения v35:
+    - Новости через RSS + JSON кэш + шаблоны (news.py)
+    - AI используется ТОЛЬКО для пользовательского чата
+    - Ollama полностью свободен от фоновой нагрузки
     - Кулдаун Pollinations после 429 (5 минут)
 """
 import logging
@@ -43,10 +44,10 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """Центральный AI-маршрутизатор — v34.0 SMART AUTO-DETECTION.
+    """Центральный AI-маршрутизатор — v35.0 RSS-FIRST.
 
     Чат: Ollama → Pollinations (если не на кулдауне) → static fallback.
-    Фон: Ollama → Pollinations → skip.
+    Фон: НЕ использует AI — RSS + шаблоны!
 
     Кулдаун Pollinations: после 429 не пробуем 5 минут.
     """
@@ -84,10 +85,11 @@ class AIRouter:
         primary_model = self.provider.get_stats().get("primary_model", "none")
         reserve_model = self.provider.get_stats().get("reserve_model", "none")
         logger.info(
-            f"AI Router v34.0 (SMART AUTO-DETECT) initialized: "
+            f"AI Router v35.0 (RSS-FIRST) initialized: "
             f"chat_primary=ollama({primary_model}), "
             f"reserve=ollama({reserve_model}), "
-            f"pollinations={pollinations_status} (fallback only)"
+            f"pollinations={pollinations_status} (fallback only), "
+            f"news=RSS+templates (no AI)"
         )
 
     async def close(self) -> None:
