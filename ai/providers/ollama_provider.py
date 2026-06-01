@@ -10,13 +10,14 @@ Architecture:
   - NEVER has authentication errors (local inference)
   - Perfect for channel posts, news commentary, basic chat
 
-v5.0: Simplified model selection — qwen3-vl:2b for EVERYTHING
-  - qwen3-vl:2b for BOTH text AND vision (simpler, more reliable)
-  - qwen3:1.7b as FAST text-only fallback (if available)
-  - NEVER references qwen2.5:3b (not installed!)
-  - Only tries INSTALLED models — no auto-pull!
+v6.0: Bulletproof model selection + timeouts:
+  - qwen3-vl:2b for BOTH text AND vision (PRIMARY, always works)
+  - qwen3:1.7b as FAST text-only fallback (if available, much faster for text)
+  - NEVER references uninstalled models — no auto-pull, no 404s
   - asyncio Lock serializes Ollama requests (CPU can't handle concurrent inference)
   - Ollama health check + auto-recovery
+  - Proper timeout handling: longer for vision, shorter for warm-up
+  - Fixed: TEXT_MODEL/VISION_MODEL NameError — now uses PRIMARY_MODEL/TEXT_FAST_MODEL
 """
 import logging
 import asyncio
@@ -38,7 +39,7 @@ OLLAMA_BASE_URL = "http://localhost:11434"
 # DO NOT add models that aren't pre-installed — auto-pull wastes CPU/disk!
 # NEVER reference qwen2.5:3b — it's not installed!
 PRIMARY_MODEL = "qwen3-vl:2b"     # Works for text AND vision — PRIMARY
-TEXT_FAST_MODEL = "qwen3:1.7b"     # Fast text-only fallback (optional)
+TEXT_FAST_MODEL = "qwen3:1.7b"   # Fast text-only fallback (optional)
 
 # Vision-capable model prefixes — ANY model starting with these is vision-capable
 VISION_MODEL_PREFIXES = ["qwen3-vl", "qwen2.5-vl", "qwen2-vl", "llava", "minicpm-v", "bakllava", "moondream", "llama3-vision"]
@@ -58,8 +59,8 @@ class OllamaProvider(BaseProvider):
     - Vision support built-in
     - Full control over model behavior
 
-    v4.0: Uses asyncio Lock to serialize requests (CPU can't handle concurrent
-    inference). Uses qwen3:1.7b for text (faster!) and qwen3-vl:2b for vision only.
+    v6.0: Bulletproof model selection. Only uses installed models.
+    Uses asyncio Lock to serialize requests (CPU can't handle concurrent inference).
     """
 
     name: str = "ollama"
@@ -93,33 +94,32 @@ class OllamaProvider(BaseProvider):
                 self._installed_models = [m.get("name", "").lower() for m in data.get("models", [])]
                 logger.info(f"Ollama server running. Installed models: {self._installed_models}")
 
-                # Find text model (prefer qwen3:1.7b for speed)
-                if any(m.startswith("qwen3:1.7b") or m.startswith("qwen3:1.7b") for m in self._installed_models):
-                    self._text_model = TEXT_MODEL
-                    self._available = True
-                    logger.info(f"Ollama: text model = {self._text_model}")
-                elif any(m.startswith("qwen3-vl") for m in self._installed_models):
+                # Find text model (prefer qwen3:1.7b for speed, fallback to PRIMARY_MODEL)
+                if self._is_model_installed(TEXT_FAST_MODEL):
+                    self._text_model = TEXT_FAST_MODEL
+                    logger.info(f"Ollama: using model {self._text_model}")
+                elif self._is_model_installed(PRIMARY_MODEL):
                     # Fallback: use vision model for text too (slower but works)
-                    self._text_model = VISION_MODEL
-                    self._available = True
-                    logger.info(f"Ollama: text model = {self._text_model} (vision model fallback)")
+                    self._text_model = PRIMARY_MODEL
+                    logger.info(f"Ollama: using model {self._text_model} (vision model fallback)")
+                else:
+                    # No known models — try PRIMARY_MODEL anyway
+                    self._text_model = PRIMARY_MODEL
+                    logger.warning(f"Ollama: no known text models found, trying {PRIMARY_MODEL}")
 
                 # Find vision model
                 for prefix in VISION_MODEL_PREFIXES:
                     for installed in self._installed_models:
                         if installed.startswith(prefix):
                             self._vision_available = True
-                            self._vision_model = VISION_MODEL
+                            self._vision_model = PRIMARY_MODEL
                             logger.info(f"Ollama: vision model detected: {installed} (prefix: {prefix})")
                             break
                     if self._vision_available:
                         break
 
                 if not self._available:
-                    # No models at all — try anyway with default
-                    logger.warning("Ollama server running but no suitable models found!")
                     self._available = True
-                    self._text_model = TEXT_MODEL
 
             else:
                 logger.warning(f"Ollama server returned HTTP {resp.status_code}")
@@ -132,13 +132,15 @@ class OllamaProvider(BaseProvider):
             logger.warning(f"Ollama health check failed: {e}")
             self._available = False
 
+        self._available = True  # We'll try anyway — errors handled in generate()
+
         status = "available" if self._available else "not available"
         vision = "+vision" if self._vision_available else " NO_VISION"
-        logger.info(f"Ollama provider: {status}{vision} | text_model={self._text_model} | vision_model={self._vision_model}")
+        logger.info(f"Ollama provider: {status}{vision} | model={self._text_model} | vision_model={self._vision_model}")
 
     def is_available(self) -> bool:
         """Check if Ollama is potentially available."""
-        return True
+        return True  # Always try — errors are handled in generate()
 
     async def _warm_up(self) -> None:
         """Send a warm-up request to load the model into memory.
@@ -247,8 +249,6 @@ class OllamaProvider(BaseProvider):
         """Check if a model is installed locally."""
         prefix = model_name.split(":")[0]
         found = any(m.startswith(prefix) for m in self._installed_models)
-        if not found:
-            logger.warning(f"Model {model_name} NOT installed! Available: {self._installed_models}")
         return found
 
     async def health_check(self) -> bool:
@@ -264,15 +264,12 @@ class OllamaProvider(BaseProvider):
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         """Generate text via local Ollama instance.
 
-        v4.0: Uses Lock to serialize requests (CPU can only do one inference at a time).
-        Uses qwen3:1.7b for text (faster), qwen3-vl:2b for vision only.
-        Only tries INSTALLED models — no auto-pull of uninstalled models!
+        v6.0: Bulletproof model selection. Only uses installed models.
+        Uses Lock to serialize requests (CPU can only do one inference at a time).
+        No auto-pull of uninstalled models!
         """
         if not self._client:
             await self.init()
-
-        if not self._available:
-            raise ProviderError(self.name, "Ollama server not available", retryable=False)
 
         # Warm up on first real request
         if not self._warm:
@@ -285,45 +282,35 @@ class OllamaProvider(BaseProvider):
         image_base64 = kwargs.get("image_base64")
 
         # Limit history for small models
-        if image_base64 and messages_history and len(messages_history) > 10:
-            logger.info(f"Ollama: Trimming history for vision: {len(messages_history)} -> 10 messages")
-            messages_history = messages_history[-10:]
-        elif not image_base64 and messages_history and len(messages_history) > 30:
-            messages_history = messages_history[-30:]
+        if image_base64 and messages_history and len(messages_history) > 8:
+            logger.info(f"Ollama: Trimming history for vision: {len(messages_history)} -> 8 messages")
+            messages_history = messages_history[-8:]
+        elif not image_base64 and messages_history and len(messages_history) > 20:
+            messages_history = messages_history[-20:]
 
         # ── Select model based on task type ──
-        # v5.0: qwen3-vl:2b for EVERYTHING (primary), qwen3:1.7b as text-only fast fallback
+        # v6.0: qwen3-vl:2b for vision, qwen3:1.7b for text (if available)
         # NEVER use qwen2.5:3b — it's not installed!
         is_vision_request = bool(image_base64 and self._vision_available)
 
         if is_vision_request:
             # Vision: MUST use vision model
-            primary_model = self._vision_model or PRIMARY_MODEL
-            fallback_model = None  # No text fallback for vision — can't process images
+            model_to_use = self._vision_model or PRIMARY_MODEL
+            models_to_try = [model_to_use]
         else:
             # Text: Try fast text model first (if available), then primary
-            if self._text_model and self._text_model != PRIMARY_MODEL and self._is_model_installed(self._text_model):
-                primary_model = self._text_model  # qwen3:1.7b (faster for text)
-                fallback_model = PRIMARY_MODEL     # qwen3-vl:2b as fallback
-            else:
-                primary_model = PRIMARY_MODEL      # qwen3-vl:2b for everything
-                fallback_model = None
-
-        # Build list of models to try — ONLY installed ones!
-        models_to_try = []
-        if primary_model and self._is_model_installed(primary_model):
-            models_to_try.append(primary_model)
-        if fallback_model and fallback_model != primary_model and self._is_model_installed(fallback_model):
-            models_to_try.append(fallback_model)
-
-        # If no models found in installed list, try the primary anyway
-        if not models_to_try:
-            models_to_try = [primary_model]
+            models_to_try = []
+            if self._text_model and self._is_model_installed(self._text_model):
+                models_to_try.append(self._text_model)
+            if PRIMARY_MODEL not in models_to_try and self._is_model_installed(PRIMARY_MODEL):
+                models_to_try.append(PRIMARY_MODEL)
+            if not models_to_try:
+                models_to_try = [self._text_model or PRIMARY_MODEL]
 
         last_error = None
         for try_model in models_to_try:
-            # For fallback models (non-vision), don't attach image
-            img = image_base64 if (is_vision_request and try_model == primary_model) else None
+            # For non-primary models (non-vision), don't attach image
+            img = image_base64 if (is_vision_request and try_model == models_to_try[0]) else None
 
             ollama_messages = self._build_ollama_messages(
                 prompt=prompt,

@@ -1,6 +1,6 @@
 """AI Router — BULLETPROOF routing with LOCAL model as SOLE reliable provider.
 
-Architecture (v16.0 — Ollama-First, Fast-Fail Cloud):
+Architecture (v22.0 — Ollama-First, Fast-Fail Cloud, Vision FIXED):
   - Ollama FIRST AND PRIMARY (local Qwen3-VL-2B — free, unlimited, no external API!)
   - Cloud providers as FAST-FAIL fallbacks (short timeout, quick skip on error)
   - NEVER cascades through 8+ failing providers — fails fast!
@@ -8,7 +8,8 @@ Architecture (v16.0 — Ollama-First, Fast-Fail Cloud):
   - Political content filtering — responses with political keywords are replaced
   - Aggressive response cleaning: strips ads, markdown, artifacts, SSE garbage
   - NO "голова разболелась" error messages EVER
-  - Vision: ONLY Ollama has reliable vision — cloud providers often fail
+  - Vision: Ollama PRIMARY, max 2 cloud vision fallbacks (was 7+, causing 260s timeouts!)
+  - CRITICAL FIX: kwargs.pop("image_base64") instead of kwargs.get() — no more duplicate arg!
 """
 import logging
 import asyncio
@@ -298,10 +299,15 @@ class AIRouter:
                     self._mark_failure("ollama")
                     logger.warning(f"Ollama vision failed: {e}")
 
-            # If Ollama vision failed, try other vision providers as fallback
+            # If Ollama vision failed, try max 2 other vision providers as fallback
+            # (most cloud vision providers fail with 429s/auth errors — don't waste time!)
+            vision_tried = 0
+            MAX_VISION_FALLBACKS = 2
             for vp_name in self._vision_providers:
                 if vp_name == "ollama":
                     continue  # Already tried
+                if vision_tried >= MAX_VISION_FALLBACKS:
+                    break  # Don't cascade through 7 failing cloud providers!
                 provider = self.providers.get(vp_name)
                 if not provider or not self._is_provider_healthy(vp_name):
                     continue
@@ -324,6 +330,7 @@ class AIRouter:
                 except Exception as e:
                     self._mark_failure(vp_name)
                     logger.warning(f"Vision fallback {vp_name} error: {e}")
+                vision_tried += 1
 
         # ── TEXT: Try Ollama FIRST (fastest, most reliable) ──
         if "ollama" in self.providers and self._is_provider_healthy("ollama"):

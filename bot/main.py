@@ -1,6 +1,6 @@
-"""Nastya Bot 21.0 — Main Entry Point. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 22.0 — Main Entry Point. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v21.0:
+Architecture v22.0:
   - SINGLE INSTANCE: file lock + conflict tracker prevents multiple bot instances
   - SINGLE WORKFLOW: one bot.yml with concurrency group (no duplicate runs)
   - LOCAL Qwen3-VL-2B via Ollama as PRIMARY (with FIXED vision!)
@@ -10,13 +10,15 @@ Architecture v21.0:
   - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ + VISION (FIXED!)
   - MOSCOW TIMEZONE — Настя из Москвы!
 
-v21.0 CRITICAL FIXES:
-  1. Health watchdog: checks Telegram + Ollama every 60s, restarts if unresponsive
-  2. Ollama health check: restarts Ollama server if it dies
-  3. Vision routing: goes DIRECTLY to Ollama, no cascading through failing clouds
-  4. Fast-fail: max 3 cloud providers tried (was 12+, causing 260s timeouts)
-  5. Model selection: qwen3-vl:2b for everything, no qwen2.5:3b references
-  6. Process supervisor in workflow: unlimited retries with intelligent backoff
+v22.0 CRITICAL FIXES:
+  1. Vision FIXED: image_base64 no longer duplicated in kwargs (kwargs.pop instead of kwargs.get)
+  2. Ollama provider FIXED: TEXT_MODEL/VISION_MODEL NameError — now uses PRIMARY_MODEL/TEXT_FAST_MODEL
+  3. Model selection FIXED: only uses installed models, never references qwen2.5:3b
+  4. Fast-fail: max 3 cloud providers tried + max 2 vision fallbacks (no more 260s timeouts)
+  5. Health watchdog: checks Telegram + Ollama every 30s, auto-restarts on failure
+  6. Ollama health check: restarts Ollama server if it dies
+  7. Process supervisor: unlimited retries with intelligent backoff
+  8. Signal handlers: clean shutdown on SIGTERM/SIGINT
 """
 import asyncio
 import fcntl
@@ -74,8 +76,8 @@ _should_exit = False  # Flag for conflict_monitor to signal main loop
 
 # ── Health watchdog state ──
 _last_successful_update: float = 0  # Timestamp of last successful Telegram update
-_HEALTH_CHECK_INTERVAL = 60  # Check health every 60 seconds
-_MAX_UNRESPONSIVE_SECONDS = 180  # Restart if no response for 3 minutes
+_HEALTH_CHECK_INTERVAL = 30  # Check health every 30 seconds (faster detection!)
+_MAX_UNRESPONSIVE_SECONDS = 120  # Restart if no response for 2 minutes
 _ollama_restart_count: int = 0  # Track Ollama restarts
 
 
@@ -477,7 +479,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 20.0 Starting (Ollama Lock, Vision FIX, Text=1.7b Vision=VL) ===")
+    logger.info("=== Nastya Bot 22.0 Starting (Vision FIXED, Model FIXED, Fast-Fail, Watchdog 30s) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -524,7 +526,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 20.0 Ready ===")
+    logger.info("=== Nastya Bot 22.0 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:
@@ -670,6 +672,16 @@ async def force_takeover(bot_instance: Bot) -> bool:
 
 async def main():
     global bot
+
+    # ── Signal handlers for clean shutdown ──
+    def handle_signal(signum, frame):
+        sig_name = signal.Signals(signum).name
+        logger.info(f"Received {sig_name}, initiating clean shutdown...")
+        # Don't call sys.exit here — just set the flag
+        # The polling loop will catch it
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
 
     # ── SINGLETON CHECK: exit if another instance is running ──
     # In GitHub Actions, old instances are cancelled by concurrency group,

@@ -1,7 +1,7 @@
-name: Nastya Bot — Qwen3-VL-2B
+name: Nastya Bot — Qwen3-VL-2B v22
 
 # ═══════════════════════════════════════════════════════════════
-# SINGLE CONSOLIDATED WORKFLOW for Nastya Bot v21.0
+# SINGLE CONSOLIDATED WORKFLOW for Nastya Bot v22.0
 #
 # Architecture:
 #   - Ollama runs INSIDE GitHub Actions with Qwen3-VL-2B model
@@ -10,16 +10,18 @@ name: Nastya Bot — Qwen3-VL-2B
 #   - concurrency: ONLY ONE instance can run at a time!
 #   - If old run is still going, it gets cancelled automatically
 #   - UNLIMITED retries: bot always restarts, never stays dead
-#   - Health watchdog inside bot: monitors Telegram + Ollama
+#   - Health watchdog inside bot: monitors Telegram + Ollama every 30s
 #   - Self-dispatch: re-dispatches workflow when runner time runs out
 #   - Exit codes: 2=conflict, 3=Ollama/health failure, 0=timeout
 #
-# v21.0 CHANGES:
-#   - UNLIMITED retries (was 5) — bot MUST always be running
+# v22.0 CHANGES:
+#   - Vision FIXED: image_base64 no longer duplicated in kwargs
+#   - Ollama provider FIXED: TEXT_MODEL NameError resolved
+#   - Model selection FIXED: only uses installed models
+#   - Fast-fail: max 3 cloud providers + max 2 vision fallbacks
+#   - Health watchdog: checks every 30s (was 60s)
+#   - UNLIMITED retries — bot MUST always be running
 #   - Intelligent backoff: 5s → 10s → 15s → 30s (max)
-#   - Ollama health check before each restart attempt
-#   - Health watchdog inside bot monitors Ollama + Telegram
-#   - Fast-fail routing: Ollama first, max 3 cloud providers
 #
 # Schedule (UTC, Moscow = UTC+3):
 #   Every 5 hours: 00:00, 05:00, 10:00, 15:00, 20:00
@@ -124,7 +126,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /home/runner/.ollama
-          key: ollama-qwen3-vl-2b-v4
+          key: ollama-qwen3-vl-2b-v5
           restore-keys: |
             ollama-qwen3-
 
@@ -165,7 +167,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v21
+          key: nastya-db-v22
           restore-keys: |
             nastya-db-
 
@@ -198,7 +200,7 @@ jobs:
           CHANNEL_POST_INTERVAL: 1200
           OLLAMA_KEEP_ALIVE: 30m
         run: |
-          echo "=== Starting Nastya Bot 21.0 with Qwen3-VL-2B ==="
+          echo "=== Starting Nastya Bot 22.0 with Qwen3-VL-2B ==="
           echo "Ollama status:"
           curl -s http://localhost:11434/api/tags | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  Model: {m[\"name\"]}') for m in d.get('models',[])]" 2>/dev/null || echo "  Ollama not responding"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
@@ -264,7 +266,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v21-${{ github.run_id }}
+          key: nastya-db-v22-${{ github.run_id }}
 
       # ── Self-dispatch: re-trigger workflow for 24/7 uptime ──
       - name: Re-dispatch workflow for continuous operation
