@@ -287,21 +287,22 @@ async def store_news_items(db, items: List[Dict]) -> int:
 
 # ── AI Commentary Generation ────────────────────────────────
 
-# v32: РАДИКАЛЬНО СОКРАЩЁННЫЕ промпты для генерации
-# Было ~300-400 токенов каждый — модель тратила больше времени на чтение промпта чем на ответ
-# Теперь ~80-100 токенов — достаточно для 2-4 предложений
-NASTYA_COMMENTARY_PROMPT = """Ты Настя — девушка из Москвы с характером. Канал: @chasnastya.
-Напиши СВОЁ МНЕНИЕ о новости. 2-3 предложения. Эмоционально, с характером!
-Слова: точняк, офигеть, жесть, капец, блин, прикинь. Без markdown.
-Если политика/война — не комментируй. Упомяни @chasnastya.
+# v34: Ещё более короткие промпты для генерации
+# Малые модели (1.5B-4B) дают лучший результат с короткими конкретными промптами
+# Примеры помогают модели понять стиль
+NASTYA_COMMENTARY_PROMPT = """Ты Настя — девушка из Москвы. Канал @chasnastya.
+Напиши СВОЁ мнение о новости. 2-3 предложения. Живо! Пример стиля: "Офигеть! Прикинь, какая новость! Капец просто."
+Слова: точняк, офигеть, жесть, капец, блин, прикинь. Без markdown. Упомяни @chasnastya.
+Если политика — не комментируй.
 
 Новость: {title}
 {summary}
 
-Реакция Насти:"""
+Настя:"""
 
-PERSONALITY_POST_PROMPT = """Ты Настя — девушка из Москвы. Канал: @chasnastya.
-Придумай пост для канала. 3-4 предложения. С мнением + вопрос подписчикам.
+PERSONALITY_POST_PROMPT = """Ты Настя — девушка из Москвы. Канал @chasnastya.
+Напиши пост для канала. 3-4 предложения. С мнением + вопрос подписчикам.
+Пример стиля: "Блин, прикинь какая тема! А вы как думаете?"
 Слова: точняк, офигеть, жесть, капец. Без markdown. Не про политику.
 
 Пост Насти:"""
@@ -439,9 +440,9 @@ async def run_news_cycle(db, ai_router) -> int:
             if comment:
                 await db.update_news_comment(item["id"], comment)
                 commented += 1
-            # v31: Increased delay to 10s between commentary generations
-            # This prevents background tasks from blocking user chat
-            await asyncio.sleep(10)
+            # v34: Increased delay to 15s between commentary generations
+            # CPU contention with chat — longer delay = better chat quality
+            await asyncio.sleep(15)
 
     except Exception as e:
         logger.error(f"Commentary generation cycle error: {e}")
@@ -459,21 +460,19 @@ async def run_news_cycle(db, ai_router) -> int:
 def format_news_for_context(news_items: List[Dict]) -> str:
     """Format recent news for injection into system prompt.
 
-    v33: Упрощено — убраны агрессивные ALL-CAPS инструкции.
-    Малые модели (1.5B) путаются от КАПС-инструкций и тратят
-    токены на их обработку вместо нормального ответа.
-    Просто перечисляем заголовки — модель сама решит упоминать или нет.
+    v34: Максимально коротко — только 2 заголовка без ссылок.
+    Малые модели путаются от лишней информации.
+    Ссылки добавляются пост-процессором в chat.py если нужно.
     """
     if not news_items:
         return ""
 
-    lines = ["Свежие новости:"]
-    for item in news_items[:3]:
+    parts = []
+    for item in news_items[:2]:
         title = item.get("title", "")
-        link = item.get("link", "")
-        if title and link:
-            lines.append(f"- {title} ({link})")
-        elif title:
-            lines.append(f"- {title}")
+        if title:
+            parts.append(title)
 
-    return " ".join(lines)
+    if parts:
+        return f"Новости: {'; '.join(parts)}."
+    return ""

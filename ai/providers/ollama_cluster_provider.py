@@ -1,29 +1,24 @@
-"""OllamaClusterProvider v33.0 — OLLAMA-FIRST for both chat and background.
+"""OllamaClusterProvider v34.0 — SMART MODEL AUTO-DETECTION.
 
-Architecture v33.0:
-  - Ollama = PRIMARY для ВСЕГО (чат + фон)
-  - Pollinations = FALLBACK только когда Ollama недоступен
-  - qwen2.5:1.5b — PRIMARY модель (отличный русский, быстрая на CPU)
-  - qwen3:4b-instruct — RESERVE модель (умнее, медленнее)
-  - vikhr-1B УБРАН — слишком слабая для русского (генерирует бред)
-  - РАЗДЕЛЬНЫЕ семафоры: чат (высокий приоритет) и фон (низкий приоритет)
-  - Кулдаун Pollinations после 429 (5 минут)
-  - НЕТ двойного вызова Pollinations
-  - num_predict=100 (короткие ответы = быстрее)
+КЛЮЧЕВЫЕ ИСПРАВЛЕНИЯ v34:
+  - АВТООПРЕДЕЛЕНИЕ моделей: если qwen2.5:1.5b не установлена, используем
+    лучшую из доступных (qwen3:4b-instruct, и т.д.)
+  - РАЗДЕЛЬНЫЕ параметры для каждой модели: num_predict, timeout, think
+  - Qwen3 thinking mode: num_predict=250 (было 100 — мало, думать+отвечать)
+  - Корректная обработка /think=false для Qwen3 (Ollama поддерживает)
+  - vikhr-1B полностью игнорируется (даже если установлен)
+  - Прогрев модели при старте с правильными параметрами
 
-МОДЕЛИ:
-  - qwen2.5:1.5b — 1.5B, отличный русский, быстрая на CPU
-  - qwen3:4b-instruct — 4B, умный, медленный на CPU
-
-Важно: На VPS (2 CPU, 7GB RAM) реалистичен только ОДИН
-параллельный запрос к Ollama. Но чат и фон НЕ должны блокировать друг друга.
+МОДЕЛИ (по приоритету):
+  1. qwen2.5:1.5b — быстрый, отличный русский (0.9GB)
+  2. qwen3:4b-instruct — умный, медленнее, thinking mode (2.5GB)
+  3. НЕ ИСПОЛЬЗУЕМ: vikhr-1B (генерирует бред на русском)
 """
 
 import logging
 import asyncio
 import re
 import time
-import hashlib
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -32,31 +27,87 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
-# ── Модели ──────────────────────────────────────────────────
-# v33: vikhr-1B убран — генерирует бред на русском
-# qwen2.5:1.5b — лучший баланс качества/скорости для русского на CPU
-PRIMARY_MODEL = "qwen2.5:1.5b"
-RESERVE_MODEL = "qwen3:4b-instruct"
+# ── Приоритет моделей (лучшая → худшая для русского на CPU) ──
+# vikhr-1B исключён — генерирует бред
+MODEL_PRIORITY = [
+    "qwen2.5:1.5b",          # Лучший баланс: быстрый + хороший русский
+    "qwen3:4b-instruct",      # Умнее, медленнее, thinking mode
+    "qwen2.5:3b",             # Средний вариант
+    "qwen2.5:0.5b",           # Самый быстрый, но слабый
+    "phi4-mini",              # Хороший английский, средний русский
+    "llama3.2:3b",            # Средний
+    "gemma2:2b",              # Средний
+]
 
-# Таймауты — v33: qwen2.5:1.5b отвечает за 5-20с на CPU
-# qwen3:4b медленнее, но умнее
-PRIMARY_TIMEOUT_SECONDS = 25.0   # qwen2.5:1.5b (быстрая для CPU)
-RESERVE_TIMEOUT_SECONDS = 60.0   # qwen3:4b-instruct (медленная на CPU)
+# Модели, которые НИКОГДА не используем (плохой русский)
+BANNED_MODELS = [
+    "vikhr",  # Все vikhr модели генерируют бред на русском
+]
+
+# Параметры для каждой модели (индивидуальные!)
+MODEL_CONFIGS = {
+    "qwen2.5:1.5b": {
+        "num_predict": 150,      # Короткие ответы Насти, но не слишком мало
+        "num_ctx": 2048,
+        "timeout": 25.0,         # Быстрая модель
+        "think": False,          # Нет thinking mode
+        "temperature": 0.8,
+    },
+    "qwen3:4b-instruct": {
+        "num_predict": 250,      # Больше! Thinking + ответ = нужно больше токенов
+        "num_ctx": 2048,
+        "timeout": 60.0,         # Медленнее, 4B на CPU
+        "think": False,          # Отключаем thinking для скорости!
+        "temperature": 0.7,
+    },
+    "qwen2.5:3b": {
+        "num_predict": 200,
+        "num_ctx": 2048,
+        "timeout": 45.0,
+        "think": False,
+        "temperature": 0.7,
+    },
+    "default": {
+        "num_predict": 150,
+        "num_ctx": 2048,
+        "timeout": 45.0,
+        "think": False,
+        "temperature": 0.8,
+    },
+}
 
 # Request priorities
 PRIORITY_HIGH = "high"    # User chat
 PRIORITY_LOW = "low"      # Background tasks (news, channel)
 
 
-class OllamaClusterProvider(BaseProvider):
-    """Провайдер для Ollama — v32.0 HYBRID.
+def _get_model_config(model_name: str) -> dict:
+    """Получить конфигурацию для модели."""
+    # Сначала точное совпадение
+    if model_name in MODEL_CONFIGS:
+        return MODEL_CONFIGS[model_name]
+    # Частичное совпадение (например, qwen3:4b-instruct содержит qwen3)
+    for key in MODEL_CONFIGS:
+        if key in model_name:
+            return MODEL_CONFIGS[key]
+    return MODEL_CONFIGS["default"])
 
-    v32.0 CHANGES:
-    - Раздельные семафоры: _chat_sem (1) + _bg_sem (1)
-    - Сокращённые таймауты: 30с/60с
-    - num_predict=150 (было 100 — ответы обрезались)
-    - История 4 сообщения (было 6)
-    - Pollinations fallback ВНЕ семафора Ollama
+
+def _is_model_banned(model_name: str) -> bool:
+    """Проверить, запрещена ли модель."""
+    name_lower = model_name.lower()
+    return any(banned in name_lower for banned in BANNED_MODELS)
+
+
+class OllamaClusterProvider(BaseProvider):
+    """Провайдер для Ollama — v34.0 SMART AUTO-DETECTION.
+
+    v34 КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ:
+    - Автоопределение лучшей модели из установленных
+    - Индивидуальные параметры для каждой модели
+    - Правильная работа с Qwen3 thinking mode
+    - Запрещённые модели (vikhr) игнорируются
+    - Раздельные семафоры: чат + фон
     """
 
     name: str = "ollama_cluster"
@@ -73,10 +124,9 @@ class OllamaClusterProvider(BaseProvider):
         self._warm: bool = False
         self._installed_models: List[str] = []
         # Раздельные семафоры для чата и фона
-        self._chat_sem = asyncio.Semaphore(1)  # Чат — высокий приоритет
-        self._bg_sem = asyncio.Semaphore(1)    # Фон — низкий приоритет
-        # Per-user message dedup
-        self._user_last_msg: Dict[int, float] = {}
+        self._chat_sem = asyncio.Semaphore(1)
+        self._bg_sem = asyncio.Semaphore(1)
+        # Stats
         self._request_count: int = 0
         self._error_count: int = 0
         self._primary_requests: int = 0
@@ -86,12 +136,12 @@ class OllamaClusterProvider(BaseProvider):
         self._HEALTH_CACHE_TTL: int = 300
         # Pollinations fallback
         self._pollinations_fallback = pollinations_fallback
-        # v33: Pollinations 429 кулдаун — после 429 не пробуем 5 минут
+        # v33: Pollinations 429 кулдаун
         self._pollinations_429_until: float = 0
-        self._POLLINATIONS_429_COOLDOWN: float = 300.0  # 5 минут
+        self._POLLINATIONS_429_COOLDOWN: float = 300.0
 
     async def init(self) -> None:
-        """Инициализация: автоопределение Ollama."""
+        """Инициализация: автоопределение Ollama и моделей."""
         # Пробуем прямой Ollama
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
@@ -116,29 +166,83 @@ class OllamaClusterProvider(BaseProvider):
             headers={"Content-Type": "application/json"},
         )
 
-        # Определяем модели
+        # Определяем ЛУЧШИЕ модели из установленных
         self._detect_models()
 
         logger.info(
-            f"OllamaClusterProvider v32.0: url={self._active_url} | "
+            f"OllamaClusterProvider v34.0: url={self._active_url} | "
             f"primary={self._primary_model} | reserve={self._reserve_model}"
         )
 
     def _detect_models(self) -> None:
-        """Определить доступные текстовые модели."""
-        self._primary_model = PRIMARY_MODEL
-        self._reserve_model = RESERVE_MODEL
-        if not self._is_model_installed(PRIMARY_MODEL):
-            logger.warning(f"Primary model {PRIMARY_MODEL} not found in installed models")
-        if not self._is_model_installed(RESERVE_MODEL):
-            logger.warning(f"Reserve model {RESERVE_MODEL} not found in installed models")
-        logger.info(f"Models: primary={self._primary_model}, reserve={self._reserve_model}")
-        logger.info(f"Installed models: {self._installed_models}")
+        """Умное определение моделей: выбираем лучшие из УСТАНОВЛЕННЫХ.
 
-    def _is_model_installed(self, model_name: str) -> bool:
-        """Проверить, установлена ли модель."""
-        prefix = model_name.split(":")[0].split("/")[-1]
-        return any(prefix in m for m in self._installed_models)
+        Логика:
+          1. Фильтруем запрещённые модели (vikhr)
+          2. Ищем лучшую модель по приоритету → primary
+          3. Ищем вторую лучшую → reserve
+          4. Если ничего нет — используем defaults
+        """
+        # Фильтруем запрещённые модели
+        good_models = [m for m in self._installed_models if not _is_model_banned(m)]
+        if len(good_models) < len(self._installed_models):
+            banned = [m for m in self._installed_models if _is_model_banned(m)]
+            logger.warning(f"Banned models (ignored): {banned}")
+
+        # Ищем лучшую модель по приоритету
+        primary_found = None
+        reserve_found = None
+
+        for candidate in MODEL_PRIORITY:
+            if primary_found and reserve_found:
+                break
+            for installed in good_models:
+                # Проверяем совпадение: "qwen2.5:1.5b" должно совпадать с
+                # "qwen2.5:1.5b" или "qwen2.5:1.5b-instruct" и т.д.
+                candidate_prefix = candidate.split(":")[0]  # e.g. "qwen2.5"
+                installed_prefix = installed.split(":")[0]  # e.g. "qwen2.5"
+
+                if candidate in installed or (candidate_prefix in installed and candidate.split(":")[-1] in installed):
+                    if not primary_found:
+                        primary_found = installed
+                    elif not reserve_found and installed != primary_found:
+                        reserve_found = installed
+                    break
+
+        # Если не нашли через приоритет — берём любые доступные
+        if not primary_found and good_models:
+            primary_found = good_models[0]
+        if not reserve_found and len(good_models) > 1:
+            # Берём вторую модель (не primary)
+            for m in good_models:
+                if m != primary_found:
+                    reserve_found = m
+                    break
+
+        # Устанавливаем модели
+        self._primary_model = primary_found
+        self._reserve_model = reserve_found
+
+        if not self._primary_model:
+            logger.error(
+                "NO suitable Ollama model found! Need at least qwen2.5:1.5b or qwen3:4b-instruct. "
+                f"Installed: {self._installed_models}"
+            )
+        else:
+            config = _get_model_config(self._primary_model)
+            logger.info(
+                f"Primary model: {self._primary_model} "
+                f"(num_predict={config['num_predict']}, timeout={config['timeout']}s, think={config['think']})"
+            )
+
+        if self._reserve_model:
+            config = _get_model_config(self._reserve_model)
+            logger.info(
+                f"Reserve model: {self._reserve_model} "
+                f"(num_predict={config['num_predict']}, timeout={config['timeout']}s, think={config['think']})"
+            )
+        else:
+            logger.warning("No reserve model available!")
 
     def is_available(self) -> bool:
         """Всегда пробуем — ошибки обрабатываются в generate()."""
@@ -165,6 +269,7 @@ class OllamaClusterProvider(BaseProvider):
         if self._warm or not self._primary_model:
             return
         try:
+            config = _get_model_config(self._primary_model)
             logger.info(f"Warming up primary model: {self._primary_model}...")
             resp = await self._client.post(
                 "/api/chat",
@@ -172,8 +277,8 @@ class OllamaClusterProvider(BaseProvider):
                     "model": self._primary_model,
                     "messages": [{"role": "user", "content": "привет"}],
                     "stream": False,
-                    "options": {"num_predict": 5},
-                    "think": False,
+                    "options": {"num_predict": 5, "num_ctx": config["num_ctx"]},
+                    "think": config["think"],
                 },
                 timeout=httpx.Timeout(120.0, connect=10.0),
             )
@@ -188,8 +293,10 @@ class OllamaClusterProvider(BaseProvider):
     @staticmethod
     def _strip_think_tags(text: str) -> str:
         """Удалить <think/> блоки из ответа (Qwen3 thinking mode)."""
+        # Очистка полных блоков <think...</think >
         text = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<thinking\b[^>]*>.*?</thinking\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        # Очистка незакрытых тегов (Qwen3 иногда не закрывает <think >)
         text = re.sub(r'</?think[^>]*>', '', text, flags=re.IGNORECASE)
         text = re.sub(r'</?thinking[^>]*>', '', text, flags=re.IGNORECASE)
         return text.strip()
@@ -236,8 +343,8 @@ class OllamaClusterProvider(BaseProvider):
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         """Генерация ответа через локальный Ollama.
 
-        v32: Раздельные семафоры для чата и фона.
-        Pollinations fallback ВНЕ семафора Ollama.
+        v34: Умная маршрутизация по моделям с индивидуальными параметрами.
+        Раздельные семафоры для чата и фона.
         """
         if not self._client:
             await self.init()
@@ -252,7 +359,7 @@ class OllamaClusterProvider(BaseProvider):
         messages_history = kwargs.get("messages")
         priority = kwargs.get("priority", PRIORITY_HIGH)
 
-        # Ограничение истории — v32: 4 сообщения для скорости
+        # Ограничение истории — 4 сообщения для скорости
         if messages_history and len(messages_history) > 4:
             logger.info(f"Trimming history: {len(messages_history)} -> 4")
             messages_history = messages_history[-4:]
@@ -261,37 +368,35 @@ class OllamaClusterProvider(BaseProvider):
         sem = self._chat_sem if priority == PRIORITY_HIGH else self._bg_sem
 
         async with sem:
-            # Попробовать основную модель, затем резервную
-            models_to_try = [
-                (self._primary_model, PRIMARY_TIMEOUT_SECONDS, "primary"),
-                (self._reserve_model, RESERVE_TIMEOUT_SECONDS, "reserve"),
-            ]
+            # Строим список моделей для попыток
+            models_to_try = []
+            if self._primary_model:
+                config = _get_model_config(self._primary_model)
+                models_to_try.append((self._primary_model, config, "primary"))
+            if self._reserve_model and self._reserve_model != self._primary_model:
+                config = _get_model_config(self._reserve_model)
+                models_to_try.append((self._reserve_model, config, "reserve"))
 
             last_error = None
-            for model, timeout, model_type in models_to_try:
-                if not model:
-                    continue
-
+            for model, config, model_type in models_to_try:
                 ollama_messages = self._build_messages(
                     prompt=prompt,
                     system_prompt=system_prompt,
                     messages=messages_history,
                 )
 
-                # v33: Оптимизированные параметры для CPU
-                # num_predict=100 — Настя говорит коротко (1-3 предложения)
-                # Меньше токенов = быстрее ответ
+                # v34: Индивидуальные параметры для каждой модели!
                 options = {
                     "temperature": temperature,
-                    "num_predict": min(max_tokens, 100),  # v33: 100 (было 150 — слишком длинно)
-                    "num_ctx": 2048,
+                    "num_predict": min(max_tokens, config["num_predict"]),
+                    "num_ctx": config["num_ctx"],
                 }
                 payload = {
                     "model": model,
                     "messages": ollama_messages,
                     "stream": False,
                     "options": options,
-                    "think": False,  # Всегда выключаем thinking для скорости
+                    "think": config["think"],  # False для скорости
                 }
 
                 try:
@@ -303,13 +408,15 @@ class OllamaClusterProvider(BaseProvider):
 
                     logger.info(
                         f"OllamaCluster: TEXT request -> {model} "
-                        f"({model_type}, timeout={timeout}s, priority={priority})"
+                        f"({model_type}, timeout={config['timeout']}s, "
+                        f"num_predict={options['num_predict']}, think={config['think']}, "
+                        f"priority={priority})"
                     )
 
                     response = await self._client.post(
                         "/api/chat",
                         json=payload,
-                        timeout=httpx.Timeout(timeout, connect=10.0),
+                        timeout=httpx.Timeout(config["timeout"], connect=10.0),
                     )
                     response.raise_for_status()
                     data = response.json()
@@ -324,7 +431,7 @@ class OllamaClusterProvider(BaseProvider):
                         logger.warning(f"Empty response from {model}, trying next...")
                         continue
 
-                    # Очистка think-тегов
+                    # Очистка think-тегов (Qwen3 thinking mode)
                     text = self._strip_think_tags(text)
                     if not text:
                         last_error = ProviderError(self.name, f"Empty after cleaning from {model}", retryable=True)
@@ -360,12 +467,12 @@ class OllamaClusterProvider(BaseProvider):
                 except httpx.TimeoutException:
                     self._error_count += 1
                     logger.warning(
-                        f"TIMEOUT for {model} ({timeout}s, {model_type}). "
+                        f"TIMEOUT for {model} ({config['timeout']}s, {model_type}). "
                         f"Trying next model..."
                     )
                     last_error = ProviderError(
                         self.name,
-                        f"Timeout for {model} ({timeout}s)",
+                        f"Timeout for {model} ({config['timeout']}s)",
                         retryable=True,
                     )
                     continue
@@ -374,18 +481,16 @@ class OllamaClusterProvider(BaseProvider):
                     last_error = ProviderError(self.name, f"Error with {model}: {exc}", retryable=True)
                     continue
 
-
-
         if last_error:
             raise last_error
-        raise ProviderError(self.name, "All models failed (Ollama + Pollinations)", retryable=True)
+        raise ProviderError(self.name, "All models failed", retryable=True)
 
     def set_pollinations_429_cooldown(self, until: float) -> None:
-        """v33: Установить кулдаун Pollinations после 429."""
+        """Установить кулдаун Pollinations после 429."""
         self._pollinations_429_until = until
 
     def is_pollinations_on_cooldown(self) -> bool:
-        """v33: Проверить, на кулдауне ли Pollinations."""
+        """Проверить, на кулдауне ли Pollinations."""
         return time.time() < self._pollinations_429_until
 
     async def generate_with_context(self, messages: List[Dict[str, str]],
@@ -393,15 +498,16 @@ class OllamaClusterProvider(BaseProvider):
                                      video: Optional[str] = None) -> str:
         """Генерация с учётом истории диалога (для совместимости).
 
-        v32: image/video параметры игнорированы — бот текстовый!
+        v34: Использует автоопределённую модель с правильными параметрами.
         """
         if not messages:
             return "Привет! О чём хочешь поболтать?"
 
-        model = self._primary_model or PRIMARY_MODEL
+        model = self._primary_model or "qwen3:4b-instruct"
+        config = _get_model_config(model)
 
         ollama_messages = []
-        for msg in messages[-4:]:  # v32: Только 4 последних сообщения
+        for msg in messages[-4:]:
             ollama_messages.append({
                 "role": msg.get("role", "user"),
                 "content": msg.get("content", ""),
@@ -411,11 +517,11 @@ class OllamaClusterProvider(BaseProvider):
             "model": model,
             "messages": ollama_messages,
             "stream": False,
-            "think": False,
+            "think": config["think"],
             "options": {
-                "temperature": 0.7,
-                "num_ctx": 2048,
-                "num_predict": 100,  # v33: 100 (было 150)
+                "temperature": config["temperature"],
+                "num_ctx": config["num_ctx"],
+                "num_predict": config["num_predict"],
             },
         }
 
@@ -423,7 +529,7 @@ class OllamaClusterProvider(BaseProvider):
             async with self._client.post(
                 "/api/chat",
                 json=payload,
-                timeout=httpx.Timeout(PRIMARY_TIMEOUT_SECONDS, connect=10.0),
+                timeout=httpx.Timeout(config["timeout"], connect=10.0),
             ) as resp:
                 if resp.status_code == 200:
                     result = resp.json()

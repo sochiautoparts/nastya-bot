@@ -1,13 +1,9 @@
-"""AI Router v33.0 — OLLAMA-FIRST EDITION.
+"""AI Router v34.0 — SMART MODEL AUTO-DETECTION.
 
-АРХИТЕКТУРА v33: Ollama (локально) = PRIMARY для ВСЕГО!
-
-  ПРИЧИНА СМЕНЫ: Pollinations постоянно rate-limited (429),
-  а vikhr-1B генерирует бред на русском.
-  Теперь qwen2.5:1.5b — отличное качество русского для CPU.
+АРХИТЕКТУРА v34: Умная маршрутизация с автоопределением моделей!
 
   ЧАТ (пользовательские сообщения — приоритет СКОРОСТЬ):
-    1. OllamaClusterProvider (qwen2.5:1.5b — 5-20 сек, качественный русский)
+    1. OllamaClusterProvider (автоопределяет лучшую модель)
     2. PollinationsProvider (fallback — если Ollama недоступен)
     3. Static fallback — бот ВСЕГДА отвечает
 
@@ -15,18 +11,17 @@
     1. OllamaClusterProvider (локальный, без rate-limit)
     2. PollinationsProvider (облачный fallback)
 
-  Ключевые изменения v33:
-    - Ollama PRIMARY для чата (Pollinations ненадёжен — 429)
-    - 5-минутный кулдаун Pollinations после 429
-    - НЕТ двойного вызова Pollinations
-    - vikhr-1B убран, заменён на qwen2.5:1.5b
+  Ключевые изменения v34:
+    - OllamaClusterProvider САМ определяет лучшую модель из установленных
+    - Индивидуальные параметры для каждой модели (num_predict, timeout, think)
+    - Qwen3 thinking mode корректно обрабатывается
+    - Кулдаун Pollinations после 429 (5 минут)
 """
 import logging
 import asyncio
 import random
 import time
 import re
-import hashlib
 from typing import Any, Dict, List, Optional
 
 from ai.providers.base import AIResponse, ProviderError
@@ -48,7 +43,7 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """Центральный AI-маршрутизатор — v33.0 OLLAMA-FIRST.
+    """Центральный AI-маршрутизатор — v34.0 SMART AUTO-DETECTION.
 
     Чат: Ollama → Pollinations (если не на кулдауне) → static fallback.
     Фон: Ollama → Pollinations → skip.
@@ -67,11 +62,11 @@ class AIRouter:
 
     async def init(self) -> None:
         """Инициализация провайдеров."""
-        # Ollama — PRIMARY для ВСЕГО (v33: Pollinations ненадёжен)
+        # Ollama — PRIMARY для ВСЕГО (автоопределяет лучшую модель!)
         self.provider = OllamaClusterProvider(
             timeout=120.0,
             base_url=OLLAMA_BASE_URL,
-            pollinations_fallback=None,  # v33: НЕТ Pollinations внутри Ollama
+            pollinations_fallback=None,
         )
         await self.provider.init()
 
@@ -84,12 +79,14 @@ class AIRouter:
             logger.warning(f"PollinationsProvider init failed: {e}")
             self._pollinations = None
 
+        # Логируем статус
         pollinations_status = "active" if self._pollinations else "unavailable"
+        primary_model = self.provider.get_stats().get("primary_model", "none")
+        reserve_model = self.provider.get_stats().get("reserve_model", "none")
         logger.info(
-            f"AI Router v33.0 (OLLAMA-FIRST) initialized: "
-            f"chat_primary=ollama, "
-            f"bg_primary=ollama, "
-            f"ollama={self.provider.get_stats()['primary_model']}, "
+            f"AI Router v34.0 (SMART AUTO-DETECT) initialized: "
+            f"chat_primary=ollama({primary_model}), "
+            f"reserve=ollama({reserve_model}), "
             f"pollinations={pollinations_status} (fallback only)"
         )
 
@@ -108,11 +105,7 @@ class AIRouter:
 
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
-        """Маршрутизация чата — Pollinations → Ollama → static fallback.
-
-        Priority 'high' = пользовательский чат (Pollinations first).
-        Priority 'low' = фоновые задачи (Ollama first).
-        """
+        """Маршрутизация чата — Ollama → Pollinations → static fallback."""
         self._total_requests += 1
         priority = kwargs.get("priority", "high")
 
@@ -123,11 +116,7 @@ class AIRouter:
 
     async def _route_chat(self, prompt: str, system_prompt: str,
                           messages: Optional[List[Dict]], **kwargs) -> AIResponse:
-        """Маршрут для чата: Ollama → Pollinations (если не на кулдауне) → static fallback.
-
-        v33: Ollama теперь PRIMARY — Pollinations постоянно 429.
-        Кулдаун: после 429 Pollinations не трогаем 5 минут.
-        """
+        """Маршрут для чата: Ollama → Pollinations → static fallback."""
         # ── 1. Ollama (PRIMARY для чата) ──
         if self.provider:
             try:
@@ -161,7 +150,7 @@ class AIRouter:
                     prompt,
                     system_prompt=system_prompt,
                     messages=messages,
-                    model_key="default",  # GPT-4o-mini
+                    model_key="default",
                 )
                 if result and result.text:
                     cleaned = self.clean_ai_response(result.text)
@@ -177,7 +166,6 @@ class AIRouter:
             except ProviderError as e:
                 err_str = str(e)
                 if "429" in err_str:
-                    # v33: Кулдаун 5 минут после 429
                     cooldown_until = time.time() + 300
                     self.provider.set_pollinations_429_cooldown(cooldown_until)
                     logger.warning(f"Pollinations rate-limited (429)! Cooldown until {cooldown_until:.0f}")
@@ -198,12 +186,7 @@ class AIRouter:
 
     async def _route_background(self, prompt: str, system_prompt: str,
                                 messages: Optional[List[Dict]], **kwargs) -> AIResponse:
-        """Маршрут для фона: Ollama → Pollinations → skip.
-
-        Ollama — бесплатный, без rate-limit.
-        Pollinations — резерв.
-        Если оба не работают — молча пропускаем (фон не критичен).
-        """
+        """Маршрут для фона: Ollama → Pollinations → skip."""
         # ── 1. Ollama (PRIMARY для фона) ──
         if self.provider:
             try:
@@ -237,7 +220,7 @@ class AIRouter:
                     prompt,
                     system_prompt=system_prompt,
                     messages=messages,
-                    model_key="fast",  # Mistral — быстрее для фона
+                    model_key="fast",
                 )
                 if result and result.text:
                     cleaned = self.clean_ai_response(result.text)

@@ -40,7 +40,7 @@ from bot.config import (
     KNOWLEDGE_TOPICS, NASTYA_VOCABULARY,
 )
 from bot.web_search import (
-    search_web, should_search, format_search_results_for_prompt,
+    search_web, should_search,
     get_search_link_for_response,
 )
 
@@ -934,8 +934,8 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     if any(kw in text.lower() for kw in political_keywords):
         user_context += " Вопрос про политику — переведи тему!"
 
-    # v32: МИНИМАЛЬНЫЙ system prompt — без лишних инъекций!
-    # Было ~800-1100 токенов, стало ~200-250
+    # v34: МИНИМАЛЬНЫЙ system prompt — без лишних инъекций!
+    # Малые модели (1.5B-4B) дают лучший результат с коротким промптом
     system_prompt = NASTYA_SYSTEM_PROMPT + f" Настроение: {mood}. Время: {time_mood}."
     system_prompt += f" {user_context}"
 
@@ -980,18 +980,22 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     # GPT-4o-mini помнит контекст из истории чата и без подсказок
     # Для Ollama: память хранится в истории сообщений, не в системном промпте
 
-    # v32: Web search — КОМПАКТНО, без ALL-CAPS инструкций
-    # Было ~150-200 токенов с инструкциями, стало ~30-50
+    # v34: Web search — МИНИМАЛЬНО, без инструкций
+    # Малые модели путаются от инструкций в промпте
     search_query = should_search(text)
     search_results = []
     if search_query:
         try:
             search_results = await search_web(search_query, num_results=2)
             if search_results:
-                search_parts = []
-                for r in search_results[:2]:
-                    search_parts.append(f"{r.get('title', '')} ({r.get('url', '')})")
-                system_prompt += f" Нашла: {'; '.join(search_parts)}."
+                # Только 1 результат, коротко
+                r = search_results[0]
+                title = r.get('title', '')
+                url = r.get('url', '')
+                if title:
+                    system_prompt += f" Нашла: {title}."
+                    if url:
+                        system_prompt += f" Источник: {url}"
                 logger.info(f"Web search for user {user_id}: '{search_query}' → {len(search_results)} results")
         except Exception as e:
             logger.warning(f"Web search error: {e}")
@@ -1134,10 +1138,9 @@ async def _maybe_ask_stars_check(user_id: int, msg_count: int, db, message: Mess
 def _enforce_news_links(response_text: str, news_items: list) -> str:
     """Post-process AI response to add news links — ONLY when specifically relevant.
 
-    v33: РАДИКАЛЬНО УПРОЩЕНО. Было слишком агрессивно — лепило ссылки
-    на одни и те же новости в КАЖДЫЙ ответ, даже когда не про новости.
-    Теперь: добавляем ссылку ТОЛЬКО если ответ конкретно упоминает
-    заголовок новости (2+ слова совпадают) и нет других ссылок.
+    v34: Ещё строже — добавляем ссылку ТОЛЬКО если ответ УПОМИНАЕТ
+    заголовок новости (3+ слова совпадают) и нет других ссылок.
+    Это предотвращает лепление одинаковых ссылок на каждый ответ.
     """
     if not news_items or not response_text:
         return response_text
@@ -1148,8 +1151,9 @@ def _enforce_news_links(response_text: str, news_items: list) -> str:
     if re.search(r'https?://\S+', response_text) or 't.me/' in response_lower:
         return response_text
 
-    # Check if any news title keywords match the response (2+ significant words)
+    # Check if any news title keywords match the response (3+ significant words)
     matched_news = None
+    best_match_count = 0
     for item in news_items:
         title = item.get("title", "").lower()
         link = item.get("link", "")
@@ -1158,11 +1162,12 @@ def _enforce_news_links(response_text: str, news_items: list) -> str:
         title_words = [w for w in re.split(r'[\s,.\-!?;:()]+', title) if len(w) > 4]
         if len(title_words) >= 2:
             match_count = sum(1 for w in title_words if w.lower() in response_lower)
-            if match_count >= min(2, len(title_words)):
+            # v34: Need at least 3 matching words OR at least half the title words
+            if match_count >= min(3, len(title_words)) and match_count > best_match_count:
                 matched_news = item
-                break
+                best_match_count = match_count
 
-    # Add link ONLY for specifically matched news — not random keywords
+    # Add link ONLY for specifically matched news
     if matched_news and matched_news.get("link"):
         if matched_news["link"] not in response_text:
             response_text += f"\n\n🔗 {matched_news['link']}"

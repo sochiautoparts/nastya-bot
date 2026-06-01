@@ -1,12 +1,11 @@
-"""Nastya Bot 33.0 — OLLAMA-FIRST EDITION. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 34.0 — SMART MODEL AUTO-DETECTION. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v33.0 (OLLAMA-FIRST):
-  - Ollama (qwen2.5:1.5b / qwen3:4b) = PRIMARY для чата И фона
+Architecture v34.0 (SMART AUTO-DETECT):
+  - OllamaClusterProvider САМ определяет лучшую модель из установленных
+  - Приоритет моделей: qwen2.5:1.5b > qwen3:4b-instruct
+  - Индивидуальные параметры для каждой модели (num_predict, timeout, think)
   - Pollinations = FALLBACK (после 429 кулдаун 5 минут)
   - vikhr-1B УБРАН — генерирует бред на русском
-  - Кулдаун Pollinations после 429 — не дёргаем зря
-  - НЕТ двойного вызова Pollinations
-  - Сокращённый системный промпт
   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый!
   - HEALTH WATCHDOG: monitors Telegram API + Ollama
 """
@@ -469,7 +468,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 33.0 Starting (OLLAMA-FIRST — v33) ===")
+    logger.info("=== Nastya Bot 34.0 Starting (SMART AUTO-DETECT — v34) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -516,7 +515,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 33.0 Ready (OLLAMA-FIRST — v33) ===")
+    logger.info("=== Nastya Bot 34.0 Ready (SMART AUTO-DETECT — v34) ===")
 
 
 async def on_shutdown(**kwargs) -> None:
