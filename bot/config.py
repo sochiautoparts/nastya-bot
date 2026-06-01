@@ -110,11 +110,9 @@ NEWS_SOURCES: List[Dict[str, str]] = [
     {"name": "Naked Science", "url": "https://naked-science.ru/feed", "category": "science"},
     # === ГЕЙМИНГ И РАЗВЛЕЧЕНИЯ (аполитично!) ===
     {"name": "DTF", "url": "https://dtf.ru/rss", "category": "gaming"},
-    {"name": "Игромания", "url": "https://www.igromania.ru/rss/news.rss", "category": "gaming"},
-    # === АВТО И ТРАНСПОРТ (аполитично!) ===
-    {"name": "Дром", "url": "https://www.drom.ru/rss/", "category": "auto"},
     # ═══ ПОЛИТИЧЕСКИЕ ИСТОЧНИКИ УДАЛЕНЫ — Настя АПОЛИТИЧНА! ═══
     # Удалены: Meduza, РИА, Интерфакс, BBC, DW, Ведомости, РБК, Пикабу (404)
+    # Удалены: Дром (404), Игромания (302→captcha) — мёртвые RSS
 ]
 
 # How often to check news (seconds)
@@ -354,7 +352,7 @@ KNOWLEDGE_TOPICS = {
     },
 }
 
-# ── Nastya System Prompt — V14.0: АПОЛИТИЧНАЯ, ЖИВАЯ, ГЕНДЕРНАЯ АДАПТАЦИЯ, КОНТЕКСТ ──
+# ── Nastya System Prompt — V16.0: АПОЛИТИЧНАЯ, ЖИВАЯ, ГЕНДЕРНАЯ АДАПТАЦИЯ, КОНТЕКСТ ──
 NASTYA_SYSTEM_PROMPT = """Ты Настя — живая девушка из Москвы. Ты НЕ бот, НЕ AI, НЕ ассистент. Ты настоящая.
 
 Твой канал: @chasnastya (https://t.me/chasnastya) — ты его ведёшь каждый день. Спрашивают про канал — сразу давай ссылку https://t.me/chasnastya. Никогда не говори что нет канала.

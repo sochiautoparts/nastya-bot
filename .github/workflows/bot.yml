@@ -1,7 +1,7 @@
 name: Nastya Bot — Qwen3-VL-2B
 
 # ═══════════════════════════════════════════════════════════════
-# SINGLE CONSOLIDATED WORKFLOW for Nastya Bot
+# SINGLE CONSOLIDATED WORKFLOW for Nastya Bot v16.0
 #
 # Architecture:
 #   - Ollama runs INSIDE GitHub Actions with Qwen3-VL-2B model
@@ -10,6 +10,7 @@ name: Nastya Bot — Qwen3-VL-2B
 #   - concurrency: ONLY ONE instance can run at a time!
 #   - If old run is still going, it gets cancelled automatically
 #   - This PREVENTS TelegramConflictError from multiple instances
+#   - NO auto-restart step — cron schedule covers 24/7
 #
 # Schedule (UTC, Moscow = UTC+3):
 #   Shift 1: 00:00 UTC (03:00 Moscow)
@@ -28,7 +29,7 @@ on:
 
 # ═══ CRITICAL: Single concurrency group — prevents multiple instances! ═══
 concurrency:
-  group: nastya-bot
+  group: nastya-bot-single
   cancel-in-progress: true  # Always kill previous run — ONE bot only!
 
 permissions:
@@ -45,37 +46,39 @@ jobs:
 
     steps:
       # ── Kill ANY other running bot instances FIRST ──
-      - name: Cancel conflicting runs
+      - name: Cancel conflicting runs and wait
         env:
           GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
         run: |
           echo "=== Checking for other running bot instances ==="
           CURRENT_RUN=${{ github.run_id }}
           
-          # Get all in-progress runs for this repo
-          RUNS=$(curl -s -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=10" \
-            | python3 -c "
-          import sys, json
-          try:
-              d = json.load(sys.stdin)
-              for r in d.get('workflow_runs', []):
-                  if r['id'] != $CURRENT_RUN:
-                      print(r['id'])
-          except: pass
-          ")
-          
-          for run_id in $RUNS; do
-            echo "Cancelling conflicting run: $run_id"
-            curl -s -X POST -H "Authorization: token $GH_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/${{ github.repository }}/actions/runs/$run_id/cancel" || true
+          # Get all in-progress runs for this repo (both in_progress and queued)
+          for status in in_progress queued; do
+            RUNS=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=$status&per_page=10" \
+              | python3 -c "
+            import sys, json
+            try:
+                d = json.load(sys.stdin)
+                for r in d.get('workflow_runs', []):
+                    if r['id'] != $CURRENT_RUN:
+                        print(r['id'])
+            except: pass
+            ")
+            
+            for run_id in $RUNS; do
+              echo "Cancelling $status run: $run_id"
+              curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+                -H "Accept: application/vnd.github.v3+json" \
+                "https://api.github.com/repos/${{ github.repository }}/actions/runs/$run_id/cancel" || true
+            done
           done
           
-          if [ -n "$RUNS" ]; then
-            echo "Waiting 10s for cancellations to take effect..."
-            sleep 10
-          fi
+          # Wait longer for old bot process to actually die
+          # The old Python process needs time to receive SIGTERM and shut down
+          echo "Waiting 20s for old bot instances to fully stop..."
+          sleep 20
           echo "=== Ready to start ==="
 
       - name: Checkout repository
@@ -190,53 +193,6 @@ jobs:
         with:
           path: data/nastya.db
           key: nastya-db-v16-${{ github.run_id }}
-
-      # ── Auto-restart: trigger next session if bot stopped normally ──
-      # ONLY restart if the bot step actually ran and completed (not cancelled)
-      - name: Wake up next session
-        if: success()
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
-        run: |
-          echo "=== Session ended normally, checking if restart needed ==="
-          sleep 15
-          
-          ACTIVE=$(curl -s -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=5" \
-            | python3 -c "
-          import sys, json
-          try:
-              d = json.load(sys.stdin)
-              runs = [r for r in d.get('workflow_runs', []) if 'Bot' in r.get('name','') or 'Qwen3' in r.get('name','')]
-              print(len(runs))
-          except: print(0)
-          ")
-          
-          QUEUED=$(curl -s -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=queued&per_page=5" \
-            | python3 -c "
-          import sys, json
-          try:
-              d = json.load(sys.stdin)
-              runs = [r for r in d.get('workflow_runs', []) if 'Bot' in r.get('name','') or 'Qwen3' in r.get('name','')]
-              print(len(runs))
-          except: print(0)
-          ")
-          
-          echo "Active: $ACTIVE, Queued: $QUEUED"
-          
-          # Only restart if no other sessions exist AND this wasn't a cancelled run
-          if [ "$ACTIVE" -eq 0 ] && [ "$QUEUED" -eq 0 ]; then
-            echo "No other sessions — triggering restart..."
-            curl -s -X POST \
-              -H "Authorization: token $GH_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/bot.yml/dispatches" \
-              -d '{"ref":"main"}' || echo "Restart trigger failed"
-          else
-            echo "Other sessions exist — no restart needed"
-          fi
-        continue-on-error: true
 
       - name: Cleanup
         if: always()

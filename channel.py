@@ -427,6 +427,15 @@ async def post_news_to_channel(bot: Bot, db, news_items: List[Dict]) -> int:
         "погиб", "убит", "ранен", "бежен", "эвакуац",
         "генсек", "мирн", "перемири", "капитуляц",
         "иноагент", "экстремист", "запрещён",
+        # v16.0: Additional political keywords (CNN, Iran, etc.)
+        "cnn", "iran", "иран", "израил", "israel", "хамас", "hamas",
+        "газа", "gaza", "палестин", "palestin",
+        "сша удар", "us strike", "us attack",
+        "ядерн", "nuclear", "оружие массового",
+        "мирн соглашен", "peace deal", "peace agreement",
+        "перестройк", "советск", "коммунист",
+        "протест", "митинг", "забастовк", "стачк",
+        "цензур", "запрет", "блокир",
     ]
 
     posted = 0

@@ -293,14 +293,8 @@ async def on_startup(**kwargs) -> None:
     _start_time = time.time()
     logger.info("=== Nastya Bot 15.1 Starting (Local Qwen3-VL, Apolitical, Vision, Context memory) ===")
 
-    # ── CRITICAL: Delete webhook and drop pending updates to avoid conflicts ──
-    # If another bot instance is running, this will force it to stop receiving updates
-    if bot:
-        try:
-            await bot.delete_webhook(drop_pending_updates=True)
-            logger.info("Webhook deleted, pending updates dropped")
-        except Exception as e:
-            logger.warning(f"Failed to delete webhook: {e}")
+    # NOTE: Webhook deletion and conflict resolution is handled in main()
+    # before start_polling() — no need to do it here again
 
     db = Database(DB_PATH)
     await db.init()
@@ -416,8 +410,33 @@ async def main():
 
         # CRITICAL: Delete webhook and drop pending updates FIRST
         # This ensures we're the only instance receiving updates
-        await bot.delete_webhook(drop_pending_updates=True)
-        logger.info("Webhook deleted, pending updates dropped — we are the sole instance")
+        # Retry up to 5 times with increasing delay to handle race conditions
+        # where another instance is still shutting down
+        for attempt in range(1, 6):
+            try:
+                await bot.delete_webhook(drop_pending_updates=True)
+                logger.info(f"Webhook deleted, pending updates dropped (attempt {attempt})")
+            except Exception as e:
+                logger.warning(f"Failed to delete webhook (attempt {attempt}): {e}")
+
+            # Wait before starting polling — give old instances time to die
+            if attempt < 5:
+                wait_time = attempt * 5  # 5, 10, 15, 20 seconds
+                logger.info(f"Waiting {wait_time}s before polling to ensure no other instances...")
+                await asyncio.sleep(wait_time)
+
+            # Try a test getUpdates to see if we're the sole instance
+            try:
+                test_updates = await bot.get_updates(limit=1, timeout=1)
+                logger.info(f"Test getUpdates succeeded — we are the sole instance (attempt {attempt})")
+                break
+            except Exception as e:
+                if "Conflict" in str(e) or "terminated by other" in str(e):
+                    logger.warning(f"Another bot instance still running (attempt {attempt}/5), waiting longer...")
+                    await asyncio.sleep(15)
+                else:
+                    logger.warning(f"getUpdates test error: {e}")
+                    break
 
         # Include poll_answer updates so Nastya can react to poll votes
         allowed_updates = dispatcher.resolve_used_update_types()
