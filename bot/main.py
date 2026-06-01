@@ -1,16 +1,17 @@
-"""Nastya Bot 15.0 — Main Entry Point. 24/7 via GitHub Actions with keep-alive.
+"""Nastya Bot 16.0 — Main Entry Point. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v15.0:
-  - LOCAL Qwen3-VL-2B via Ollama as PRIMARY!
+Architecture v16.0:
+  - SINGLE INSTANCE: file lock prevents multiple bot instances
+  - SINGLE WORKFLOW: one bot.yml with concurrency group (no duplicate runs)
+  - LOCAL Qwen3-VL-2B via Ollama as PRIMARY
   - GitHub Models SECOND (free DeepSeek-V3 via PAT)
   - Pollinations, Chutes, Blackbox, HuggingFace as cloud fallbacks
-  - НИКАКИХ SSE артефактов — локальная модель возвращает чистый JSON
-  - НИКАКИХ Authentication Error — локальный inference
   - АПОЛИТИЧНОСТЬ: Настя не обсуждает политику, религию, войну
   - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ + VISION
   - MOSCOW TIMEZONE — Настя из Москвы!
 """
 import asyncio
+import fcntl
 import logging
 import os
 import sys
@@ -138,6 +139,44 @@ ai_router: AIRouter = None
 bot: Bot = None
 dp: Dispatcher = None
 _start_time: float = 0
+
+# ── SINGLETON LOCK: prevent multiple bot instances ──────────
+_lock_file = None
+LOCK_PATH = "/tmp/nastya-bot.lock"
+
+
+def acquire_singleton_lock() -> bool:
+    """Try to acquire a file lock. Returns True if successful.
+    
+    If another bot instance is running, the lock will fail and
+    this instance will exit immediately — preventing TelegramConflictError.
+    """
+    global _lock_file
+    try:
+        _lock_file = open(LOCK_PATH, 'w')
+        fcntl.flock(_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_file.write(str(os.getpid()))
+        _lock_file.flush()
+        logger.info(f"Singleton lock acquired: {LOCK_PATH} (PID {os.getpid()})")
+        return True
+    except (IOError, OSError):
+        logger.critical("Another bot instance is already running! Exiting to prevent TelegramConflictError.")
+        if _lock_file:
+            _lock_file.close()
+        return False
+
+
+def release_singleton_lock():
+    """Release the singleton lock on shutdown."""
+    global _lock_file
+    try:
+        if _lock_file:
+            fcntl.flock(_lock_file, fcntl.LOCK_UN)
+            _lock_file.close()
+            _lock_file = None
+        Path(LOCK_PATH).unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 # ════════════════════════════════════════════════════════════
@@ -356,6 +395,10 @@ def setup_dispatcher() -> Dispatcher:
 async def main():
     global bot
 
+    # ── SINGLETON CHECK: exit if another instance is running ──
+    if not acquire_singleton_lock():
+        sys.exit(0)
+
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
@@ -371,7 +414,11 @@ async def main():
 
         timeout_task = asyncio.create_task(session_timeout())
 
+        # CRITICAL: Delete webhook and drop pending updates FIRST
+        # This ensures we're the only instance receiving updates
         await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook deleted, pending updates dropped — we are the sole instance")
+
         # Include poll_answer updates so Nastya can react to poll votes
         allowed_updates = dispatcher.resolve_used_update_types()
         if "poll_answer" not in allowed_updates:
@@ -390,6 +437,7 @@ async def main():
         except Exception:
             pass
         await on_shutdown()
+        release_singleton_lock()
         try:
             await bot.session.close()
         except Exception:

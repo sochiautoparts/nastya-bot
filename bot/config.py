@@ -99,25 +99,22 @@ MOSCOW_TZ = "Europe/Moscow"
 NEWS_SOURCES: List[Dict[str, str]] = [
     # === АВТОМОБИЛЬНЫЕ НОВОСТИ (приоритет!) ===
     {"name": "СочиАвтоЗапчасти", "url": "https://sochiautoparts.ru/rss.xml", "category": "auto"},
-    # General news
-    {"name": "РБК", "url": "https://rssexport.rbc.ru/rbcnews/news/30/full.rss", "category": "general"},
-    {"name": "РИА Новости", "url": "https://ria.ru/export/rss2/archive/index.xml", "category": "general"},
-    {"name": "Интерфакс", "url": "https://www.interfax.ru/rss.asp", "category": "general"},
-    {"name": "Ведомости", "url": "https://www.vedomosti.ru/rss/news", "category": "general"},
-    # International
-    {"name": "BBC Russian", "url": "https://feeds.bbci.co.uk/russian/rss.xml", "category": "world"},
-    {"name": "DW Russian", "url": "https://rss.dw.com/rdf/rss-ru-all", "category": "world"},
-    {"name": "Meduza", "url": "https://meduza.io/rss/all", "category": "world"},
-    # Tech
-    {"name": "Хабр", "url": "https://habr.com/ru/rss/best/daily/", "category": "tech"},
+    # === ТЕХНОЛОГИИ (аполитично!) ===
+    {"name": "Хабр", "url": "https://habr.com/ru/rss/articles/top/", "category": "tech"},
     {"name": "iXBT", "url": "https://www.ixbt.com/export/news.rss", "category": "tech"},
     {"name": "3DNews", "url": "https://3dnews.ru/news/rss/", "category": "tech"},
-    # Gaming & Entertainment
-    {"name": "DTF", "url": "https://dtf.ru/rss", "category": "gaming"},
-    # Lifestyle / Internet
-    {"name": "Пикабу", "url": "https://pikabu.ru/xmlfeed.php", "category": "internet"},
-    # Science
+    {"name": "OpenNET", "url": "https://www.opennet.ru/opennews/opennews_6.rss", "category": "tech"},
+    {"name": "TechCrunch RU", "url": "https://techcrunch.com/feed/", "category": "tech"},
+    # === НАУКА (аполитично!) ===
     {"name": "N+1", "url": "https://nplus1.ru/rss", "category": "science"},
+    {"name": "Naked Science", "url": "https://naked-science.ru/feed", "category": "science"},
+    # === ГЕЙМИНГ И РАЗВЛЕЧЕНИЯ (аполитично!) ===
+    {"name": "DTF", "url": "https://dtf.ru/rss", "category": "gaming"},
+    {"name": "Игромания", "url": "https://www.igromania.ru/rss/news.rss", "category": "gaming"},
+    # === АВТО И ТРАНСПОРТ (аполитично!) ===
+    {"name": "Дром", "url": "https://www.drom.ru/rss/", "category": "auto"},
+    # ═══ ПОЛИТИЧЕСКИЕ ИСТОЧНИКИ УДАЛЕНЫ — Настя АПОЛИТИЧНА! ═══
+    # Удалены: Meduza, РИА, Интерфакс, BBC, DW, Ведомости, РБК, Пикабу (404)
 ]
 
 # How often to check news (seconds)
