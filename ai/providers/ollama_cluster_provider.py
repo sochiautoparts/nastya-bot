@@ -28,12 +28,16 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
-# Models — ONLY use what's installed via GitHub Actions workflow!
-PRIMARY_MODEL = "qwen3-vl:2b"     # Vision + Text — PRIMARY
-TEXT_FAST_MODEL = "qwen3:1.7b"   # Fast text-only fallback
+# Model priority for TEXT (fastest/best first)
+TEXT_MODELS = ["phi4-mini:3.8b", "qwen3:1.7b"]
+# Model for VISION (must support images)
+VISION_MODELS = ["qwen3-vl:2b"]
+# Legacy compat
+PRIMARY_MODEL = "qwen3-vl:2b"
+TEXT_FAST_MODEL = "phi4-mini:3.8b"
 
 # Vision-capable model prefixes
-VISION_MODEL_PREFIXES = ["qwen3-vl", "qwen2.5-vl", "qwen2-vl", "llava", "minicpm-v"]
+VISION_MODEL_PREFIXES = ["qwen3-vl", "qwen2.5-vl", "qwen2-vl", "llava", "minicpm-v", "phi4-mini-vl"]
 
 
 class ResponseCache:
@@ -97,12 +101,12 @@ class OllamaClusterProvider(BaseProvider):
         self._warm: bool = False
         self._installed_models: List[str] = []
         self._cache = ResponseCache(maxsize=200, ttl=1800)
-        self._semaphore = asyncio.Semaphore(10)  # Не больше 10 одновременных запросов
+        self._semaphore = asyncio.Semaphore(2)  # CPU handles max 2 concurrent requests
         self._request_count: int = 0
         self._error_count: int = 0
         self._last_health_check: float = 0
-        # Глобальный lock для сериализации запросов на CPU
-        self._lock = asyncio.Lock()
+        self._last_health_status: bool = True
+        self._HEALTH_CACHE_TTL: int = 120  # Cache health check for 120s
 
     async def init(self) -> None:
         """Инициализация: автоопределение OLOL proxy или прямого Ollama."""
@@ -152,25 +156,39 @@ class OllamaClusterProvider(BaseProvider):
         logger.info(f"OllamaClusterProvider: {status} | text={self._text_model} | vision={self._vision_model} | {vision}")
 
     def _detect_models(self) -> None:
-        """Определить доступные модели."""
-        # Текстовая модель
-        if self._is_model_installed(TEXT_FAST_MODEL):
-            self._text_model = TEXT_FAST_MODEL
-        elif self._is_model_installed(PRIMARY_MODEL):
-            self._text_model = PRIMARY_MODEL
-        else:
-            self._text_model = PRIMARY_MODEL  # Попробуем всё равно
-
-        # Vision модель
-        for prefix in VISION_MODEL_PREFIXES:
-            for installed in self._installed_models:
-                if installed.startswith(prefix):
-                    self._vision_available = True
-                    self._vision_model = PRIMARY_MODEL
-                    break
-            if self._vision_available:
+        """Определить доступные модели.
+        
+        v23.0: phi4-mini for text (NEVER qwen3-vl for plain text!)
+        qwen3-vl for VISION ONLY.
+        """
+        # Текстовая модель — prefer phi4-mini, then qwen3:1.7b
+        # NEVER use qwen3-vl for text (root cause of 188-799s response times!)
+        for model in TEXT_MODELS:
+            if self._is_model_installed(model):
+                self._text_model = model
+                logger.info(f"Text model selected: {self._text_model}")
                 break
+        if not self._text_model:
+            self._text_model = TEXT_FAST_MODEL
+            logger.warning(f"No preferred text model found, defaulting to {self._text_model}")
 
+        # Vision модель — ONLY for vision requests
+        for model in VISION_MODELS:
+            if self._is_model_installed(model):
+                self._vision_model = model
+                self._vision_available = True
+                logger.info(f"Vision model selected: {self._vision_model}")
+                break
+        if not self._vision_available:
+            for prefix in VISION_MODEL_PREFIXES:
+                for installed in self._installed_models:
+                    if installed.startswith(prefix):
+                        self._vision_model = installed
+                        self._vision_available = True
+                        logger.info(f"Vision model detected: {installed}")
+                        break
+                if self._vision_available:
+                    break
         if not self._vision_model:
             self._vision_model = PRIMARY_MODEL
 
@@ -184,14 +202,20 @@ class OllamaClusterProvider(BaseProvider):
         return True
 
     async def health_check(self) -> bool:
-        """Проверка здоровья кластера/Ollama."""
+        """Проверка здоровья кластера/Ollama — с кэшированием."""
+        now = time.time()
+        if now - self._last_health_check < self._HEALTH_CACHE_TTL:
+            return self._last_health_status
         try:
             if not self._client:
-                return False
-            resp = await self._client.get("/api/tags", timeout=5.0)
-            return resp.status_code == 200
+                self._last_health_status = False
+            else:
+                resp = await self._client.get("/api/tags", timeout=5.0)
+                self._last_health_status = resp.status_code == 200
         except Exception:
-            return False
+            self._last_health_status = False
+        self._last_health_check = now
+        return self._last_health_status
 
     async def _warm_up(self) -> None:
         """Прогрев модели — загрузка в память."""
@@ -307,19 +331,25 @@ class OllamaClusterProvider(BaseProvider):
         elif not image_base64 and messages_history and len(messages_history) > 20:
             messages_history = messages_history[-20:]
 
-        # Выбор модели
+        # Выбор модели — v23.0 CRITICAL FIX:
+        # Vision: ONLY qwen3-vl:2b
+        # Text: ONLY phi4-mini/qwen3:1.7b (NEVER qwen3-vl for text!)
         is_vision = bool(image_base64 and self._vision_available)
         if is_vision:
             model = self._vision_model or PRIMARY_MODEL
             models_to_try = [model]
+            logger.info(f"OllamaCluster: VISION request → {model}")
         else:
-            models_to_try = []
-            if self._text_model and self._is_model_installed(self._text_model):
-                models_to_try.append(self._text_model)
-            if PRIMARY_MODEL not in models_to_try and self._is_model_installed(PRIMARY_MODEL):
-                models_to_try.append(PRIMARY_MODEL)
-            if not models_to_try:
-                models_to_try = [self._text_model or PRIMARY_MODEL]
+            model = self._text_model or TEXT_FAST_MODEL
+            # NEVER add qwen3-vl to text models!
+            models_to_try = [model]
+            # If text model IS the vision model, use alternative
+            if model == self._vision_model:
+                for alt in TEXT_MODELS:
+                    if alt != model and self._is_model_installed(alt):
+                        models_to_try = [alt]
+                        break
+            logger.info(f"OllamaCluster: TEXT request → {models_to_try[0]}")
 
         # Проверка кэша (только для запросов без истории)
         has_conversation = bool(messages_history and len(messages_history) > 0)
@@ -355,13 +385,10 @@ class OllamaClusterProvider(BaseProvider):
                     },
                 }
 
-                # Сериализация запросов (CPU может обрабатывать только один inference)
-                request_timeout = self.timeout
-                if img:
-                    request_timeout = min(request_timeout * 1.5, 300)
-                    logger.info(f"Extended timeout {request_timeout:.0f}s for vision request")
+                # Таймаут: 90s для текста, 180s для vision
+                request_timeout = 90.0 if not is_vision else 180.0
 
-                async with self._lock:
+                async with self._semaphore:
                     try:
                         self._request_count += 1
                         response = await self._client.post(
