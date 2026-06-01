@@ -10,12 +10,13 @@ Architecture:
   - NEVER has authentication errors (local inference)
   - Perfect for channel posts, news commentary, basic chat
 
-v2.0: Improved reliability
-  - Better model detection and auto-pull
-  - Longer timeouts for cold starts
-  - Qwen3 <think/> tag stripping
+v3.0: Vision and reliability fixes
+  - Build messages with explicit current-prompt injection for vision
+  - Images ALWAYS attached to the CURRENT prompt message (last user msg)
+  - Better think-tag stripping for Qwen3
   - Robust fallback chain: qwen3-vl:2b → qwen3:1.7b → qwen2.5:3b
   - Model cache verification on startup
+  - Proper timeout handling for CPU inference
 """
 import logging
 import asyncio
@@ -134,16 +135,7 @@ class OllamaProvider(BaseProvider):
         logger.info(f"Ollama provider: {status}{vision} | model={self._available_model} | vision_detected={self._vision_available}")
 
     def is_available(self) -> bool:
-        """Check if Ollama is potentially available.
-
-        Returns True because Ollama doesn't need API keys — we can only
-        know for sure after init() connects to the server. The actual
-        availability check happens in init() and generate().
-        """
-        # Ollama needs no API key — always potentially available.
-        # The real check happens in init() which connects to the server.
-        # If Ollama is not running, generate() will raise ProviderError
-        # and the router will fall back to other providers.
+        """Check if Ollama is potentially available."""
         return True
 
     async def _warm_up(self) -> None:
@@ -178,11 +170,95 @@ class OllamaProvider(BaseProvider):
         except Exception as e:
             logger.warning(f"Ollama warm-up error: {e}")
 
+    @staticmethod
+    def _strip_think_tags(text: str) -> str:
+        """Remove Qwen3 <think/> blocks from response."""
+        text = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<thinking\b[^>]*>.*?</thinking\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        # Also strip any partial think tags that might be left
+        text = re.sub(r'</?think[^>]*>', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'</?thinking[^>]*>', '', text, flags=re.IGNORECASE)
+        return text.strip()
+
+    def _build_ollama_messages(
+        self,
+        prompt: str,
+        system_prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        image_base64: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Build Ollama-native messages with CORRECT image attachment.
+
+        CRITICAL FIX v3.0: Images MUST be attached to the CURRENT user prompt,
+        which is the LAST message in the array. Previous code used _build_messages()
+        from BaseProvider which adds the prompt as the last message — but the
+        Ollama image attachment code would then search backwards for the last
+        "user" message and might attach to a HISTORY user message instead.
+
+        This method builds messages specifically for Ollama's native API format:
+        {"role": "user", "content": "text", "images": ["base64..."]}
+
+        The images field is ALWAYS on the current prompt message.
+        """
+        result: List[Dict[str, Any]] = []
+
+        # System prompt first
+        if system_prompt:
+            result.append({"role": "system", "content": system_prompt})
+
+        # Add conversation history
+        if messages:
+            for msg in messages:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role in ("user", "assistant", "system") and content:
+                    result.append({"role": role, "content": content})
+
+        # Check if the last message in history already matches the current prompt
+        last_is_current = (
+            messages
+            and len(messages) > 0
+            and messages[-1].get("role") == "user"
+            and messages[-1].get("content") == prompt
+        )
+
+        # Add current user prompt with image if applicable
+        if not last_is_current:
+            current_msg: Dict[str, Any] = {"role": "user", "content": prompt}
+            # Attach image to the CURRENT prompt message
+            if image_base64 and self._vision_available:
+                current_msg["images"] = [image_base64]
+            result.append(current_msg)
+        elif image_base64 and self._vision_available:
+            # Last history message IS the current prompt — attach image to it
+            # Find the last user message in result and add images
+            for i in range(len(result) - 1, -1, -1):
+                if result[i]["role"] == "user":
+                    result[i]["images"] = [image_base64]
+                    break
+
+        # Merge consecutive same-role messages (Ollama can reject them)
+        merged: List[Dict[str, Any]] = []
+        for msg in result:
+            if merged and merged[-1].get("role") == msg.get("role"):
+                prev_content = merged[-1].get("content", "")
+                new_content = msg.get("content", "")
+                merged[-1]["content"] = f"{prev_content}\n{new_content}"
+                # If the new message has images, keep them on the merged message
+                if "images" in msg:
+                    merged[-1]["images"] = msg["images"]
+            else:
+                merged.append(msg)
+
+        return merged
+
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         """Generate text via local Ollama instance.
 
         Uses the Ollama native /api/chat endpoint for
         clean JSON responses — NO SSE artifacts, NO auth errors.
+
+        v3.0: Uses _build_ollama_messages() for correct image attachment.
         """
         if not self._client:
             await self.init()
@@ -201,26 +277,21 @@ class OllamaProvider(BaseProvider):
         messages_history = kwargs.get("messages")
         image_base64 = kwargs.get("image_base64")
 
-        # Build messages — LIMIT history for vision requests (2B model has limited context)
-        # Vision with 50 history messages = context overflow / extremely slow on CPU
+        # Limit history for vision requests (2B model has limited context)
         if image_base64 and messages_history and len(messages_history) > 10:
-            logger.info(f"Ollama: Trimming history for vision request: {len(messages_history)} -> 10 messages")
+            logger.info(f"Ollama: Trimming history for vision: {len(messages_history)} -> 10 messages")
             messages_history = messages_history[-10:]
+        elif not image_base64 and messages_history and len(messages_history) > 30:
+            # Even for text, limit history for 2B model
+            messages_history = messages_history[-30:]
 
-        messages = self._build_messages(prompt, system_prompt, messages_history)
-
-        # Handle vision — Ollama native API uses "images" field at message level
-        # NOT the OpenAI format with content list!
-        # See: https://github.com/ollama/ollama/blob/main/docs/api.md
-        ollama_images = None
+        # Use vision model if image is provided and available
+        use_vision_model = False
         if image_base64 and self._vision_available:
             model = VISION_MODEL
-            # Ollama native API expects images as an array of base64 strings
-            # attached to the user message as a separate "images" field
-            ollama_images = [image_base64]
-            logger.info(f"Ollama: Sending image with vision model {model} (image size: {len(image_base64)} chars)")
+            use_vision_model = True
+            logger.info(f"Ollama: Using vision model {model} for image (size: {len(image_base64)} chars)")
         elif image_base64 and not self._vision_available:
-            # No vision model available — describe without image
             logger.warning("Ollama: Image provided but no vision model. Processing text only.")
 
         # Try models in order if primary fails
@@ -232,22 +303,20 @@ class OllamaProvider(BaseProvider):
 
         last_error = None
         for try_model in models_to_try:
-            # Build Ollama-native messages format
-            # Ollama expects: {"role": "user", "content": "text", "images": ["base64..."]}
-            # CRITICAL: Images MUST go on the LAST user message (the current prompt),
-            # NOT the first! Previous code attached to first user message = BROKEN VISION!
-            ollama_messages = []
-            for msg in messages:
-                ollama_msg = {"role": msg["role"], "content": msg["content"]}
-                ollama_messages.append(ollama_msg)
+            # Build messages using Ollama-native format with correct image attachment
+            # Only attach image to the FIRST model attempt (not fallbacks)
+            img = image_base64 if (use_vision_model and try_model == model) else None
+            ollama_messages = self._build_ollama_messages(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                messages=messages_history,
+                image_base64=img,
+            )
 
-            # Attach images to the LAST user message (the current prompt with the image)
-            if ollama_images:
-                for i in range(len(ollama_messages) - 1, -1, -1):
-                    if ollama_messages[i]["role"] == "user":
-                        ollama_messages[i]["images"] = ollama_images
-                        logger.info(f"Ollama: Attached image to last user message (index {i})")
-                        break
+            # Log what we're sending
+            msg_count = len(ollama_messages)
+            has_images = any("images" in m for m in ollama_messages)
+            logger.info(f"Ollama: Sending {msg_count} messages to {try_model} (vision={has_images})")
 
             payload = {
                 "model": try_model,
@@ -260,12 +329,11 @@ class OllamaProvider(BaseProvider):
             }
 
             try:
-                # Use /api/chat endpoint (Ollama native) — always returns JSON
                 # Vision + CPU inference needs longer timeout!
                 request_timeout = self.timeout
-                if ollama_images:
+                if img:
                     request_timeout = min(request_timeout * 2, 300)  # Up to 5 min for vision on CPU
-                    logger.info(f"Ollama: Using extended timeout {request_timeout}s for vision request")
+                    logger.info(f"Ollama: Extended timeout {request_timeout}s for vision request")
                 response = await self._client.post(
                     "/api/chat",
                     json=payload,
@@ -283,9 +351,10 @@ class OllamaProvider(BaseProvider):
                 if not text:
                     # Try OpenAI-compatible endpoint as fallback
                     try:
+                        oai_messages = self._build_messages(prompt, system_prompt, messages_history)
                         oai_payload = {
                             "model": try_model,
-                            "messages": messages,
+                            "messages": oai_messages,
                             "temperature": temperature,
                             "max_tokens": max_tokens,
                             "stream": False,
@@ -311,9 +380,7 @@ class OllamaProvider(BaseProvider):
                     continue
 
                 # Clean up think tags (Qwen3 uses <think/> blocks)
-                text = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
-                text = re.sub(r'<thinking\b[^>]*>.*?</thinking\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
-                text = text.strip()
+                text = self._strip_think_tags(text)
 
                 if not text:
                     last_error = ProviderError(

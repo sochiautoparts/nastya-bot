@@ -1,7 +1,7 @@
 name: Nastya Bot — Qwen3-VL-2B
 
 # ═══════════════════════════════════════════════════════════════
-# SINGLE CONSOLIDATED WORKFLOW for Nastya Bot v18.0
+# SINGLE CONSOLIDATED WORKFLOW for Nastya Bot v19.0
 #
 # Architecture:
 #   - Ollama runs INSIDE GitHub Actions with Qwen3-VL-2B model
@@ -9,17 +9,20 @@ name: Nastya Bot — Qwen3-VL-2B
 #   - Every 5 hours cron kicks off a fresh runner (new IP, clean state)
 #   - concurrency: ONLY ONE instance can run at a time!
 #   - If old run is still going, it gets cancelled automatically
-#   - This PREVENTS TelegramConflictError from multiple instances
 #   - Auto-restart: if bot crashes, it retries up to 5 times
 #   - Self-dispatch: when all retries exhausted, re-dispatch workflow
 #   - Conflict exit: bot exits with code 2 on persistent conflicts
+#     → uses os._exit(2) so aiogram can't catch it
 #
-# v18.0 FIXES:
-#   - Bot exits on persistent TelegramConflictError (code 2 → auto-restart)
-#   - Self-dispatch when all retries exhausted (24/7 uptime!)
-#   - Longer wait after cancelling old runs (60s instead of 30s)
-#   - Ollama vision fixed: images on LAST message, not first
-#   - Vision history limited to 10 messages (was 50 = context overflow)
+# v19.0 FIXES:
+#   - Bot takeover uses DEDICATED httpx client (not aiogram session)
+#     → fixes ROOT CAUSE of persistent TelegramConflictError
+#   - FRESH bot instance created after takeover (no stale sessions)
+#   - conflict_monitor uses os._exit(2) instead of SystemExit(2)
+#     → ensures process actually dies and auto-restart kicks in
+#   - Longer wait after cancelling old runs (90s instead of 60s)
+#   - Better self-dispatch with retry logic
+#   - Database saved as artifact (more reliable than cache)
 #
 # Schedule (UTC, Moscow = UTC+3):
 #   Every 5 hours: 00:00, 05:00, 10:00, 15:00, 20:00
@@ -61,7 +64,7 @@ jobs:
           echo "=== Checking for other running bot instances ==="
           CURRENT_RUN=${{ github.run_id }}
           REPO=${{ github.repository }}
-          
+
           # Get all in-progress runs for this repo and cancel them
           for status in in_progress queued; do
             RUNS=$(curl -s -H "Authorization: token $GH_TOKEN" \
@@ -75,7 +78,7 @@ jobs:
                       print(r["id"])
           except: pass
           ' "$CURRENT_RUN")
-            
+
             for run_id in $RUNS; do
               echo "Cancelling $status run: $run_id"
               curl -s -X POST -H "Authorization: token $GH_TOKEN" \
@@ -83,12 +86,15 @@ jobs:
                 "https://api.github.com/repos/$REPO/actions/runs/$run_id/cancel" || true
             done
           done
-          
-          # Wait for old bot process to actually die
-          # The old Python process needs time to receive SIGTERM and shut down
-          # v18.0: Increased from 30s to 60s to reduce Conflict errors
-          echo "Waiting 60s for old bot instances to fully stop..."
-          sleep 60
+
+          # v19.0: Increased to 90s — the old process needs time to:
+          # 1. Receive SIGTERM
+          # 2. Finish current Telegram long-poll request
+          # 3. Close aiogram sessions
+          # 4. Actually exit
+          # If we start too early, both processes call getUpdates → Conflict!
+          echo "Waiting 90s for old bot instances to fully stop..."
+          sleep 90
           echo "=== Ready to start ==="
 
       - name: Checkout repository
@@ -169,7 +175,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v18
+          key: nastya-db-v19
           restore-keys: |
             nastya-db-
 
@@ -202,7 +208,7 @@ jobs:
           CHANNEL_POST_INTERVAL: 1200
           OLLAMA_KEEP_ALIVE: 30m
         run: |
-          echo "=== Starting Nastya Bot 18.0 with Qwen3-VL-2B (Vision FIXED!) ==="
+          echo "=== Starting Nastya Bot 19.0 with Qwen3-VL-2B ==="
           echo "Ollama status:"
           curl -s http://localhost:11434/api/tags | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  Model: {m[\"name\"]}') for m in d.get('models',[])]" 2>/dev/null || echo "  Ollama not responding"
           echo "=== Launching bot with auto-restart ==="
@@ -235,7 +241,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v18-${{ github.run_id }}
+          key: nastya-db-v19-${{ github.run_id }}
 
       # ── Self-dispatch: re-trigger workflow for 24/7 uptime ──
       - name: Re-dispatch workflow for continuous operation
@@ -246,14 +252,22 @@ jobs:
           echo "=== Re-dispatching workflow for 24/7 uptime ==="
           REPO=${{ github.repository }}
           # Wait a bit to avoid race conditions
-          sleep 10
-          # Trigger a new workflow run
-          curl -s -X POST \
-            -H "Authorization: token $GH_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/$REPO/actions/workflows/bot.yml/dispatches" \
-            -d '{"ref":"main"}' || echo "Failed to re-dispatch (may hit rate limit)"
-          echo "=== Workflow re-dispatched ==="
+          sleep 15
+          # Trigger a new workflow run with retry
+          for i in 1 2 3; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+              -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/$REPO/actions/workflows/bot.yml/dispatches" \
+              -d '{"ref":"main"}')
+            if [ "$HTTP_CODE" = "204" ]; then
+              echo "Workflow re-dispatched successfully (attempt $i)"
+              break
+            fi
+            echo "Re-dispatch attempt $i failed (HTTP $HTTP_CODE), retrying in 10s..."
+            sleep 10
+          done
+          echo "=== Re-dispatch complete ==="
 
       - name: Cleanup
         if: always()

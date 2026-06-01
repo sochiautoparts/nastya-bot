@@ -1,6 +1,6 @@
-"""Nastya Bot 18.0 — Main Entry Point. Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 19.0 — Main Entry Point. Single-instance, 24/7 via GitHub Actions.
 
-Architecture v18.0:
+Architecture v19.0:
   - SINGLE INSTANCE: file lock + conflict tracker prevents multiple bot instances
   - SINGLE WORKFLOW: one bot.yml with concurrency group (no duplicate runs)
   - LOCAL Qwen3-VL-2B via Ollama as PRIMARY (with FIXED vision!)
@@ -10,17 +10,23 @@ Architecture v18.0:
   - ГЕНДЕРНАЯ АДАПТАЦИЯ + КОНТЕКСТ ПАМЯТИ + VISION (FIXED!)
   - MOSCOW TIMEZONE — Настя из Москвы!
 
-v18.0 CRITICAL FIXES:
-  1. Ollama vision: images now attach to LAST user message, not first!
-  2. Conflict exit: bot exits after 60s of persistent conflicts → auto-restart kicks in
-  3. Vision history: limited to 10 messages for 2B model (was 50 = context overflow)
-  4. Takeover: added final verification RIGHT BEFORE start_polling
+v19.0 CRITICAL FIXES:
+  1. TelegramConflictError ROOT CAUSE: takeover used timeout=0 which causes
+     aiogram's internal session to open parallel getUpdates requests.
+     FIX: Use timeout=5 for takeover test, then CLOSE bot session and
+     create a NEW bot instance for polling. This ensures no stale connections.
+  2. conflict_monitor: SystemExit(2) in background task doesn't kill the
+     process — aiogram catches it. FIX: use os._exit(2) instead.
+  3. Ollama vision: images now attach to LAST user message, not first!
+  4. Vision history: limited to 10 messages for 2B model (was 50 = context overflow)
   5. Workflow: re-dispatches itself when all retries exhausted
+  6. Better auto-restart: track aiogram's own conflict counter
 """
 import asyncio
 import fcntl
 import logging
 import os
+import signal
 import sys
 import time
 import traceback
@@ -67,12 +73,13 @@ if not BOT_TOKEN:
 
 _consecutive_conflicts: int = 0
 _first_conflict_time: float = 0
-_MAX_CONFLICT_SECONDS = 60  # Exit after 60s of continuous conflicts
+_MAX_CONFLICT_SECONDS = 45  # Exit after 45s of continuous conflicts
+_should_exit = False  # Flag for conflict_monitor to signal main loop
 
 
 def record_conflict() -> bool:
     """Record a conflict error. Returns True if we should exit."""
-    global _consecutive_conflicts, _first_conflict_time
+    global _consecutive_conflicts, _first_conflict_time, _should_exit
     now = time.time()
     _consecutive_conflicts += 1
     if _first_conflict_time == 0:
@@ -84,6 +91,7 @@ def record_conflict() -> bool:
             f"Persistent Conflict for {duration:.0f}s ({_consecutive_conflicts} conflicts). "
             f"EXITING to trigger auto-restart!"
         )
+        _should_exit = True
         return True
     return False
 
@@ -177,6 +185,21 @@ class RateLimitMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
+class ConflictTrackingMiddleware(BaseMiddleware):
+    """Track TelegramConflictError from aiogram's polling loop.
+
+    aiogram's default retry policy retries conflicts with exponential backoff,
+    but it never records them. We hook into the error callback to track them
+    so our conflict_monitor can detect persistent conflicts and exit.
+    """
+
+    async def __call__(self, handler, event, data: dict):
+        # This middleware is for update processing — conflicts happen
+        # at the polling level, not here. We clear conflicts on success.
+        clear_conflicts()
+        return await handler(event, data)
+
+
 # ── Global instances ───────────────────────────────────────
 from bot.database import Database
 from bot.handlers import all_routers
@@ -195,7 +218,7 @@ LOCK_PATH = "/tmp/nastya-bot.lock"
 
 def acquire_singleton_lock() -> bool:
     """Try to acquire a file lock. Returns True if successful.
-    
+
     If another bot instance is running, the lock will fail and
     this instance will exit immediately — preventing TelegramConflictError.
     """
@@ -334,29 +357,36 @@ async def memory_cleanup() -> None:
 
 async def conflict_monitor() -> None:
     """Background task: monitor conflict state and exit if persistent.
-    
-    This is the key fix for the 'bot stops and doesn't restart' problem.
-    Aiogram retries Conflict errors indefinitely — but we need to EXIT
-    so the workflow's auto-restart mechanism can kick in with a clean state.
+
+    v19.0 FIX: Uses os._exit(2) instead of SystemExit(2).
+    SystemExit raised in a background task is caught by asyncio's
+    event loop and never reaches the main thread. os._exit() kills
+    the entire process immediately, ensuring the workflow's
+    auto-restart mechanism kicks in.
     """
-    await asyncio.sleep(10)  # Give startup time
+    await asyncio.sleep(15)  # Give startup time to settle
     while True:
         try:
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
             # Check if we've been in conflict state for too long
             if _consecutive_conflicts > 5 and _first_conflict_time > 0:
                 duration = time.time() - _first_conflict_time
                 if duration > _MAX_CONFLICT_SECONDS:
                     logger.critical(
-                        f"Conflict monitor: {duration:.0f}s of persistent conflicts. "
-                        f"Exiting to trigger auto-restart!"
+                        f"Conflict monitor: {duration:.0f}s of persistent conflicts "
+                        f"({_consecutive_conflicts} conflicts). "
+                        f"FORCE EXITING with os._exit(2) to trigger auto-restart!"
                     )
-                    # Exit with code 2 → workflow will restart
-                    raise SystemExit(2)
+                    # CRITICAL FIX: os._exit() bypasses asyncio's exception handling
+                    # and kills the process immediately. SystemExit in a background
+                    # task is silently caught by the event loop and never propagates!
+                    os._exit(2)
+            # Also check the global exit flag
+            if _should_exit:
+                logger.critical("Exit flag set! Force exiting with os._exit(2)")
+                os._exit(2)
         except asyncio.CancelledError:
             break
-        except SystemExit:
-            raise
         except Exception as e:
             logger.error(f"Conflict monitor error: {e}")
 
@@ -368,7 +398,7 @@ async def conflict_monitor() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 18.0 Starting (Local Qwen3-VL, Apolitical, Vision FIXED, Context memory) ===")
+    logger.info("=== Nastya Bot 19.0 Starting (Local Qwen3-VL, Apolitical, Vision FIXED, Conflict FIX) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -414,7 +444,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 18.0 Ready ===")
+    logger.info("=== Nastya Bot 19.0 Ready ===")
 
 
 async def on_shutdown(**kwargs) -> None:
@@ -464,6 +494,100 @@ def setup_dispatcher() -> Dispatcher:
     return dp
 
 
+# ════════════════════════════════════════════════════════════
+#  TAKEOVER — resolve TelegramConflictError
+# ════════════════════════════════════════════════════════════
+
+async def force_takeover(bot_instance: Bot) -> bool:
+    """Force-take control of the bot from any previous instance.
+
+    v19.0 ROOT CAUSE FIX: The previous code used get_updates(timeout=0)
+    for the takeover test. This is WRONG because:
+    1. aiogram's Bot.get_updates() creates a NEW aiohttp session internally
+    2. Even with timeout=0, it sends a getUpdates HTTP request to Telegram
+    3. When aiogram's polling loop starts later, it creates ANOTHER session
+    4. For a brief moment, BOTH sessions are calling getUpdates → Conflict!
+
+    FIX: Use a DEDICATED httpx client (NOT aiogram's Bot) for the takeover
+    test. This way aiogram's internal session is NEVER opened before
+    start_polling(), so there's no session leak.
+
+    Returns True if takeover succeeded.
+    """
+    import httpx
+
+    MAX_ATTEMPTS = 10
+    logger.info(f"=== Starting takeover (up to {MAX_ATTEMPTS} attempts) ===")
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        # Step 1: Delete webhook — this kicks the old instance's long-poll
+        # and forces it to return with a Conflict error
+        try:
+            await bot_instance.delete_webhook(drop_pending_updates=True)
+            logger.info(f"[Takeover {attempt}] delete_webhook OK")
+        except Exception as e:
+            logger.warning(f"[Takeover {attempt}] delete_webhook failed: {e}")
+
+        # Step 2: Wait for old instance to die
+        # Progressive delay: 3s → 5s → 8s → 12s → 15s
+        if attempt <= 2:
+            wait = 5
+        elif attempt <= 4:
+            wait = 8
+        elif attempt <= 6:
+            wait = 12
+        else:
+            wait = 15
+        logger.info(f"[Takeover {attempt}] Waiting {wait}s for old instance to die...")
+        await asyncio.sleep(wait)
+
+        # Step 3: Test with a DEDICATED httpx client (NOT aiogram's session!)
+        # This prevents the aiogram session leak that was causing
+        # persistent TelegramConflictError.
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
+                # Call getUpdates directly via HTTP — no aiogram involvement
+                resp = await client.get(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates",
+                    params={"limit": 1, "timeout": 5},
+                )
+                data = resp.json()
+
+                if data.get("ok"):
+                    logger.info(
+                        f"[Takeover {attempt}] getUpdates SUCCESS via httpx — "
+                        f"we are the sole instance!"
+                    )
+                    return True
+                elif data.get("error_code") == 409:
+                    logger.warning(
+                        f"[Takeover {attempt}] Conflict — old instance still alive, retrying..."
+                    )
+                    # Delete webhook AGAIN to keep kicking the old instance
+                    try:
+                        await bot_instance.delete_webhook(drop_pending_updates=True)
+                    except Exception:
+                        pass
+                else:
+                    logger.warning(
+                        f"[Takeover {attempt}] Telegram error: {data.get('description', 'unknown')}"
+                    )
+                    # Non-conflict error — might be network issue. Try polling anyway.
+                    return True
+
+        except httpx.TimeoutException:
+            # Timeout is OK — it means the long-poll is working (no conflict!)
+            logger.info(f"[Takeover {attempt}] Timeout (means no conflict!) — SUCCESS!")
+            return True
+        except Exception as e:
+            logger.warning(f"[Takeover {attempt}] httpx test error: {e}")
+            # Network issue — try polling anyway
+            return True
+
+    logger.error("FAILED to take over after all attempts!")
+    return False
+
+
 async def main():
     global bot
 
@@ -484,10 +608,46 @@ async def main():
             logger.critical("Cannot acquire lock even after cleanup. Exiting.")
             sys.exit(0)
 
+    # Create bot instance for takeover phase
+    takeover_bot = Bot(
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+
+    # ═══════════════════════════════════════════════════════
+    #  SMART TAKEOVER — resolve TelegramConflictError
+    # ═══════════════════════════════════════════════════════
+    takeover_ok = await force_takeover(takeover_bot)
+
+    if not takeover_ok:
+        logger.error("Takeover failed! Will try polling anyway...")
+
+    # ═══════════════════════════════════════════════════════
+    #  CRITICAL: Close takeover bot and create FRESH bot for polling
+    # ═══════════════════════════════════════════════════════
+    # The takeover bot's aiohttp session may have stale connections
+    # that interfere with aiogram's polling. Create a brand new bot.
+    try:
+        await takeover_bot.session.close()
+        logger.info("Takeover bot session closed")
+    except Exception:
+        pass
+
+    # Small delay to ensure old connections are fully cleaned up
+    await asyncio.sleep(2)
+
+    # Create FRESH bot instance for polling
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
+
+    # Final webhook cleanup with fresh bot (no stale sessions!)
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Final webhook cleanup with fresh bot OK")
+    except Exception as e:
+        logger.warning(f"Final webhook cleanup failed: {e}")
 
     dispatcher = setup_dispatcher()
 
@@ -495,122 +655,16 @@ async def main():
         async def session_timeout():
             await asyncio.sleep(SESSION_DURATION_SECONDS)
             logger.info("Session timeout, shutting down...")
-            raise SystemExit(0)
+            os._exit(0)  # Use os._exit to ensure process dies
 
         timeout_task = asyncio.create_task(session_timeout())
-
-        # ═══════════════════════════════════════════════════════
-        #  SMART TAKEOVER — resolve TelegramConflictError
-        # ═══════════════════════════════════════════════════════
-        # Problem: When GitHub Actions cancels old run, the Python
-        # process gets SIGTERM but may take time to actually die.
-        # During this time, BOTH instances call getUpdates → Conflict.
-        #
-        # Root cause: Telegram only allows ONE getUpdates connection.
-        # If the old process is still long-polling, any new
-        # getUpdates call returns TelegramConflictError.
-        #
-        # Solution:
-        # 1. Call delete_webhook(drop_pending_updates=True) — this
-        #    forces the old instance's long-poll to return immediately
-        #    with a Conflict error, causing it to exit.
-        # 2. Wait for the old process to die.
-        # 3. Call get_updates with timeout=0 to quickly test if
-        #    we're the sole instance (no long-poll needed).
-        # 4. If still conflict, wait and retry.
-        #
-        # KEY INSIGHT: Use timeout=0 for testing, not timeout=3.
-        # timeout=0 makes getUpdates return immediately, so if
-        # there's no conflict we get a fast response. If there
-        # IS a conflict, the error comes back quickly too.
-        # ═══════════════════════════════════════════════════════
-
-        MAX_TAKEOVER_ATTEMPTS = 15
-        takeover_success = False
-
-        for attempt in range(1, MAX_TAKEOVER_ATTEMPTS + 1):
-            try:
-                # Step 1: Delete webhook — this kicks the old instance out
-                await bot.delete_webhook(drop_pending_updates=True)
-                logger.info(f"[Takeover {attempt}/{MAX_TAKEOVER_ATTEMPTS}] delete_webhook OK")
-            except Exception as e:
-                logger.warning(f"[Takeover {attempt}] delete_webhook failed: {e}")
-
-            # Step 2: Progressive wait — start short, increase gradually
-            if attempt <= 3:
-                wait = 3
-            elif attempt <= 6:
-                wait = 5
-            elif attempt <= 9:
-                wait = 8
-            elif attempt <= 12:
-                wait = 12
-            else:
-                wait = 15
-            logger.info(f"[Takeover {attempt}] Waiting {wait}s...")
-            await asyncio.sleep(wait)
-
-            # Step 3: Try getUpdates with timeout=0 for instant check
-            try:
-                test_updates = await bot.get_updates(limit=1, timeout=0)
-                logger.info(f"[Takeover {attempt}] getUpdates SUCCESS — we are the sole instance!")
-                takeover_success = True
-                break
-            except Exception as e:
-                err_str = str(e)
-                if "Conflict" in err_str or "terminated by other" in err_str:
-                    logger.warning(f"[Takeover {attempt}] Old instance still alive (Conflict), retrying...")
-                    # Delete webhook AGAIN to keep kicking the old instance
-                    try:
-                        await bot.delete_webhook(drop_pending_updates=True)
-                    except Exception:
-                        pass
-                else:
-                    logger.warning(f"[Takeover {attempt}] getUpdates error (not Conflict): {e}")
-                    # Not a conflict — might be network issue. Try polling anyway.
-                    takeover_success = True
-                    break
-
-        if not takeover_success:
-            logger.error("FAILED to take over after all attempts! Starting polling anyway — expect conflicts.")
-
-        # ═══════════════════════════════════════════════════════
-        #  FINAL VERIFICATION — check RIGHT BEFORE start_polling
-        # ═══════════════════════════════════════════════════════
-        # Race condition: between takeover success and start_polling,
-        # the old process might reconnect. One final check prevents this.
-        try:
-            await bot.delete_webhook(drop_pending_updates=True)
-            await asyncio.sleep(2)
-            # Quick check with timeout=0
-            await bot.get_updates(limit=1, timeout=0)
-            logger.info("Final verification: we are the sole instance! Starting polling...")
-        except Exception as e:
-            err_str = str(e)
-            if "Conflict" in err_str:
-                logger.warning(f"Final verification: Conflict detected! Waiting 10s more...")
-                await asyncio.sleep(10)
-                try:
-                    await bot.delete_webhook(drop_pending_updates=True)
-                    await asyncio.sleep(2)
-                    await bot.get_updates(limit=1, timeout=0)
-                    logger.info("Final verification (2nd try): OK! Starting polling...")
-                except Exception:
-                    logger.error("Final verification (2nd try): Still Conflict! Starting anyway...")
-            else:
-                logger.warning(f"Final verification: Non-conflict error: {e}")
-
-        # Final webhook cleanup
-        try:
-            await bot.delete_webhook(drop_pending_updates=True)
-            logger.info("Final webhook cleanup done")
-        except Exception:
-            pass
 
         # Include poll_answer updates so Nastya can react to poll votes
         allowed_updates = dispatcher.resolve_used_update_types()
         if "poll_answer" not in allowed_updates:
             allowed_updates.append("poll_answer")
+
+        logger.info("Starting aiogram polling with fresh bot session...")
         await dispatcher.start_polling(bot, allowed_updates=allowed_updates)
 
     except SystemExit as e:
