@@ -45,7 +45,8 @@ logger = logging.getLogger("nastya-bot")
 from bot.config import (
     BOT_TOKEN, ADMIN_IDS, DB_PATH, SESSION_DURATION_SECONDS, OWNER_ID,
     NEWS_FETCH_INTERVAL, CHANNEL_POST_INTERVAL, CHANNEL_ID, CHANNEL_USERNAME,
-    MODEL_PATH,
+    MODEL_PATH, MODEL2_PATH, MODEL_PREFERENCE,
+    MODEL_N_CTX, MODEL_MAX_TOKENS, MODEL_HISTORY_LIMIT,
 )
 
 if not BOT_TOKEN:
@@ -459,7 +460,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 36.0 Starting (LLAMA-CPP-PYTHON — v36) ===")
+    logger.info("=== Nastya Bot 37.0 Starting (DUAL-MODEL LLAMA-CPP-PYTHON — v37) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -506,7 +507,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 36.0 Ready (LLAMA-CPP-PYTHON — v36) ===")
+    logger.info("=== Nastya Bot 37.0 Ready (DUAL-MODEL LLAMA-CPP-PYTHON — v37) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

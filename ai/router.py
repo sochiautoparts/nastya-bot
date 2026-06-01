@@ -1,10 +1,11 @@
-"""AI Router v36.0 — LLAMA-CPP-PYTHON NATIVE!
+"""AI Router v37.0 — DUAL-MODEL LLAMA-CPP-PYTHON!
 
-АРХИТЕКТУРА v36: Полный переход на llama-cpp-python!
-
+АРХИТЕКТУРА v37: Двойная модель для надёжности!
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
-    1. LlamaCppProvider (Qwen3-4B-Instruct GGUF — ПРЯМАЯ загрузка в память!)
-    2. PollinationsProvider (fallback — если локальная модель упала)
+    1. LlamaCppProvider (Phi-4-mini PRIMARY + Qwen3-4B SECONDARY)
+       - Автопереключение при ошибках
+       - Автотест при старте для выбора лучшей модели
+    2. PollinationsProvider (fallback — если обе модели упали)
     3. Static fallback — бот ВСЕГДА отвечает
 
   ФОН (новости, канал — БЕЗ AI!):
@@ -12,12 +13,11 @@
     - Канал: шаблонные посты, опросы, факты (channel.py)
     - AI НЕ вызывается для фоновых задач!
 
-  Ключевые преимущества llama-cpp-python:
-    - Нет Ollama HTTP-сервера — модель в процессе, нулевая задержка
-    - AVX2/AVX512 векторизация — в 2-3x быстрее на CPU
-    - Меньше памяти — нет overhead на Ollama
-    - Полный контроль над параметрами — точная настройка
-    - Проще деплой — pip install вместо отдельного сервера
+  Ключевые преимущества v37:
+    - ДВЕ модели — если одна упала, вторая подхватит
+    - Расширенный контекст 4096 токенов
+    - Развёрнутые ответы до 256 токенов
+    - 10 сообщений в истории (было 4)
 """
 
 import logging
@@ -31,7 +31,10 @@ from ai.providers.base import AIResponse, ProviderError
 from ai.providers.llama_cpp_provider import LlamaCppProvider
 from ai.providers.pollinations_provider import PollinationsProvider
 from ai.voice import transcribe_voice_ogg
-from bot.config import MODEL_PATH, MODEL_N_CTX, MODEL_N_THREADS, MODEL_MAX_TOKENS
+from bot.config import (
+    MODEL_PATH, MODEL2_PATH, MODEL_PREFERENCE,
+    MODEL_N_CTX, MODEL_N_THREADS, MODEL_MAX_TOKENS, MODEL_HISTORY_LIMIT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +49,9 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """Центральный AI-маршрутизатор — v36.0 LLAMA-CPP-PYTHON.
+    """Центральный AI-маршрутизатор — v37.0 DUAL-MODEL.
 
-    Чат: LlamaCppProvider → Pollinations → static fallback.
+    Чат: LlamaCppProvider (dual) → Pollinations → static fallback.
     Фон: НЕ использует AI — RSS + шаблоны!
 
     Pollinations кулдаун: после 429 не пробуем 5 минут.
@@ -65,13 +68,16 @@ class AIRouter:
         # Pollinations 429 cooldown
         self._pollinations_429_until: float = 0
         self._POLLINATIONS_429_COOLDOWN: float = 300.0
+        # Model test result
+        self._tested_primary_model: str = ""
 
     async def init(self) -> None:
-        """Инициализация провайдеров."""
-        # LlamaCppProvider — PRIMARY для чата
+        """Инициализация провайдеров с двойной моделью."""
+        # LlamaCppProvider — DUAL MODEL для чата
         self.provider = LlamaCppProvider(
-            model_path=MODEL_PATH,
-            timeout=60.0,
+            primary_model_path=MODEL_PATH,
+            secondary_model_path=MODEL2_PATH,
+            timeout=90.0,
             model_config={
                 "n_ctx": MODEL_N_CTX,
                 "n_threads": MODEL_N_THREADS,
@@ -82,13 +88,17 @@ class AIRouter:
             },
             gen_config={
                 "max_tokens": MODEL_MAX_TOKENS,
-                "temperature": 0.85,
-                "top_p": 0.9,
-                "top_k": 40,
-                "repeat_penalty": 1.15,
+                "temperature": 0.82,
+                "top_p": 0.92,
+                "top_k": 50,
+                "repeat_penalty": 1.12,
             },
         )
         await self.provider.init()
+
+        # Автотест модели при старте (если preference=auto)
+        if MODEL_PREFERENCE == "auto":
+            await self._auto_test_models()
 
         # Pollinations — FALLBACK
         try:
@@ -101,13 +111,101 @@ class AIRouter:
 
         # Логируем статус
         pollinations_status = "active" if self._pollinations else "unavailable"
-        model_name = MODEL_PATH.split("/")[-1] if MODEL_PATH else "none"
+        primary = MODEL_PATH.split("/")[-1] if MODEL_PATH else "none"
+        secondary = MODEL2_PATH.split("/")[-1] if MODEL2_PATH else "none"
+        current = self.provider._current_model_name if self.provider else "none"
+        is_sec = self.provider._is_secondary if self.provider else False
         logger.info(
-            f"AI Router v36.0 (LLAMA-CPP-PYTHON) initialized: "
-            f"chat_primary=llama_cpp({model_name}), "
+            f"AI Router v37.0 (DUAL-MODEL) initialized: "
+            f"primary={primary}, secondary={secondary}, "
+            f"active={'SECONDARY:'+current if is_sec else 'PRIMARY:'+current}, "
             f"pollinations={pollinations_status} (fallback only), "
-            f"news=RSS+templates (no AI)"
+            f"news=RSS+templates (no AI), "
+            f"ctx={MODEL_N_CTX}, max_tokens={MODEL_MAX_TOKENS}, history={MODEL_HISTORY_LIMIT}"
         )
+
+    async def _auto_test_models(self) -> None:
+        """Автотест моделей — генерируем русский текст и выбираем лучшую."""
+        if not self.provider or not self.provider.is_available():
+            return
+
+        logger.info("=== AUTO-TEST: Testing current model for Russian quality ===")
+
+        # Тестовый промпт для проверки качества русского языка
+        test_prompt = "Расскажи коротко, почему Москве нравится молодёжь?"
+        test_system = "Ты Настя — девушка из Москвы. Отвечай живо, 2-3 предложения."
+
+        try:
+            result = await self.provider.generate(
+                test_prompt,
+                system_prompt=test_system,
+                max_tokens=100,
+            )
+
+            if result and result.text:
+                text = result.text
+                # Проверяем качество:
+                # - Есть ли русские слова?
+                # - Нет ли мусора/артефактов?
+                # - Длина адекватная?
+                russian_chars = len(re.findall(r'[а-яА-ЯёЁ]', text))
+                total_chars = len(text)
+                has_garbage = any(p in text for p in ['<|', '|>', '###', '```', 'function(', 'var '])
+
+                quality_score = 0
+                if russian_chars > 10:
+                    quality_score += 2
+                if total_chars > 20:
+                    quality_score += 1
+                if not has_garbage:
+                    quality_score += 2
+
+                is_sec = self.provider._is_secondary
+                model_name = self.provider._current_model_name
+
+                if quality_score >= 3:
+                    logger.info(
+                        f"AUTO-TEST PASSED for {'SECONDARY' if is_sec else 'PRIMARY'} ({model_name}): "
+                        f"score={quality_score}/5, response='{text[:100]}'"
+                    )
+                    self._tested_primary_model = model_name
+                else:
+                    logger.warning(
+                        f"AUTO-TEST WEAK for {'SECONDARY' if is_sec else 'PRIMARY'} ({model_name}): "
+                        f"score={quality_score}/5, response='{text[:100]}'"
+                    )
+                    # Если PRIMARY плохой — пробуем SECONDARY
+                    if not is_sec and self.provider.secondary_model_path:
+                        logger.info("PRIMARY model quality low, switching to SECONDARY...")
+                        if await self.provider._switch_to_secondary():
+                            # Тестируем secondary
+                            try:
+                                result2 = await self.provider.generate(
+                                    test_prompt,
+                                    system_prompt=test_system,
+                                    max_tokens=100,
+                                )
+                                if result2 and result2.text:
+                                    russian_chars2 = len(re.findall(r'[а-яА-ЯёЁ]', result2.text))
+                                    has_garbage2 = any(p in result2.text for p in ['<|', '|>', '###', '```'])
+                                    if russian_chars2 > 10 and not has_garbage2:
+                                        logger.info(f"SECONDARY model test PASSED: '{result2.text[:100]}'")
+                                        self._tested_primary_model = self.provider._current_model_name
+                                        return
+                            except Exception as e2:
+                                logger.warning(f"SECONDARY model test failed: {e2}")
+
+                            # Если вторая тоже плохая — вернуться к первой
+                            await self.provider._switch_to_primary()
+            else:
+                logger.warning("AUTO-TEST: Empty response from model")
+
+        except Exception as e:
+            logger.error(f"AUTO-TEST error: {e}")
+            # Если PRIMARY упал — пробуем SECONDARY
+            if not self.provider._is_secondary and self.provider.secondary_model_path:
+                logger.info("PRIMARY model failed test, switching to SECONDARY...")
+                await self.provider._switch_to_secondary()
 
     async def close(self) -> None:
         """Закрыть провайдеры."""
@@ -124,7 +222,7 @@ class AIRouter:
 
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
-        """Маршрутизация чата — LlamaCpp → Pollinations → static fallback."""
+        """Маршрутизация чата — LlamaCpp (dual) → Pollinations → static fallback."""
         self._total_requests += 1
         priority = kwargs.get("priority", "high")
 
@@ -135,14 +233,15 @@ class AIRouter:
 
     async def _route_chat(self, prompt: str, system_prompt: str,
                           messages: Optional[List[Dict]], **kwargs) -> AIResponse:
-        """Маршрут для чата: LlamaCpp → Pollinations → static fallback."""
-        # ── 1. LlamaCppProvider (PRIMARY) ──
+        """Маршрут для чата: LlamaCpp (dual) → Pollinations → static fallback."""
+        # ── 1. LlamaCppProvider (DUAL-MODEL) ──
         if self.provider and self.provider.is_available():
             try:
                 result = await self.provider.generate(
                     prompt,
                     system_prompt=system_prompt,
                     messages=messages,
+                    history_limit=MODEL_HISTORY_LIMIT,
                     **kwargs,
                 )
                 if result and result.text:
@@ -158,6 +257,13 @@ class AIRouter:
                         )
             except ProviderError as e:
                 logger.warning(f"LlamaCpp chat error: {e}")
+                # Пробуем переключить модель
+                if self.provider._is_secondary:
+                    # Уже на secondary — пробуем вернуться к primary
+                    try:
+                        await self.provider._switch_to_primary()
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.error(f"Unexpected LlamaCpp chat error: {e}")
 
@@ -204,7 +310,7 @@ class AIRouter:
     async def _route_background(self, prompt: str, system_prompt: str,
                                 messages: Optional[List[Dict]], **kwargs) -> AIResponse:
         """Маршрут для фона: LlamaCpp → Pollinations → skip."""
-        # ── 1. LlamaCppProvider (PRIMARY) ──
+        # ── 1. LlamaCppProvider (DUAL-MODEL) ──
         if self.provider and self.provider.is_available():
             try:
                 result = await self.provider.generate(
@@ -319,6 +425,9 @@ class AIRouter:
         text = re.sub(r'\*([^*]+)\*', r'\1', text)
         text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
 
+        # Strip bullet points (markdown lists)
+        text = re.sub(r'^\s*[-•]\s+', '', text, flags=re.MULTILINE)
+
         # Clean up whitespace
         text = re.sub(r'\n{3,}', '\n\n', text)
         text = text.strip()
@@ -346,5 +455,6 @@ class AIRouter:
             "total_fallbacks": self._total_fallbacks,
             "pollinations_requests": self._pollinations_requests,
             "llama_requests": self._llama_requests,
+            "tested_primary_model": self._tested_primary_model,
         }
         return status

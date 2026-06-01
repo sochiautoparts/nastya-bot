@@ -37,7 +37,7 @@ from aiogram.filters import CommandStart, Command
 from bot.config import (
     NASTYA_SYSTEM_PROMPT, DONATION_AMOUNTS, DONATION_LABELS,
     PROACTIVE_COOLDOWN, BOT_USERNAME, CHANNEL_ID, CHANNEL_USERNAME,
-    KNOWLEDGE_TOPICS, NASTYA_VOCABULARY,
+    KNOWLEDGE_TOPICS, NASTYA_VOCABULARY, MODEL_HISTORY_LIMIT,
 )
 from bot.web_search import (
     search_web, should_search,
@@ -56,7 +56,7 @@ _TRACKER_CLEANUP_INTERVAL = 3600
 # v27: Per-user message dedup — track last message timestamp per user
 # If user sends multiple messages while we're processing, only process the latest
 _user_processing: dict = {}  # user_id -> {"task": asyncio.Task, "timestamp": float}
-_DEDUP_WINDOW = 3.0  # seconds — if same user sends another message within this window, skip
+_DEDUP_WINDOW = 5.0  # seconds — increased from 3 to allow for model response time
 
 
 def _cleanup_trackers():
@@ -386,11 +386,19 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
                     except Exception:
                         pass
                 
-                # Отправляем пост в AI для обсуждения
-                discuss_prompt = f"Человек пришёл из канала @chasnastya и хочет обсудить этот пост:\n\n{post_content}\n\nНачни живое обсуждение! Спроси его мнение, поделись своими мыслями. Будь как девушка, которая увидела что кто-то заинтересовался её постом."
+                # Отправляем пост в AI для развёрнутого обсуждения
+                discuss_prompt = (
+                    f"Человек пришёл из канала @chasnastya нажав кнопку 'Обсудить с Настей'. "
+                    f"Он хочет обсудить этот пост:\n\n{post_content}\n\n"
+                    f"Начни РАЗВЁРНУТОЕ обсуждение! Поделись своим мнением подробно, "
+                    f"спроси что он думает, приведи аргументы. "
+                    f"Если есть ссылка — обязательно укажи её! "
+                    f"Будь как живая девушка, которая увлечена темой. "
+                    f"Пиши 3-5 предложений, не коротко!"
+                )
                 await _process_text_message(
                     message, 
-                    f"Хочу обсудить пост из канала: {post_content[:200]}", 
+                    f"Давай обсудим этот пост: {post_content[:300]}", 
                     db, ai_router,
                     extra_suffix=discuss_prompt
                 )
@@ -913,19 +921,20 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     # Add time-aware mood
     time_mood = _get_time_greeting()
 
-    # v32: КОМПАКТНЫЙ контекст пользователя — максимум 1-2 предложения!
-    # Проблема v31: user_context занимал 100-200 токенов — слишком много
+    # v37: Развёрнутый контекст пользователя — модель понимает больше!
     user_context = f"Собеседник: {user_name}"
     if gender == "male":
-        user_context += " (парень — флирти, называй по имени)."
+        user_context += " (парень — флирти, называй по имени, шути, интересуйся им)."
     elif gender == "female":
-        user_context += " (девушка — как подруга)."
+        user_context += " (девушка — как подруга, делись новостями, обсуждай)."
     else:
         user_context += "."
     if msg_count > 20:
-        user_context += " Старый знакомый!"
+        user_context += " Старый знакомый — можно откровеннее!"
     elif msg_count > 5:
-        user_context += " Уже общались."
+        user_context += " Уже общались — помни что говорили раньше."
+    else:
+        user_context += " Новый собеседник — познакомься поближе."
 
     # POLITICS FILTER — кратко!
     political_keywords = ["путин", "зеленск", "байден", "трамп", "навальн", "войн",
@@ -934,8 +943,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     if any(kw in text.lower() for kw in political_keywords):
         user_context += " Вопрос про политику — переведи тему!"
 
-    # v34: МИНИМАЛЬНЫЙ system prompt — без лишних инъекций!
-    # Малые модели (1.5B-4B) дают лучший результат с коротким промптом
+    # v37: Развёрнутый system prompt — модели 4B понимают больше контекста!
     system_prompt = NASTYA_SYSTEM_PROMPT + f" Настроение: {mood}. Время: {time_mood}."
     system_prompt += f" {user_context}"
 
@@ -946,26 +954,32 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     # v32: Убрано — канал уже в NASTYA_SYSTEM_PROMPT, без дублирования
 
-    # v32: НОВОСТИ — коротко, 1-2 заголовка без инструкций
-    # Было ~200 токенов с инструкциями, стало ~50
+    # v37: НОВОСТИ — с ссылками для обсуждения! 3 заголовка + ссылки
     _current_news_items = []
     try:
-        recent_news = await db.get_recent_news(limit=2, max_age_hours=12)
+        recent_news = await db.get_recent_news_with_links(limit=3, max_age_hours=12)
         if recent_news:
             news_parts = []
-            for item in recent_news[:2]:
-                news_parts.append(item.get("title", ""))
-            system_prompt += f" Свежие новости: {'; '.join(news_parts)}."
-        _current_news_items = await db.get_recent_news_with_links(limit=5, max_age_hours=12)
+            for item in recent_news[:3]:
+                title = item.get("title", "")
+                link = item.get("link", "")
+                if title:
+                    entry = title
+                    if link:
+                        entry += f" ({link})"
+                    news_parts.append(entry)
+            if news_parts:
+                system_prompt += f" Свежие новости: {'; '.join(news_parts)}. Если спрашиваешь про событие — давай ссылку!"
+        _current_news_items = recent_news
     except Exception:
         pass
 
     # ── Add user's name for personalization (already included in user_context above) ──
 
-    # v32: History 4 сообщения (было 6 — всё равно много для локальных моделей)
+    # v37: History 10 сообщений (было 4) — модель понимает контекст!
     history = []
     try:
-        history = await db.get_history(user_id, limit=4)
+        history = await db.get_history(user_id, limit=MODEL_HISTORY_LIMIT)
     except Exception:
         pass
 
@@ -980,22 +994,28 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     # GPT-4o-mini помнит контекст из истории чата и без подсказок
     # Для AI: память хранится в истории сообщений, не в системном промпте
 
-    # v34: Web search — МИНИМАЛЬНО, без инструкций
-    # Малые модели путаются от инструкций в промпте
+    # v37: Web search — с результатами и ссылками!
     search_query = should_search(text)
     search_results = []
     if search_query:
         try:
-            search_results = await search_web(search_query, num_results=2)
+            search_results = await search_web(search_query, num_results=3)
             if search_results:
-                # Только 1 результат, коротко
-                r = search_results[0]
-                title = r.get('title', '')
-                url = r.get('url', '')
-                if title:
-                    system_prompt += f" Нашла: {title}."
-                    if url:
-                        system_prompt += f" Источник: {url}"
+                # 2 результата с ссылками — модель может ссылаться на них
+                search_parts = []
+                for r in search_results[:2]:
+                    title = r.get('title', '')
+                    url = r.get('url', '')
+                    snippet = r.get('snippet', '')[:100]
+                    if title:
+                        entry = f"{title}"
+                        if snippet:
+                            entry += f": {snippet}"
+                        if url:
+                            entry += f" [{url}]"
+                        search_parts.append(entry)
+                if search_parts:
+                    system_prompt += f" Нашла в интернете: {'; '.join(search_parts)}. Обязательно добавь ссылку в ответ!"
                 logger.info(f"Web search for user {user_id}: '{search_query}' → {len(search_results)} results")
         except Exception as e:
             logger.warning(f"Web search error: {e}")
