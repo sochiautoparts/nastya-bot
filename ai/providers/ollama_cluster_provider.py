@@ -388,65 +388,64 @@ class OllamaClusterProvider(BaseProvider):
                 # Таймаут: 90s для текста, 180s для vision
                 request_timeout = 90.0 if not is_vision else 180.0
 
-                async with self._semaphore:
-                    try:
-                        self._request_count += 1
-                        response = await self._client.post(
-                            "/api/chat",
-                            json=payload,
-                            timeout=httpx.Timeout(request_timeout, connect=15.0),
-                        )
-                        response.raise_for_status()
-                        data = response.json()
+                try:
+                    self._request_count += 1
+                    response = await self._client.post(
+                        "/api/chat",
+                        json=payload,
+                        timeout=httpx.Timeout(request_timeout, connect=15.0),
+                    )
+                    response.raise_for_status()
+                    data = response.json()
 
-                        text = ""
-                        if isinstance(data, dict):
-                            msg = data.get("message", {})
-                            text = msg.get("content", "") if isinstance(msg, dict) else ""
+                    text = ""
+                    if isinstance(data, dict):
+                        msg = data.get("message", {})
+                        text = msg.get("content", "") if isinstance(msg, dict) else ""
 
-                        if not text:
-                            last_error = ProviderError(self.name, f"Empty response from {try_model}", retryable=True)
-                            continue
-
-                        # Очистка think-тегов
-                        text = self._strip_think_tags(text)
-                        if not text:
-                            last_error = ProviderError(self.name, f"Empty after cleaning from {try_model}", retryable=True)
-                            continue
-
-                        # Кэширование
-                        if not has_conversation and not image_base64:
-                            self._cache.set(prompt, text, model=try_model)
-
-                        return AIResponse(
-                            text=text,
-                            provider=self.name,
-                            model=f"ollama:{try_model}",
-                            tokens_used=0,
-                            metadata={"local": True, "vision": is_vision, "cluster_url": self._active_url},
-                        )
-
-                    except httpx.ConnectError:
-                        # Попробуем переключиться на другой URL
-                        await self._try_failover()
-                        last_error = ProviderError(self.name, "Ollama server not reachable", retryable=True)
+                    if not text:
+                        last_error = ProviderError(self.name, f"Empty response from {try_model}", retryable=True)
                         continue
-                    except httpx.HTTPStatusError as exc:
-                        status = exc.response.status_code
-                        if status == 404:
-                            logger.warning(f"Model {try_model} not found. Skipping (no auto-pull).")
-                            last_error = ProviderError(self.name, f"Model {try_model} not found", retryable=True)
-                            continue
-                        last_error = ProviderError(self.name, f"HTTP {status}: {exc.response.text[:200]}", retryable=status in (429, 500, 502, 503, 504))
+
+                    # Очистка think-тегов
+                    text = self._strip_think_tags(text)
+                    if not text:
+                        last_error = ProviderError(self.name, f"Empty after cleaning from {try_model}", retryable=True)
                         continue
-                    except httpx.TimeoutException:
-                        self._error_count += 1
-                        last_error = ProviderError(self.name, f"Timeout for {try_model} (CPU inference slow)", retryable=True)
+
+                    # Кэширование
+                    if not has_conversation and not image_base64:
+                        self._cache.set(prompt, text, model=try_model)
+
+                    return AIResponse(
+                        text=text,
+                        provider=self.name,
+                        model=f"ollama:{try_model}",
+                        tokens_used=0,
+                        metadata={"local": True, "vision": is_vision, "cluster_url": self._active_url},
+                    )
+
+                except httpx.ConnectError:
+                    # Попробуем переключиться на другой URL
+                    await self._try_failover()
+                    last_error = ProviderError(self.name, "Ollama server not reachable", retryable=True)
+                    continue
+                except httpx.HTTPStatusError as exc:
+                    status = exc.response.status_code
+                    if status == 404:
+                        logger.warning(f"Model {try_model} not found. Skipping (no auto-pull).")
+                        last_error = ProviderError(self.name, f"Model {try_model} not found", retryable=True)
                         continue
-                    except Exception as exc:
-                        self._error_count += 1
-                        last_error = ProviderError(self.name, f"Error with {try_model}: {exc}", retryable=True)
-                        continue
+                    last_error = ProviderError(self.name, f"HTTP {status}: {exc.response.text[:200]}", retryable=status in (429, 500, 502, 503, 504))
+                    continue
+                except httpx.TimeoutException:
+                    self._error_count += 1
+                    last_error = ProviderError(self.name, f"Timeout for {try_model} (CPU inference slow)", retryable=True)
+                    continue
+                except Exception as exc:
+                    self._error_count += 1
+                    last_error = ProviderError(self.name, f"Error with {try_model}: {exc}", retryable=True)
+                    continue
 
         if last_error:
             raise last_error

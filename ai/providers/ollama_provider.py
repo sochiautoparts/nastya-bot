@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 OLLAMA_BASE_URL = "http://localhost:11434"
 
 # Model priority for TEXT (fastest first)
-TEXT_MODELS = ["phi4-mini:3.8b", "qwen3:1.7b", "qwen3-vl:2b"]
+TEXT_MODELS = ["phi4-mini:3.8b", "qwen3:1.7b"]
 # Model for VISION (must support images)
 VISION_MODELS = ["qwen3-vl:2b"]
 

@@ -488,7 +488,7 @@ async def run_news_cycle(db, ai_router) -> int:
         async with conn.execute(
             """SELECT id, title, summary FROM news_items
             WHERE nastya_comment IS NULL OR nastya_comment = ''
-            ORDER BY created_at DESC LIMIT 10""",
+            ORDER BY created_at DESC LIMIT 3""",
         ) as cur:
             uncommented = []
             async for row in cur:
@@ -499,6 +499,8 @@ async def run_news_cycle(db, ai_router) -> int:
             if comment:
                 await db.update_news_comment(item["id"], comment)
                 commented += 1
+            # Small delay between commentary generations to avoid blocking user chat
+            await asyncio.sleep(2)
 
     except Exception as e:
         logger.error(f"Commentary generation cycle error: {e}")

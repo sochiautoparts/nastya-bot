@@ -513,20 +513,24 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         image_bytes = buf.getvalue()
 
         # Compress and resize image for vision models
+        # CRITICAL: qwen3-vl:2b on CPU needs small images!
+        # Max 672x672, JPEG quality=75 — reduces base64 from 140KB to ~30KB
         try:
             from PIL import Image
             img = Image.open(io.BytesIO(image_bytes))
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
             w, h = img.size
-            if max(w, h) > 1024:
-                ratio = 1024 / max(w, h)
+            max_dim = 672  # Optimal for qwen3-vl:2b context window
+            if max(w, h) > max_dim:
+                ratio = max_dim / max(w, h)
                 img = img.resize((int(w * ratio), int(h * ratio)), Image.Resampling.LANCZOS)
             compressed = io.BytesIO()
-            img.save(compressed, format="JPEG", quality=80, optimize=True)
+            img.save(compressed, format="JPEG", quality=75, optimize=True)
             image_bytes = compressed.getvalue()
-        except Exception:
-            pass
+            logger.info(f"Image compressed: {w}x{h} -> {img.size}, {len(image_bytes)} bytes")
+        except Exception as e:
+            logger.warning(f"Image compression failed: {e}")
 
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
         caption = message.caption or "Что скажешь про это фото?"
@@ -568,12 +572,28 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
 
         logger.info(f"Processing photo from user {user_id} ({gender}), caption: {caption[:50]}, img_size={len(image_b64)} chars, history={len(history)} msgs")
 
-        result = await ai_router.chat_with_image(
-            prompt=caption, image_base64=image_b64,
-            system_prompt=system_prompt, messages=history,
-        )
+        try:
+            result = await ai_router.chat_with_image(
+                prompt=caption, image_base64=image_b64,
+                system_prompt=system_prompt, messages=history,
+            )
+            response_text = _clean_response(result.text)
+        except Exception as e:
+            logger.error(f"Vision AI error for user {user_id}: {e}")
+            # Fallback: respond without vision — don't leave user hanging!
+            response_text = random.choice([
+                "Ой, Настя не может разглядеть... Опиши что на фото? 😅",
+                "Фото не грузится у Насти... Расскажи что там? 📱😅",
+                "Настя не видит картинку... Напиши что на фото! 👀💅",
+            ])
 
-        response_text = _clean_response(result.text)
+        if not response_text or len(response_text.strip()) < 3:
+            response_text = random.choice([
+                "Прикольное фото! А что на нём? 😍",
+                "О, фото! Расскажи подробнее? 📸",
+                "Настя видит... но не понимает! Опиши? 😅",
+            ])
+
         await db.add_message(user_id, "assistant", response_text)
 
         if len(response_text) > 4096:

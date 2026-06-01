@@ -15,7 +15,7 @@ v23.0 CRITICAL CHANGES:
   2. OllamaClusterProvider replaces all 12+ cloud providers
   3. Vision FIXED: image_base64 passed correctly via kwargs
   4. Response time: 1-5s instead of 30-260s (no cascading failures!)
-  5. Health watchdog: checks Telegram + Ollama every 30s
+  5. Health watchdog: checks Telegram + Ollama every 120s
   6. Process supervisor: unlimited retries with intelligent backoff
   7. Signal handlers: clean shutdown on SIGTERM/SIGINT
 """
@@ -75,7 +75,7 @@ _should_exit = False  # Flag for conflict_monitor to signal main loop
 
 # ── Health watchdog state ──
 _last_successful_update: float = 0  # Timestamp of last successful Telegram update
-_HEALTH_CHECK_INTERVAL = 30  # Check health every 30 seconds (faster detection!)
+_HEALTH_CHECK_INTERVAL = 120  # Check health every 120s — matches health_check cache TTL
 _MAX_UNRESPONSIVE_SECONDS = 120  # Restart if no response for 2 minutes
 _ollama_restart_count: int = 0  # Track Ollama restarts
 
