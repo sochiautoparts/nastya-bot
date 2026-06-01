@@ -173,6 +173,11 @@ class AIRouter:
 
                 if provider.is_available():
                     await provider.init()
+                    # After init(), check if provider actually became available
+                    # (e.g., Ollama might not have a running server)
+                    if hasattr(provider, '_available') and not provider._available:
+                        logger.warning(f"Provider: {name} — server not running after init")
+                        continue
                     self.providers[name] = provider
                     vision = " (vision)" if getattr(provider, 'supports_vision', False) else ""
                     local = " [LOCAL]" if name == "ollama" else ""

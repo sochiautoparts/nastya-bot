@@ -131,8 +131,17 @@ class OllamaProvider(BaseProvider):
         logger.info(f"Ollama provider: {status}{vision}")
 
     def is_available(self) -> bool:
-        """Check if Ollama server is running and has models."""
-        return self._available
+        """Check if Ollama is potentially available.
+
+        Returns True because Ollama doesn't need API keys — we can only
+        know for sure after init() connects to the server. The actual
+        availability check happens in init() and generate().
+        """
+        # Ollama needs no API key — always potentially available.
+        # The real check happens in init() which connects to the server.
+        # If Ollama is not running, generate() will raise ProviderError
+        # and the router will fall back to other providers.
+        return True
 
     async def _warm_up(self) -> None:
         """Send a warm-up request to load the model into memory.
