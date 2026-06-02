@@ -7,19 +7,14 @@ STABILITY RULES:
   - 30-day context memory + news context injection
   - Short, effective system prompt
 
-INTELLIGENCE FEATURES v8.0 (PURE TEXT BOT):
+INTELLIGENCE FEATURES v9.0 (POLLINATIONS + PHOTO CAPTIONS):
+  - Pollinations.ai as PRIMARY AI — fast, smart, reasoning
+  - Qwen3-4B local GGUF as FALLBACK
   - Web search integration — Nastya can find and verify information!
-  - Search triggers: questions, news, factual queries
-  - ALWAYS includes source links when sharing found information
+  - Photo CAPTION processing — Настя "понимает" фото по подписи!
   - News context injected into system prompt for richer conversations
-  - Nastya mentions recent events she "discovered"
-  - Channel invites for engaged users (natural, not pushy)
-  - Cross-referencing channel posts in conversations
-  - Enhanced memory extraction — remembers names, facts, preferences
-  - Time-aware greetings and moods
-  - /search command for explicit web searches
-  - v40: Dedup fix — tracks active asyncio.Task instead of broken timestamp!
-  - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый! (v28)
+  - v41: Dedup — tracks active asyncio.Task per user
+  - Smart message splitting by sentence boundaries
 """
 import asyncio
 import logging
@@ -593,29 +588,41 @@ async def handle_voice(message: Message, db=None, ai_router=None) -> None:
         await message.answer("Ой, у Насти ушки заболели... Напиши текстом! 👂😅")
 
 
-# ── Photo handler (v28: TEXT ONLY — no vision!) ────────────────
+# ── Photo handler — v41: CAPTION-AWARE! ────────────────────
+
+# Per-user photo rate limiter (prevents flood control from album forwards)
+_user_photo_times: dict = {}  # user_id -> last_photo_time
+_PHOTO_RATE_LIMIT = 2.0  # seconds between photo responses per user
+
 
 @router.message(F.photo)
 async def handle_photo(message: Message, db=None, ai_router=None) -> None:
-    """v39: Фото обработчик — ИГНОРИРУЕТ групповые фото (предотвращает flood control!).
-    
-    Когда кто-то пересылает альбом из канала — приходит 5-10 фото одновременно.
-    Старый код отвечал на КАЖДОЕ фото → Telegram flood control → бан бота!
-    Теперь: отвечаем только на ЛИЧНЫЕ фото (не из групп/пересылок).
+    """v41: Фото обработчик — понимает ПОДПИСИ к фото через AI!
+
+    - Если у фото есть подпись (caption) — Настя обсуждает её с AI
+    - Если подписи нет — спрашивает что на фото
+    - Групповые фото и пересылки ИГНОРИРУЮТСЯ (flood control!)
+    - Rate limiting: max 1 ответ каждые 2 секунды
     """
     caption = message.caption or ""
-    
-    # v39: ИГНОРИРУЕМ фото из групп и пересылки — иначе flood control!
+
+    # ИГНОРИРУЕМ фото из групп и пересылки — flood control!
     chat_type = message.chat.type if message.chat else "private"
     is_forward = message.forward_date is not None
-    
+
     if chat_type != "private" or is_forward:
-        # Фото в группе или пересылка — молча игнорируем, НЕ отвечаем!
-        # Это предотвращает flood control при пересылке альбомов
         return
-    
+
+    # Rate limit per user
+    user_id = message.from_user.id
+    now = time.time()
+    last_photo_time = _user_photo_times.get(user_id, 0)
+    if now - last_photo_time < _PHOTO_RATE_LIMIT:
+        # Too many photos too fast — skip to prevent flood control
+        return
+    _user_photo_times[user_id] = now
+
     if db:
-        user_id = message.from_user.id
         try:
             await db.get_or_create_user(
                 user_id=user_id,
@@ -627,11 +634,23 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         except Exception:
             pass
 
+    # If there's a caption — process it with AI like a normal message
+    if caption and ai_router and db:
+        task = asyncio.create_task(
+            _process_text_message(
+                message, f"Скинула фотку! {caption}", db, ai_router,
+                extra_context="Пользователь прислал фото с подписью. Отреагируй на подпись живо и эмоционально, как будто видишь фото. Спроси что на фото если интересно."
+            )
+        )
+        _user_processing[user_id] = task
+        return
+
+    # No caption — ask what's in the photo
     responses = [
-        "Ой, Настя не видит картинки... Расскажи что на фото? 😅",
-        "Фото — это красиво, но Настя читает только текст! Опиши? 📱💅",
-        "Настя не умеет разглядывать фото... Расскажи что там! 👀✨",
-        "О, фотка! Настя не видит, но если расскажешь — обсудим! 💅",
+        "Ой, фотка! А что на ней? Расскажи! 📸💅",
+        "О, фото! Настя не видит, но если расскажешь — обсудим! 💅",
+        "Фотка! Опиши что там — Насте интересно! 👀✨",
+        "О, картинка! Что на ней? Настя хочет знать! 📱💅",
     ]
     await message.answer(random.choice(responses))
 
@@ -888,10 +907,13 @@ async def _save_simple_exchange(message: Message, user_text: str, bot_text: str,
 
 
 async def _process_text_message(message: Message, text: str, db, ai_router,
-                                 is_voice: bool = False, extra_suffix: str = "") -> None:
+                                 is_voice: bool = False, extra_suffix: str = "",
+                                 extra_context: str = "") -> None:
     """Process text with AI. ALWAYS responds — even if all providers fail.
 
     Enhanced with:
+    - Pollinations PRIMARY + local model FALLBACK
+    - Photo caption awareness via extra_context
     - News context injection into system prompt
     - Channel invite for engaged users
     - Emotional continuity and memory
@@ -967,6 +989,8 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     # v37: Развёрнутый system prompt — модели 4B понимают больше контекста!
     system_prompt = NASTYA_SYSTEM_PROMPT + f" Настроение: {mood}. Время: {time_mood}."
     system_prompt += f" {user_context}"
+    if extra_context:
+        system_prompt += f" {extra_context}"
 
     # v32: Время — коротко, одной фразой
     now_msk = _moscow_now()
@@ -1321,18 +1345,18 @@ def _clean_response(text: str) -> str:
     for pattern in ai_intros:
         text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-    # Truncate extremely long responses (>1200 chars ≈ 200 tokens for Russian)
-    # v39: Снижено с 2000 — при max_tokens=200 ответ не может быть >1200 символов
-    # Если больше — модель генерирует мусор, обрезаем по предложению
-    if len(text) > 1200:
+    # Truncate extremely long responses (>2000 chars ≈ 350 tokens for Russian)
+    # v41: Увеличено для Pollinations — облако генерирует длиннее и качественнее
+    # Если больше — обрезаем по предложению
+    if len(text) > 2000:
         # Try to cut at sentence boundary
         for sep in ['. ', '! ', '? ', '\n']:
-            idx = text[:1200].rfind(sep)
+            idx = text[:2000].rfind(sep)
             if idx > 300:
                 text = text[:idx + len(sep)].strip()
                 break
         else:
-            text = text[:1200]
+            text = text[:2000]
 
     # ── FAKE LINK FILTER — remove non-existent URLs that AI invents ──
     # Only allow REAL links: t.me/chasnastya, news links from RSS, etc.

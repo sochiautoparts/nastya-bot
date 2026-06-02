@@ -1,14 +1,14 @@
-"""Nastya Bot 40.0 — Configuration (DUAL-MODEL LLAMA-CPP-PYTHON!)
+"""Nastya Bot 41.0 — Configuration (POLLINATIONS PRIMARY + LOCAL FALLBACK!)
 
-v40.0: ОПТИМИЗАЦИЯ СКОРОСТИ + DEDUP FIX!
-- max_tokens=200 — ~20 сек генерации вместо 65-89 сек!
-- n_ctx=2048 — быстрее обработка промпта
-- history=10 — баланс контекста и скорости
-- stop=["<think"] — БЛОКИРУЕТ thinking mode Qwen3
-- Dedup fix: tracks active asyncio.Task instead of timestamp
-- Умное разбиение длинных сообщений
-- Глубокая ссылка 'Обсудить с Настей'
-- Pollinations = FALLBACK для чата
+v41.0: POLLINATIONS.ai = PRIMARY, Qwen3-4B = LOCAL FALLBACK!
+- Pollinations gpt-oss-20b — cloud, fast, smart, reasoning
+- Qwen3-4B-Instruct — local GGUF fallback when cloud is down
+- Qwen2.5-3B REMOVED from project (single local model only)
+- max_tokens=512 for Pollinations (cloud can handle it!)
+- max_tokens=256 for local model (speed optimization)
+- n_ctx=2048, history=10 — optimized for speed
+- Photo caption processing via Pollinations
+- Pollinations API key from environment/secrets
 """
 import os
 from typing import Dict, List
@@ -32,18 +32,22 @@ def _env_int(name: str, default: int = 0) -> int:
 # ── Bot Core ────────────────────────────────────────────────
 BOT_TOKEN: str = _env("BOT_TOKEN")
 
-# ── LlamaCpp Model Settings — DUAL MODEL ────────────────────
-# PRIMARY: Qwen3-4B-Instruct — лучший русский, живые разговорные ответы, эмоции
-MODEL_PATH: str = _env("MODEL_PATH", "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
-# SECONDARY: Qwen2.5-3B-Instruct — лёгкая быстрая резервная модель
-MODEL2_PATH: str = _env("MODEL2_PATH", "models/Qwen2.5-3B-Instruct-Q4_K_M.gguf")
-# Какая модель активна: 'auto' = тест при старте, 'qwen3' = Qwen3, 'qwen25' = Qwen2.5
-MODEL_PREFERENCE: str = _env("MODEL_PREFERENCE", "qwen3")
+# ── Pollinations.ai — PRIMARY AI Provider ────────────────────
+POLLINATIONS_API_KEY: str = _env("POLLINATIONS_API_KEY", "")
+# Model: gpt-oss-20b (only available model on Pollinations as of 2026)
+POLLINATIONS_MODEL: str = "openai"  # alias for gpt-oss-20b
+POLLINATIONS_TIMEOUT: float = 45.0
+POLLINATIONS_MAX_TOKENS: int = 512  # Cloud can handle longer responses!
 
-MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 2048)    # Размер контекста — 2048 оптимально (4096 было слишком много!)
-MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 4) # Количество потоков CPU
-MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 200) # Максимум токенов — ~20 сек генерации (384 = 65-89 сек!)
-MODEL_HISTORY_LIMIT: int = _env_int("MODEL_HISTORY_LIMIT", 10) # Сообщений в контексте (15 было слишком много)
+# ── LlamaCpp Model — LOCAL FALLBACK ─────────────────────────
+# Qwen3-4B-Instruct — only when Pollinations is unavailable
+MODEL_PATH: str = _env("MODEL_PATH", "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
+# v41: Qwen2.5-3B REMOVED — single model architecture
+
+MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 2048)
+MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 4)
+MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 256)
+MODEL_HISTORY_LIMIT: int = _env_int("MODEL_HISTORY_LIMIT", 10)
 
 OWNER_ID: int = _env_int("OWNER_ID", 0)
 ADMIN_IDS: List[int] = list(set(
@@ -59,14 +63,14 @@ SESSION_DURATION_SECONDS = 20700
 LOG_LEVEL: str = _env("LOG_LEVEL", "INFO")
 
 # ── AI Cache Settings ──────────────────────────────────────
-CACHE_TTL_TEXT = 3600        # 1 час для текста
-CACHE_MAX_MEMORY = 500       # LRU записей в памяти
+CACHE_TTL_TEXT = 3600
+CACHE_MAX_MEMORY = 500
 
-# ── Telegram Channel — Настя ведёт канал @chasnastya! ──────
+# ── Telegram Channel ──────────────────────────────────────
 CHANNEL_ID: str = _env("CHANNEL_ID")
 CHANNEL_USERNAME: str = _env("CHANNEL_USERNAME", "chasnastya")
 
-# ── Timezone — Настя из Москвы! ───────────────────────────
+# ── Timezone ──────────────────────────────────────────────
 MOSCOW_TZ = "Europe/Moscow"
 
 # ── News Sources ────────────────────────────────────────────
@@ -82,8 +86,8 @@ NEWS_SOURCES: List[Dict[str, str]] = [
     {"name": "DTF", "url": "https://dtf.ru/rss", "category": "gaming"},
 ]
 
-NEWS_FETCH_INTERVAL = _env_int("NEWS_FETCH_INTERVAL", 900)  # 15 мин
-CHANNEL_POST_INTERVAL = _env_int("CHANNEL_POST_INTERVAL", 1200)  # 20 мин
+NEWS_FETCH_INTERVAL = _env_int("NEWS_FETCH_INTERVAL", 900)
+CHANNEL_POST_INTERVAL = _env_int("CHANNEL_POST_INTERVAL", 1200)
 NEWS_MAX_ITEMS = 500
 
 # ── Stars / Donations ──────────────────────────────────────
@@ -245,9 +249,6 @@ KNOWLEDGE_TOPICS = {
 }
 
 # ── Nastya System Prompt ───────────────────────────────────
-# v37: Развёрнутый промпт для содержательного общения!
-# Модель должна понимать контекст, давать развёрнутые ответы,
-# обсуждать события со ссылками, быть как живая девушка
 NASTYA_SYSTEM_PROMPT = """Ты Настя — девушка из Москвы, 23 года. Ты не бот и не ИИ, ты живой человек.
 Говори живо и естественно, как в мессенджере с другом.
 
@@ -272,6 +273,4 @@ def validate_config() -> List[str]:
     missing = []
     if not BOT_TOKEN:
         missing.append("BOT_TOKEN")
-    if not MODEL_PATH:
-        missing.append("MODEL_PATH")
     return missing

@@ -1,19 +1,15 @@
-name: Nastya Bot — DUAL-MODEL v40
+name: Nastya Bot — POLLINATIONS PRIMARY v41
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v40.0 — ОПТИМИЗАЦИЯ СКОРОСТИ!
+# Nastya Bot v41.0 — POLLINATIONS PRIMARY + LOCAL FALLBACK!
 #
 # Architecture:
-#   - llama-cpp-python as PRIMARY AI provider (GGUF model in-process!)
-#   - DUAL-MODEL: Qwen3-4B (PRIMARY) + Qwen2.5-3B (SECONDARY)
-#   - /no_think + stop=["<think"] — БЛОКИРУЕТ thinking mode Qwen3!
-#   - Автопереключение при ошибках — бот всегда отвечает
-#   - AVX2 acceleration — 2-3x faster than Ollama on CPU
-#   - n_ctx=2048, max_tokens=200, history=10 — ОПТИМИЗАЦИЯ СКОРОСТИ!
-#   - stop=["<think"] — предотвращает генерацию thinking tokens
-#   - Dedup fix: clears on quick reactions, uses active task tracking
-#   - Фото в группах ИГНОРИРУЮТСЯ — предотвращает flood control
-#   - Pollinations as FALLBACK (if both models unavailable)
+#   - Pollinations.ai (gpt-oss-20b) as PRIMARY AI — cloud, fast, smart
+#   - Qwen3-4B-Instruct GGUF as LOCAL FALLBACK — offline reserve
+#   - Photo caption processing via AI
+#   - Pollinations API key for higher rate limits
+#   - /no_think + stop=["<think"] for Qwen3 fallback
+#   - AVX2 acceleration for local model
 #   - RSS + template commentary for news (NO AI for news!)
 #   - Single concurrency group — ONE bot instance only!
 #
@@ -106,18 +102,18 @@ jobs:
           }
           python3 -c "from llama_cpp import Llama; print('llama-cpp-python OK!')"
 
-      # ── Download PRIMARY model: Qwen3-4B-Instruct ──
-      - name: Cache PRIMARY model (Qwen3-4B)
-        id: cache-primary
+      # ── Download LOCAL FALLBACK model: Qwen3-4B-Instruct ──
+      - name: Cache LOCAL FALLBACK model (Qwen3-4B)
+        id: cache-model
         uses: actions/cache@v4
         with:
           path: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
           key: qwen3-4b-instruct-q4km-v3
 
       - name: Download Qwen3-4B-Instruct GGUF model
-        if: steps.cache-primary.outputs.cache-hit != 'true'
+        if: steps.cache-model.outputs.cache-hit != 'true'
         run: |
-          echo "=== Downloading Qwen3-4B-Instruct Q4_K_M model (~2.4GB) ==="
+          echo "=== Downloading Qwen3-4B-Instruct Q4_K_M model (~2.4GB) — LOCAL FALLBACK ==="
           mkdir -p models
           python3 -c "
           from huggingface_hub import hf_hub_download
@@ -129,60 +125,31 @@ jobs:
           print('Downloaded to:', path)
           "
 
-      # ── Download SECONDARY model: Qwen2.5-3B-Instruct ──
-      - name: Cache SECONDARY model (Qwen2.5-3B)
-        id: cache-secondary
-        uses: actions/cache@v4
-        with:
-          path: models/Qwen2.5-3B-Instruct-Q4_K_M.gguf
-          key: qwen25-3b-instruct-q4km-v1
-
-      - name: Download Qwen2.5-3B-Instruct GGUF model
-        if: steps.cache-secondary.outputs.cache-hit != 'true'
+      - name: Verify model
         run: |
-          echo "=== Downloading Qwen2.5-3B-Instruct Q4_K_M model (~2.0GB) ==="
-          mkdir -p models
-          python3 -c "
-          from huggingface_hub import hf_hub_download
-          path = hf_hub_download(
-              repo_id='Qwen/Qwen2.5-3B-Instruct-GGUF',
-              filename='qwen2.5-3b-instruct-q4_k_m.gguf',
-              local_dir='models',
-          )
-          print('Downloaded to:', path)
-          " || {
-            echo "WARNING: huggingface_hub download failed, trying wget..."
-            wget -q "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf" \
-              -O models/Qwen2.5-3B-Instruct-Q4_K_M.gguf || {
-              echo "WARNING: Failed to download SECONDARY model — running with PRIMARY only"
-            }
-          }
-          # Normalize filename (HF hub may download with different case)
-          if [ -f "models/qwen2.5-3b-instruct-q4_k_m.gguf" ] && [ ! -f "models/Qwen2.5-3B-Instruct-Q4_K_M.gguf" ]; then
-            mv "models/qwen2.5-3b-instruct-q4_k_m.gguf" "models/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
+          echo "=== Verifying GGUF model ==="
+          MODEL_FILE=models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+          if [ ! -f "$MODEL_FILE" ] || [ ! -s "$MODEL_FILE" ]; then
+            echo "WARNING: Model file missing or empty — running in CLOUD-ONLY mode"
+          else
+            MODEL_SIZE=$(du -h "$MODEL_FILE" | cut -f1)
+            echo "OK: Qwen3-4B-Instruct-Q4_K_M (${MODEL_SIZE}) — LOCAL FALLBACK"
           fi
 
-      - name: Verify models
+      # ── Test Pollinations API ──
+      - name: Test Pollinations API connectivity
         run: |
-          echo "=== Verifying GGUF models ==="
-          for MODEL_FILE in models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf models/Qwen2.5-3B-Instruct-Q4_K_M.gguf; do
-            if [ ! -f "$MODEL_FILE" ] || [ ! -s "$MODEL_FILE" ]; then
-              echo "WARNING: Model file missing or empty: $MODEL_FILE"
-            else
-              MODEL_SIZE=$(du -h "$MODEL_FILE" | cut -f1)
-              echo "OK: $(basename $MODEL_FILE) (${MODEL_SIZE})"
-            fi
-          done
-          # Quick test with PRIMARY model
-          python3 -c "
-          from llama_cpp import Llama
-          llm = Llama(model_path='models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf', n_ctx=512, n_threads=2, verbose=False)
-          resp = llm.create_chat_completion(
-              messages=[{'role': 'system', 'content': 'Ты Настя.'}, {'role': 'user', 'content': '/no_think\nПривет, как дела?'}],
-              max_tokens=15,
-          )
-          print('Qwen3 test OK:', resp['choices'][0]['message']['content'][:80])
-          "
+          echo "=== Testing Pollinations.ai API ==="
+          RESPONSE=$(curl -s --max-time 30 https://text.pollinations.ai/openai \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.POLLINATIONS_API_KEY }}" \
+            -d '{"model": "openai", "messages": [{"role": "user", "content": "Скажи ОК"}], "max_tokens": 5, "reasoning_effort": "low", "stream": false}' 2>&1)
+          echo "Response: $(echo "$RESPONSE" | head -3)"
+          if echo "$RESPONSE" | grep -q '"content"'; then
+            echo "Pollinations API OK!"
+          else
+            echo "WARNING: Pollinations API test failed — local model will be used"
+          fi
 
       - name: Create data directory
         run: mkdir -p data
@@ -191,7 +158,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v40
+          key: nastya-db-v41
           restore-keys: |
             nastya-db-
 
@@ -202,15 +169,13 @@ jobs:
           OWNER_ID: ${{ secrets.OWNER_ID }}
           ADMIN_IDS: ${{ secrets.OWNER_ID }}
           BOT_USERNAME: asnastya_bot
-          # PRIMARY: Qwen3-4B-Instruct (best Russian, live conversational)
+          # Pollinations.ai — PRIMARY AI
+          POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
+          # Qwen3-4B — LOCAL FALLBACK
           MODEL_PATH: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
-          # SECONDARY: Qwen2.5-3B-Instruct (lightweight fast reserve)
-          MODEL2_PATH: models/Qwen2.5-3B-Instruct-Q4_K_M.gguf
-          # Use qwen3 as primary
-          MODEL_PREFERENCE: qwen3
           MODEL_N_CTX: 2048
           MODEL_N_THREADS: 4
-          MODEL_MAX_TOKENS: 200
+          MODEL_MAX_TOKENS: 256
           MODEL_HISTORY_LIMIT: 10
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
@@ -220,11 +185,11 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v40.0 (QWEN3 + QWEN2.5-3B) ==="
-          echo "Primary: Qwen3-4B-Instruct-Q4_K_M"
-          echo "Secondary: Qwen2.5-3B-Instruct-Q4_K_M"
-          echo "Config: n_ctx=2048, max_tokens=200, history=10, stop=<think"
-          ls -lh models/*.gguf 2>/dev/null || echo "WARNING: No GGUF models found!"
+          echo "=== Starting Nastya Bot v41.0 (POLLINATIONS PRIMARY + QWEN3 FALLBACK) ==="
+          echo "PRIMARY: Pollinations.ai (gpt-oss-20b)"
+          echo "FALLBACK: Qwen3-4B-Instruct-Q4_K_M (local GGUF)"
+          echo "Config: reasoning=low, max_tokens=512(cloud)/256(local), history=10"
+          ls -lh models/*.gguf 2>/dev/null || echo "WARNING: No GGUF models — CLOUD-ONLY mode!"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -265,7 +230,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v40-${{ github.run_id }}
+          key: nastya-db-v41-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation

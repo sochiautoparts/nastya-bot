@@ -1,15 +1,16 @@
-"""Nastya Bot 40.0 — LLAMA-CPP-PYTHON NATIVE! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 41.0 — POLLINATIONS PRIMARY + LOCAL FALLBACK! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v40.0 (ОПТИМИЗАЦИЯ СКОРОСТИ):
+Architecture v41.0:
+  - ЧАТ: Pollinations.ai (gpt-oss-20b) PRIMARY → Qwen3-4B LOCAL FALLBACK
   - Новости: RSS-парсер + шаблонные комментарии (БЕЗ AI!)
-  - Чат: llama-cpp-python (Qwen3-4B GGUF) + Pollinations fallback
   - Канал: шаблонные посты, опросы, факты (БЕЗ AI!)
-  - GGUF модель загружается ПРЯМО в процесс — нет Ollama сервера!
-  - AVX2/AVX512 ускорение — в 2-3x быстрее на CPU
-  - /no_think + stop=["<think"] для Qwen3 — блокирует thinking mode!
-  - n_ctx=2048, max_tokens=200, history=10 — ОПТИМИЗАЦИЯ СКОРОСТИ!
-  - Dedup fix: tracks active asyncio.Task (was blocking ALL messages!)
-  - Фото в группах ИГНОРИРУЮТСЯ — предотвращает flood control!
+  - Фото: подписи обрабатываются через AI!
+  - Pollinations API ключ для повышенных лимитов
+  - Qwen3-4B GGUF как FALLBACK — загружается ПРЯМО в процесс
+  - AVX2 ускорение — в 2-3x быстрее на CPU
+  - /no_think + stop=["<think"] для Qwen3 — блокирует thinking mode
+  - Dedup: tracks active asyncio.Task per user
+  - Photo rate limiting — предотвращает flood control
   - HEALTH WATCHDOG: monitors Telegram API + model health
 """
 import asyncio
@@ -47,7 +48,7 @@ logger = logging.getLogger("nastya-bot")
 from bot.config import (
     BOT_TOKEN, ADMIN_IDS, DB_PATH, SESSION_DURATION_SECONDS, OWNER_ID,
     NEWS_FETCH_INTERVAL, CHANNEL_POST_INTERVAL, CHANNEL_ID, CHANNEL_USERNAME,
-    MODEL_PATH, MODEL2_PATH, MODEL_PREFERENCE,
+    MODEL_PATH, POLLINATIONS_API_KEY,
     MODEL_N_CTX, MODEL_MAX_TOKENS, MODEL_HISTORY_LIMIT,
 )
 
@@ -462,7 +463,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 40.0 Starting (DUAL-MODEL LLAMA-CPP-PYTHON — v40) ===")
+    logger.info("=== Nastya Bot 41.0 Starting (POLLINATIONS PRIMARY + LOCAL FALLBACK) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -509,7 +510,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 40.0 Ready (DUAL-MODEL LLAMA-CPP-PYTHON — v40) ===")
+    logger.info("=== Nastya Bot 41.0 Ready (POLLINATIONS PRIMARY + LOCAL FALLBACK) ===")
 
 
 async def on_shutdown(**kwargs) -> None:
