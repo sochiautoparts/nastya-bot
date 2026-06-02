@@ -1,13 +1,13 @@
 #!/bin/bash
-# Nastya Bot v39 — LLAMA-CPP-PYTHON DUAL-MODEL!
+# Nastya Bot v40 — LLAMA-CPP-PYTHON DUAL-MODEL!
 # Qwen3-4B-Instruct = PRIMARY (лучший русский, живые ответы)
 # Qwen2.5-3B-Instruct = SECONDARY (лёгкая быстрая резервная)
 # AVX2 ускорение — в 2-3x быстрее Ollama на CPU
-# v39: stop=["<think"] + max_tokens=200 + n_ctx=2048 = ОПТИМИЗАЦИЯ СКОРОСТИ!
+# v40: stop=["<think"] + max_tokens=200 + n_ctx=2048 + DEDUP FIX!
 
 set -e
 
-echo "=== Nastya Bot v39 (LLAMA-CPP-PYTHON DUAL-MODEL) ==="
+echo "=== Nastya Bot v40 (LLAMA-CPP-PYTHON DUAL-MODEL) ==="
 
 # ── Install llama-cpp-python with AVX2 acceleration ──
 if ! python3 -c "import llama_cpp" 2>/dev/null; then
@@ -109,6 +109,6 @@ pip install -r requirements.txt 2>&1 || {
 mkdir -p data
 
 # ── Start bot ──
-echo "=== Starting Nastya Bot v39 (Qwen3 + Qwen2.5-3B) ==="
-echo "Config: n_ctx=2048, max_tokens=200, history=10, stop=<think>"
+echo "=== Starting Nastya Bot v40 (Qwen3 + Qwen2.5-3B) ==="
+echo "Config: n_ctx=2048, max_tokens=200, history=10, stop=<think, dedup=task-based"
 python3 -m bot.main

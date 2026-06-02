@@ -1,4 +1,4 @@
-"""AI Router v39.0 — ОПТИМИЗАЦИЯ СКОРОСТИ!
+"""AI Router v40.0 — ОПТИМИЗАЦИЯ СКОРОСТИ + DEDUP FIX!
 
 АРХИТЕКТУРА v39: Qwen3=PRIMARY, Qwen2.5-3B=SECONDARY
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
@@ -50,7 +50,7 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """Центральный AI-маршрутизатор — v39.0 DUAL-MODEL.
+    """Центральный AI-маршрутизатор — v40.0 DUAL-MODEL.
 
     Чат: LlamaCppProvider (dual) → Pollinations → static fallback.
     Фон: НЕ использует AI — RSS + шаблоны!
@@ -117,7 +117,7 @@ class AIRouter:
         current = self.provider._current_model_name if self.provider else "none"
         is_sec = self.provider._is_secondary if self.provider else False
         logger.info(
-            f"AI Router v39.0 (QWEN3+QWEN2.5-3B) initialized: "
+            f"AI Router v40.0 (QWEN3+QWEN2.5-3B) initialized: "
             f"primary={primary}, secondary={secondary}, "
             f"active={'SECONDARY:'+current if is_sec else 'PRIMARY:'+current}, "
             f"pollinations={pollinations_status} (fallback only), "

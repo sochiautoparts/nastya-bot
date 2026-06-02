@@ -1,10 +1,11 @@
-"""Nastya Bot 39.0 — Configuration (DUAL-MODEL LLAMA-CPP-PYTHON!)
+"""Nastya Bot 40.0 — Configuration (DUAL-MODEL LLAMA-CPP-PYTHON!)
 
-v39.0: ОПТИМИЗАЦИЯ СКОРОСТИ!
+v40.0: ОПТИМИЗАЦИЯ СКОРОСТИ + DEDUP FIX!
 - max_tokens=200 — ~20 сек генерации вместо 65-89 сек!
 - n_ctx=2048 — быстрее обработка промпта
 - history=10 — баланс контекста и скорости
 - stop=["<think"] — БЛОКИРУЕТ thinking mode Qwen3
+- Dedup fix: tracks active asyncio.Task instead of timestamp
 - Умное разбиение длинных сообщений
 - Глубокая ссылка 'Обсудить с Настей'
 - Pollinations = FALLBACK для чата

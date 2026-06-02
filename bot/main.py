@@ -1,12 +1,14 @@
-"""Nastya Bot 39.0 — LLAMA-CPP-PYTHON NATIVE! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 40.0 — LLAMA-CPP-PYTHON NATIVE! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v39.0 (ОПТИМИЗАЦИЯ СКОРОСТИ):
+Architecture v40.0 (ОПТИМИЗАЦИЯ СКОРОСТИ):
   - Новости: RSS-парсер + шаблонные комментарии (БЕЗ AI!)
   - Чат: llama-cpp-python (Qwen3-4B GGUF) + Pollinations fallback
   - Канал: шаблонные посты, опросы, факты (БЕЗ AI!)
   - GGUF модель загружается ПРЯМО в процесс — нет Ollama сервера!
   - AVX2/AVX512 ускорение — в 2-3x быстрее на CPU
   - /no_think + stop=["<think"] для Qwen3 — блокирует thinking mode!
+  - n_ctx=2048, max_tokens=200, history=10 — ОПТИМИЗАЦИЯ СКОРОСТИ!
+  - Dedup fix: tracks active asyncio.Task (was blocking ALL messages!)
   - Фото в группах ИГНОРИРУЮТСЯ — предотвращает flood control!
   - HEALTH WATCHDOG: monitors Telegram API + model health
 """
@@ -460,7 +462,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 39.0 Starting (DUAL-MODEL LLAMA-CPP-PYTHON — v39) ===")
+    logger.info("=== Nastya Bot 40.0 Starting (DUAL-MODEL LLAMA-CPP-PYTHON — v40) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -507,7 +509,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 39.0 Ready (DUAL-MODEL LLAMA-CPP-PYTHON — v39) ===")
+    logger.info("=== Nastya Bot 40.0 Ready (DUAL-MODEL LLAMA-CPP-PYTHON — v40) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

@@ -1,6 +1,6 @@
-"""LlamaCppProvider v2.1 — DUAL-MODEL llama-cpp-python provider.
+"""LlamaCppProvider v2.2 — DUAL-MODEL llama-cpp-python provider.
 
-v39: ОПТИМИЗАЦИЯ СКОРОСТИ!
+v40: DEDUP FIX + ОПТИМИЗАЦИЯ СКОРОСТИ!
   - max_tokens=200 — ~20 сек генерации вместо 65-89 сек!
   - n_ctx=2048 — меньше памяти, быстрее обработка промпта
   - stop=["<think"] — БЛОКИРУЕТ thinking mode Qwen3!

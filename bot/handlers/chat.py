@@ -18,6 +18,7 @@ INTELLIGENCE FEATURES v8.0 (PURE TEXT BOT):
   - Enhanced memory extraction — remembers names, facts, preferences
   - Time-aware greetings and moods
   - /search command for explicit web searches
+  - v40: Dedup fix — tracks active asyncio.Task instead of broken timestamp!
   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый! (v28)
 """
 import asyncio
@@ -54,10 +55,10 @@ _proactive_tracker: dict = {}
 _last_tracker_cleanup: float = 0.0
 _TRACKER_CLEANUP_INTERVAL = 3600
 
-# v27: Per-user message dedup — track last message timestamp per user
-# If user sends multiple messages while we're processing, only process the latest
-_user_processing: dict = {}  # user_id -> {"task": asyncio.Task, "timestamp": float}
-_DEDUP_WINDOW = 45.0  # seconds — MUST be longer than AI generation time (~20-40s)
+# v40: Per-user message dedup — track ACTIVE AI tasks per user
+# Only blocks when there's an ACTIVE asyncio.Task generating AI response
+# Quick reactions (donate, age, etc.) do NOT set the dedup flag!
+_user_processing: dict = {}  # user_id -> asyncio.Task (active AI task) or None
 
 
 def _cleanup_trackers():
@@ -393,12 +394,16 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
                     f"Поделись мнением, спроси что думает, дай ссылку если есть. "
                     f"4-6 предложений, живо и с интересом!"
                 )
-                await _process_text_message(
-                    message, 
-                    f"Давай обсудим этот пост: {post_content[:300]}", 
-                    db, ai_router,
-                    extra_suffix=discuss_prompt
+                # v40: Create asyncio.Task for dedup tracking
+                task = asyncio.create_task(
+                    _process_text_message(
+                        message, 
+                        f"Давай обсудим этот пост: {post_content[:300]}", 
+                        db, ai_router,
+                        extra_suffix=discuss_prompt
+                    )
                 )
+                _user_processing[message.from_user.id] = task
                 return
             else:
                 # Пост не найден — просто приветствуем
@@ -578,7 +583,11 @@ async def handle_voice(message: Message, db=None, ai_router=None) -> None:
             await message.answer("Настя пока не умеет слушать голосовые... Напиши текстом! 🙏💕")
             return
 
-        await _process_text_message(message, transcript, db, ai_router, is_voice=True)
+        # v40: Create asyncio.Task for dedup tracking
+        task = asyncio.create_task(
+            _process_text_message(message, transcript, db, ai_router, is_voice=True)
+        )
+        _user_processing[message.from_user.id] = task
     except Exception as e:
         logger.error(f"Voice handler error: {e}")
         await message.answer("Ой, у Насти ушки заболели... Напиши текстом! 👂😅")
@@ -691,23 +700,19 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     text = message.text
     text_lower = text.lower()
 
-    # v27: Per-user dedup — if user is spamming messages, skip old ones
-    # This prevents AI queue overflow when user sends 10 messages in 5 seconds
+    # v40: Per-user dedup — only block if there's an ACTIVE AI task running
+    # Quick reactions (donate, age, etc.) do NOT set the dedup flag!
+    # This prevents blocking ALL user messages after a quick reaction
     user_id = message.from_user.id
-    now = time.time()
-    if user_id in _user_processing:
-        last_ts = _user_processing[user_id].get("timestamp", 0)
-        if now - last_ts < _DEDUP_WINDOW:
-            # User sent another message while we're still processing their previous one
-            # Skip this message — the user is spamming, we'll respond to the latest
-            logger.info(f"Dedup: skipping message from user {user_id} (last was {now - last_ts:.1f}s ago)")
-            # Still save to DB for context, but don't process with AI
-            try:
-                await db.add_message(user_id, "user", text)
-            except Exception:
-                pass
-            return
-    _user_processing[user_id] = {"timestamp": now}
+    active_task = _user_processing.get(user_id)
+    if active_task is not None and not active_task.done():
+        # There's an active AI task for this user — skip this message
+        logger.info(f"Dedup: skipping message from user {user_id} (AI still processing)")
+        try:
+            await db.add_message(user_id, "user", text)
+        except Exception:
+            pass
+        return
 
     # Periodic cleanup
     _cleanup_trackers()
@@ -862,7 +867,11 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         return
 
     # ── Normal AI chat — MOST conversations go here ──
-    await _process_text_message(message, text, db, ai_router)
+    # v40: Create asyncio.Task for AI processing — dedup tracks this task
+    task = asyncio.create_task(
+        _process_text_message(message, text, db, ai_router)
+    )
+    _user_processing[user_id] = task
 
 
 async def _save_simple_exchange(message: Message, user_text: str, bot_text: str, db) -> None:
@@ -1148,7 +1157,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         except Exception:
             pass
 
-    # v27: Clear processing flag for this user
+    # v40: Clear processing task for this user (dedup tracking)
     _user_processing.pop(user_id, None)
 
 

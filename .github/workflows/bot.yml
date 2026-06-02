@@ -1,17 +1,18 @@
-name: Nastya Bot — DUAL-MODEL v38
+name: Nastya Bot — DUAL-MODEL v40
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v38.0 — QWEN3 PRIMARY + QWEN2.5-3B SECONDARY!
+# Nastya Bot v40.0 — ОПТИМИЗАЦИЯ СКОРОСТИ!
 #
 # Architecture:
 #   - llama-cpp-python as PRIMARY AI provider (GGUF model in-process!)
 #   - DUAL-MODEL: Qwen3-4B (PRIMARY) + Qwen2.5-3B (SECONDARY)
-#   - /no_think для ОБЕИХ моделей — отключает thinking mode
+#   - /no_think + stop=["<think"] — БЛОКИРУЕТ thinking mode Qwen3!
 #   - Автопереключение при ошибках — бот всегда отвечает
 #   - AVX2 acceleration — 2-3x faster than Ollama on CPU
-#   - Расширенный контекст 4096 токенов, ответы до 512 токенов
-#   - 20 сообщений в истории (было 10)
-#   - Умное разбиение длинных сообщений по предложениям
+#   - n_ctx=2048, max_tokens=200, history=10 — ОПТИМИЗАЦИЯ СКОРОСТИ!
+#   - stop=["<think"] — предотвращает генерацию thinking tokens
+#   - Dedup fix: clears on quick reactions, uses active task tracking
+#   - Фото в группах ИГНОРИРУЮТСЯ — предотвращает flood control
 #   - Pollinations as FALLBACK (if both models unavailable)
 #   - RSS + template commentary for news (NO AI for news!)
 #   - Single concurrency group — ONE bot instance only!
@@ -190,7 +191,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v38
+          key: nastya-db-v40
           restore-keys: |
             nastya-db-
 
@@ -207,10 +208,10 @@ jobs:
           MODEL2_PATH: models/Qwen2.5-3B-Instruct-Q4_K_M.gguf
           # Use qwen3 as primary
           MODEL_PREFERENCE: qwen3
-          MODEL_N_CTX: 4096
+          MODEL_N_CTX: 2048
           MODEL_N_THREADS: 4
-          MODEL_MAX_TOKENS: 384
-          MODEL_HISTORY_LIMIT: 15
+          MODEL_MAX_TOKENS: 200
+          MODEL_HISTORY_LIMIT: 10
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           CHANNEL_USERNAME: ${{ secrets.CHANNEL_USERNAME }}
@@ -219,10 +220,10 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v38.0 (QWEN3 + QWEN2.5-3B) ==="
+          echo "=== Starting Nastya Bot v40.0 (QWEN3 + QWEN2.5-3B) ==="
           echo "Primary: Qwen3-4B-Instruct-Q4_K_M"
           echo "Secondary: Qwen2.5-3B-Instruct-Q4_K_M"
-          echo "Context: 4096 tokens, Max output: 512 tokens, History: 20 messages"
+          echo "Config: n_ctx=2048, max_tokens=200, history=10, stop=<think"
           ls -lh models/*.gguf 2>/dev/null || echo "WARNING: No GGUF models found!"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
@@ -264,7 +265,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v38-${{ github.run_id }}
+          key: nastya-db-v40-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation
