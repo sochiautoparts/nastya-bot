@@ -389,13 +389,9 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
                 
                 # Отправляем пост в AI для развёрнутого обсуждения
                 discuss_prompt = (
-                    f"Человек пришёл из канала @chasnastya нажав кнопку 'Обсудить с Настей'. "
-                    f"Он хочет обсудить этот пост:\n\n{post_content}\n\n"
-                    f"Начни РАЗВЁРНУТОЕ обсуждение! Поделись своим мнением подробно, "
-                    f"спроси что он думает, приведи аргументы. "
-                    f"Если есть ссылка — обязательно укажи её! "
-                    f"Будь как живая девушка, которая увлечена темой. "
-                    f"Пиши 3-5 предложений, не коротко!"
+                    f"Пришёл из канала обсудить пост:\n{post_content[:500]}\n\n"
+                    f"Поделись мнением, спроси что думает, дай ссылку если есть. "
+                    f"4-6 предложений, живо и с интересом!"
                 )
                 await _process_text_message(
                     message, 
@@ -1301,19 +1297,18 @@ def _clean_response(text: str) -> str:
     for pattern in ai_intros:
         text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-    # Truncate long responses — NO! We split instead of truncating!
-    # Old: truncate at 800 chars = broken recipes and incomplete thoughts
-    # New: keep full text, split into multiple messages at sentence boundaries
-    # Only truncate if text is insanely long (>4000 chars which is near Telegram limit)
-    if len(text) > 3900:
-        # Try to cut at sentence boundary, but keep as much as possible
+    # Truncate only extremely long responses (>2000 chars ≈ 384 tokens for Russian)
+    # Normal responses: 300-1500 chars. If >2000, model got too verbose — trim.
+    # Smart split will handle multi-message delivery for longer but valid responses.
+    if len(text) > 2000:
+        # Try to cut at sentence boundary
         for sep in ['. ', '! ', '? ', '\n']:
-            idx = text[:3900].rfind(sep)
+            idx = text[:2000].rfind(sep)
             if idx > 500:
                 text = text[:idx + len(sep)].strip()
                 break
         else:
-            text = text[:3900]
+            text = text[:2000]
 
     # ── FAKE LINK FILTER — remove non-existent URLs that AI invents ──
     # Only allow REAL links: t.me/chasnastya, news links from RSS, etc.
