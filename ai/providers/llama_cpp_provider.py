@@ -1,12 +1,12 @@
-"""LlamaCppProvider v2.0 — DUAL-MODEL llama-cpp-python provider.
+"""LlamaCppProvider v2.1 — DUAL-MODEL llama-cpp-python provider.
 
-v38: QWEN3 PRIMARY + QWEN2.5-3B SECONDARY!
-  - Qwen3-4B-Instruct = PRIMARY — лучший русский, живые ответы, эмоции
-  - Qwen2.5-3B-Instruct = SECONDARY — быстрая лёгкая резервная модель
-  - Если PRIMARY не отвечает — переключается на SECONDARY
-  - Автопереключение при ошибках (failover)
-  - max_tokens=512 для развёрнутых ответов
-  - /no_think для ОБЕИХ Qwen-моделей (отключает thinking mode)
+v39: ОПТИМИЗАЦИЯ СКОРОСТИ!
+  - max_tokens=200 — ~20 сек генерации вместо 65-89 сек!
+  - n_ctx=2048 — меньше памяти, быстрее обработка промпта
+  - stop=["<think"] — БЛОКИРУЕТ thinking mode Qwen3!
+  - /no_think для ОБЕИХ Qwen-моделей
+  - timeout=65 сек (было 90)
+  - Qwen3-4B = PRIMARY, Qwen2.5-3B = SECONDARY
 
 АРХИТЕКТУРА:
   - Только ОДНА модель загружена в память (экономия RAM)
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Параметры загрузки модели по умолчанию
 DEFAULT_MODEL_CONFIG = {
-    "n_ctx": 4096,          # Расширенный контекст — 4096 токенов для развёрнутых ответов
+    "n_ctx": 2048,          # Оптимальный контекст — 2048 токенов (было 4096 — слишком много!)
     "n_threads": 4,         # Количество потоков (4 vCPU)
     "n_gpu_layers": 0,      # Без GPU — чисто CPU
     "verbose": False,       # Без лишнего вывода
@@ -39,13 +39,14 @@ DEFAULT_MODEL_CONFIG = {
 
 # Параметры генерации по умолчанию
 DEFAULT_GEN_CONFIG = {
-    "max_tokens": 384,       # Баланс: ~38 сек генерации, 3-6 предложений
+    "max_tokens": 200,       # v39: ~20 сек генерации вместо 65-89! (было 384 — слишком долго)
     "temperature": 0.82,     # Чуть ниже = стабильнее, но живо
     "top_p": 0.92,          # Nucleus sampling — чуть выше для разнообразия
     "top_k": 50,            # Ограничиваем top-k для качества
     "repeat_penalty": 1.12, # Против повторов
     "frequency_penalty": 0.0,
     "presence_penalty": 0.0,
+    "stop": ["<think", "<|im_end|>"],  # v39: БЛОКИРУЕТ thinking mode Qwen3!
 }
 
 
@@ -68,7 +69,7 @@ class LlamaCppProvider(BaseProvider):
         self,
         primary_model_path: str = "",
         secondary_model_path: str = "",
-        timeout: float = 90.0,
+        timeout: float = 65.0,
         model_config: Optional[Dict] = None,
         gen_config: Optional[Dict] = None,
     ):
@@ -267,6 +268,9 @@ class LlamaCppProvider(BaseProvider):
 
             try:
                 # Запускаем генерацию в отдельном потоке
+                # v39: stop sequences — блокирует thinking mode Qwen3!
+                stop_sequences = self.gen_config.get("stop", [])
+
                 response = await asyncio.wait_for(
                     asyncio.to_thread(
                         self._llm.create_chat_completion,
@@ -276,6 +280,7 @@ class LlamaCppProvider(BaseProvider):
                         top_p=self.gen_config["top_p"],
                         top_k=self.gen_config["top_k"],
                         repeat_penalty=self.gen_config["repeat_penalty"],
+                        stop=stop_sequences if stop_sequences else None,
                     ),
                     timeout=self.timeout,
                 )
@@ -293,6 +298,8 @@ class LlamaCppProvider(BaseProvider):
 
                 # Очистка think-тегов (Qwen3 thinking mode)
                 text = self._strip_think_tags(text)
+                # v39: Также убрать неполный <think в конце (от stop sequence)
+                text = re.sub(r'<think\b[^>]*$', '', text, flags=re.IGNORECASE)
 
                 if not text or not text.strip():
                     raise ProviderError(self.name, "Empty response from model", retryable=True)

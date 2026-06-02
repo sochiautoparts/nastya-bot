@@ -1,14 +1,13 @@
-"""Nastya Bot 38.0 — Configuration (DUAL-MODEL LLAMA-CPP-PYTHON!)
+"""Nastya Bot 39.0 — Configuration (DUAL-MODEL LLAMA-CPP-PYTHON!)
 
-v38.0: QWEN3 = PRIMARY + QWEN2.5-3B = SECONDARY
-- Qwen3-4B-Instruct GGUF (Q4_K_M, ~2.4GB) = PRIMARY — лучший русский, живые ответы
-- Qwen2.5-3B-Instruct GGUF (Q4_K_M, ~2.0GB) = SECONDARY/FAST FALLBACK
-- Расширенный контекст: 4096 токенов, 20 сообщений истории
-- Развёрнутые ответы: до 512 токенов (было 256)
-- Умное разбиение длинных сообщений — по предложениям, а не посередине
-- Ответы НЕ обрезаются — длинные тексты отправляются частями
-- Глубокая ссылка 'Обсудить с Настей' — полноценное обсуждение новости
-- Pollinations = FALLBACK для чата (кулдаун 5 мин после 429)
+v39.0: ОПТИМИЗАЦИЯ СКОРОСТИ!
+- max_tokens=200 — ~20 сек генерации вместо 65-89 сек!
+- n_ctx=2048 — быстрее обработка промпта
+- history=10 — баланс контекста и скорости
+- stop=["<think"] — БЛОКИРУЕТ thinking mode Qwen3
+- Умное разбиение длинных сообщений
+- Глубокая ссылка 'Обсудить с Настей'
+- Pollinations = FALLBACK для чата
 """
 import os
 from typing import Dict, List
@@ -40,10 +39,10 @@ MODEL2_PATH: str = _env("MODEL2_PATH", "models/Qwen2.5-3B-Instruct-Q4_K_M.gguf")
 # Какая модель активна: 'auto' = тест при старте, 'qwen3' = Qwen3, 'qwen25' = Qwen2.5
 MODEL_PREFERENCE: str = _env("MODEL_PREFERENCE", "qwen3")
 
-MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 4096)    # Размер контекста — 4096 для развёрнутых ответов
+MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 2048)    # Размер контекста — 2048 оптимально (4096 было слишком много!)
 MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 4) # Количество потоков CPU
-MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 384) # Максимум токенов — баланс скорости (~38 сек) и развёрнутости
-MODEL_HISTORY_LIMIT: int = _env_int("MODEL_HISTORY_LIMIT", 15) # Сообщений в контексте (баланс памяти и скорости)
+MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 200) # Максимум токенов — ~20 сек генерации (384 = 65-89 сек!)
+MODEL_HISTORY_LIMIT: int = _env_int("MODEL_HISTORY_LIMIT", 10) # Сообщений в контексте (15 было слишком много)
 
 OWNER_ID: int = _env_int("OWNER_ID", 0)
 ADMIN_IDS: List[int] = list(set(

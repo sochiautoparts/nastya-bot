@@ -57,7 +57,7 @@ _TRACKER_CLEANUP_INTERVAL = 3600
 # v27: Per-user message dedup — track last message timestamp per user
 # If user sends multiple messages while we're processing, only process the latest
 _user_processing: dict = {}  # user_id -> {"task": asyncio.Task, "timestamp": float}
-_DEDUP_WINDOW = 5.0  # seconds — increased from 3 to allow for model response time
+_DEDUP_WINDOW = 45.0  # seconds — MUST be longer than AI generation time (~20-40s)
 
 
 def _cleanup_trackers():
@@ -588,8 +588,23 @@ async def handle_voice(message: Message, db=None, ai_router=None) -> None:
 
 @router.message(F.photo)
 async def handle_photo(message: Message, db=None, ai_router=None) -> None:
-    """v28: Бот не обрабатывает фото — предлагает описать текстом."""
+    """v39: Фото обработчик — ИГНОРИРУЕТ групповые фото (предотвращает flood control!).
+    
+    Когда кто-то пересылает альбом из канала — приходит 5-10 фото одновременно.
+    Старый код отвечал на КАЖДОЕ фото → Telegram flood control → бан бота!
+    Теперь: отвечаем только на ЛИЧНЫЕ фото (не из групп/пересылок).
+    """
     caption = message.caption or ""
+    
+    # v39: ИГНОРИРУЕМ фото из групп и пересылки — иначе flood control!
+    chat_type = message.chat.type if message.chat else "private"
+    is_forward = message.forward_date is not None
+    
+    if chat_type != "private" or is_forward:
+        # Фото в группе или пересылка — молча игнорируем, НЕ отвечаем!
+        # Это предотвращает flood control при пересылке альбомов
+        return
+    
     if db:
         user_id = message.from_user.id
         try:
@@ -1297,18 +1312,18 @@ def _clean_response(text: str) -> str:
     for pattern in ai_intros:
         text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-    # Truncate only extremely long responses (>2000 chars ≈ 384 tokens for Russian)
-    # Normal responses: 300-1500 chars. If >2000, model got too verbose — trim.
-    # Smart split will handle multi-message delivery for longer but valid responses.
-    if len(text) > 2000:
+    # Truncate extremely long responses (>1200 chars ≈ 200 tokens for Russian)
+    # v39: Снижено с 2000 — при max_tokens=200 ответ не может быть >1200 символов
+    # Если больше — модель генерирует мусор, обрезаем по предложению
+    if len(text) > 1200:
         # Try to cut at sentence boundary
         for sep in ['. ', '! ', '? ', '\n']:
-            idx = text[:2000].rfind(sep)
-            if idx > 500:
+            idx = text[:1200].rfind(sep)
+            if idx > 300:
                 text = text[:idx + len(sep)].strip()
                 break
         else:
-            text = text[:2000]
+            text = text[:1200]
 
     # ── FAKE LINK FILTER — remove non-existent URLs that AI invents ──
     # Only allow REAL links: t.me/chasnastya, news links from RSS, etc.

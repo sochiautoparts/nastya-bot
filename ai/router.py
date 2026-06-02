@@ -1,10 +1,10 @@
-"""AI Router v38.0 — QWEN3 PRIMARY + QWEN2.5-3B SECONDARY!
+"""AI Router v39.0 — ОПТИМИЗАЦИЯ СКОРОСТИ!
 
-АРХИТЕКТУРА v38: Qwen3=PRIMARY, Qwen2.5-3B=SECONDARY
+АРХИТЕКТУРА v39: Qwen3=PRIMARY, Qwen2.5-3B=SECONDARY
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
     1. LlamaCppProvider (Qwen3-4B PRIMARY + Qwen2.5-3B SECONDARY)
-       - Автопереключение при ошибках
-       - max_tokens=512 для развёрнутых ответов
+       - stop=["<think"] — БЛОКИРУЕТ thinking mode Qwen3!
+       - max_tokens=200 — ~20 сек генерации (было 384 = 65-89 сек!)
        - /no_think для ОБЕИХ моделей
     2. PollinationsProvider (fallback — если обе модели упали)
     3. Static fallback — бот ВСЕГДА отвечает
@@ -14,13 +14,11 @@
     - Канал: шаблонные посты, опросы, факты (channel.py)
     - AI НЕ вызывается для фоновых задач!
 
-  Ключевые преимущества v38:
-    - ДВЕ модели — если одна упала, вторая подхватит
-    - Расширенный контекст 4096 токенов
-    - Развёрнутые ответы до 512 токенов (было 256)
-    - 20 сообщений в истории (было 10)
+  Ключевые преимущества v39:
+    - СКОРОСТЬ: ответы за ~20 сек вместо 65-89 сек!
+    - stop=["<think"] блокирует thinking mode Qwen3
+    - n_ctx=2048, history=10 — оптимизировано под скорость
     - Умное разбиение длинных сообщений по предложениям
-    - Ответы НЕ обрезаются на 800 символов!
 """
 
 import logging
@@ -52,7 +50,7 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """Центральный AI-маршрутизатор — v37.0 DUAL-MODEL.
+    """Центральный AI-маршрутизатор — v39.0 DUAL-MODEL.
 
     Чат: LlamaCppProvider (dual) → Pollinations → static fallback.
     Фон: НЕ использует AI — RSS + шаблоны!
@@ -80,7 +78,7 @@ class AIRouter:
         self.provider = LlamaCppProvider(
             primary_model_path=MODEL_PATH,
             secondary_model_path=MODEL2_PATH,
-            timeout=90.0,
+            timeout=65.0,
             model_config={
                 "n_ctx": MODEL_N_CTX,
                 "n_threads": MODEL_N_THREADS,
@@ -119,7 +117,7 @@ class AIRouter:
         current = self.provider._current_model_name if self.provider else "none"
         is_sec = self.provider._is_secondary if self.provider else False
         logger.info(
-            f"AI Router v38.0 (QWEN3+QWEN2.5-3B) initialized: "
+            f"AI Router v39.0 (QWEN3+QWEN2.5-3B) initialized: "
             f"primary={primary}, secondary={secondary}, "
             f"active={'SECONDARY:'+current if is_sec else 'PRIMARY:'+current}, "
             f"pollinations={pollinations_status} (fallback only), "
