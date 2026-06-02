@@ -1,15 +1,18 @@
-"""Nastya Bot 42.0 — POLLINATIONS PRIMARY + VISION + LOCAL FALLBACK! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 43.0 — MULTI-MODEL POLLINATIONS + VISION + LOCAL FALLBACK! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v42.0:
-  - ЧАТ: Pollinations.ai (GPT-5.4 Nano) PRIMARY → Qwen3-4B LOCAL FALLBACK
+Architecture v43.0:
+  - ЧАТ: Pollinations.ai MULTI-MODEL (7 моделей, балансировка нагрузки!)
+    - openai (GPT-5.4 Nano) PRIMARY — fast, vision-capable
+    - mistral, deepseek, llama, gemma — BACKUP models
+    - Automatic failover on 429/timeout
   - VISION: Pollinations vision API — Настя ВИДИТ фото!
   - Новости: RSS-парсер + шаблонные комментарии (БЕЗ AI!)
   - Канал: шаблонные посты, опросы, факты (БЕЗ AI!)
   - Фото: REAL VISION — base64 → multimodal → AI понимает!
   - Typing delay indicators — human-like behavior
   - Group chat message length limiting
-  - Pollinations API ключ для повышенных лимитов
-  - Qwen3-4B GGUF как FALLBACK — загружается ПРЯМО в процесс
+  - Proactive messaging — Настя активный собеседник
+  - Qwen3-4B GGUF как LAST FALLBACK — загружается ПРЯМО в процесс
   - AVX2 ускорение — в 2-3x быстрее на CPU
   - /no_think + stop=["<think"] для Qwen3 — блокирует thinking mode
   - Dedup: tracks active asyncio.Task per user
@@ -52,6 +55,7 @@ from bot.config import (
     NEWS_FETCH_INTERVAL, CHANNEL_POST_INTERVAL, CHANNEL_ID, CHANNEL_USERNAME,
     MODEL_PATH, POLLINATIONS_API_KEY,
     MODEL_N_CTX, MODEL_MAX_TOKENS, MODEL_HISTORY_LIMIT,
+    POLLINATIONS_MAX_TOKENS,
 )
 
 if not BOT_TOKEN:
@@ -465,7 +469,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 42.0 Starting (POLLINATIONS + VISION + LOCAL FALLBACK) ===")
+    logger.info("=== Nastya Bot 43.0 Starting (MULTI-MODEL POLLINATIONS + VISION + LOCAL FALLBACK) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -512,7 +516,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 42.0 Ready (POLLINATIONS + VISION + LOCAL FALLBACK) ===")
+    logger.info("=== Nastya Bot 43.0 Ready (MULTI-MODEL POLLINATIONS + VISION + LOCAL FALLBACK) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

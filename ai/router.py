@@ -1,17 +1,18 @@
-"""AI Router v42.0 — POLLINATIONS PRIMARY + LOCAL FALLBACK + VISION!
+"""AI Router v43.0 — MULTI-MODEL POLLINATIONS + LOCAL FALLBACK + VISION!
 
-АРХИТЕКТУРА v42:
+АРХИТЕКТУРА v43:
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
-    1. PollinationsProvider (GPT-5.4 Nano) — PRIMARY
+    1. PollinationsProvider v8 (MULTI-MODEL LOAD BALANCING!)
        - gen.pollinations.ai/v1/chat/completions — OpenAI-compatible
-       - Vision support via multimodal content format
-       - API ключ для повышенных лимитов
-       - reasoning_effort: 'none' для чата, 'low' для сложных
-       - 429 кулдаун: 60 сек после rate limit
+       - 7 chat models: openai, mistral, deepseek, llama, gemma, openai-fast, mistral-4
+       - Automatic failover: if one model fails (429/timeout), next one picks up
+       - Weighted round-robin for fair load distribution across models
+       - Reasoning: openai-large (GPT-5.4) for complex questions
+       - Vision: openai + other vision-capable models
+       - Per-model health tracking with cooldown on failures
     2. LlamaCppProvider (Qwen3-4B) — LOCAL FALLBACK
-       - Когда Pollinations недоступен (429, timeout, etc.)
+       - Только когда ВСЕ модели Pollinations недоступны
        - stop=["<think"] — блокирует thinking mode Qwen3
-       - /no_think для отключения thinking
     3. Static fallback — бот ВСЕГДА отвечает
 
   ФОН (новости, канал — БЕЗ AI!):
@@ -21,15 +22,14 @@
 
   VISION (фото-понимание):
     - Pollinations vision API — Настя ВИДИТ фото!
-    - Фото → base64 → multimodal content → AI понимает
-    - Работает и в чате, и с подписями
+    - Multi-model: пробует несколько vision-моделей если одна не работает
 
-  Ключевые преимущества v42:
-    - УМНО: GPT-5.4 Nano с vision — лучше понимает контекст и ВИДИТ фото!
+  Ключевые преимущества v43:
+    - НАДЁЖНО: 7 моделей вместо 1 — если одна падает, другие работают!
+    - МАСШТАБИРУЕМО: round-robin распределяет нагрузку между моделями
+    - УМНО: GPT-5.4 Nano с vision — лучше понимает контекст
     - БЫСТРО: 5-15 сек вместо 20-89 на локальной модели
-    - НАДЁЖНО: локальная модель как fallback если облако упало
-    - НЕ ОБРЕЗАНО: max_tokens=800 для Pollinations
-    - VISION: Настя понимает что на фото!
+    - НЕ ОБРЕЗАНО: max_tokens=1000 для Pollinations
 """
 
 import logging
@@ -42,14 +42,14 @@ from typing import Any, Dict, List, Optional
 from ai.providers.base import AIResponse, ProviderError
 from ai.providers.pollinations_provider import (
     PollinationsProvider, REASONING_CHAT, REASONING_COMPLEX,
-    MODEL_CHAT, MODEL_REASONING,
+    MODEL_CHAT, MODEL_REASONING, CHAT_MODELS,
 )
 from ai.providers.llama_cpp_provider import LlamaCppProvider
 from ai.voice import transcribe_voice_ogg
 from bot.config import (
     MODEL_PATH, MODEL_N_CTX, MODEL_N_THREADS,
     MODEL_MAX_TOKENS, MODEL_HISTORY_LIMIT,
-    POLLINATIONS_API_KEY,
+    POLLINATIONS_API_KEY, POLLINATIONS_MAX_TOKENS,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,10 +64,10 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """AI Router v42.0 — Pollinations PRIMARY + Local FALLBACK + VISION.
+    """AI Router v43.0 — MULTI-MODEL Pollinations + Local FALLBACK + VISION.
 
-    Chat: Pollinations → LlamaCpp → static fallback.
-    Vision: Pollinations vision API.
+    Chat: Pollinations (7 models, load balanced) → LlamaCpp → static fallback.
+    Vision: Pollinations vision API (multi-model).
     Background: NO AI — RSS + templates!
     """
 
@@ -83,15 +83,19 @@ class AIRouter:
         self._vision_requests: int = 0
 
     async def init(self) -> None:
-        """Initialize providers: Pollinations PRIMARY + LlamaCpp FALLBACK."""
-        # ── 1. Pollinations — PRIMARY ──
+        """Initialize providers: Pollinations MULTI-MODEL + LlamaCpp FALLBACK."""
+        # ── 1. Pollinations — PRIMARY (multi-model) ──
         try:
             self._pollinations = PollinationsProvider(
                 api_key=POLLINATIONS_API_KEY,
                 timeout=45.0,
             )
             await self._pollinations.init()
-            logger.info("PollinationsProvider initialized as PRIMARY (chat + vision)")
+            model_names = [m[0] for m in CHAT_MODELS]
+            logger.info(
+                f"PollinationsProvider initialized as PRIMARY "
+                f"({len(CHAT_MODELS)} models: {', '.join(model_names)})"
+            )
         except Exception as e:
             logger.warning(f"PollinationsProvider init failed: {e}")
             self._pollinations = None
@@ -132,12 +136,11 @@ class AIRouter:
         model_name = self._local._model_name if self._local and self._local._loaded else "none"
 
         logger.info(
-            f"AI Router v42.0 initialized: "
-            f"pollinations={pollinations_status} (PRIMARY, vision=yes), "
+            f"AI Router v43.0 initialized: "
+            f"pollinations={pollinations_status} (PRIMARY, {len(CHAT_MODELS)} models, vision=yes), "
             f"local={local_status} (FALLBACK, model={model_name}), "
             f"news=RSS+templates (no AI), "
-            f"models=chat:{MODEL_CHAT}, reasoning:{MODEL_REASONING}, "
-            f"max_tokens=800(cloud)/256(local), history={MODEL_HISTORY_LIMIT}"
+            f"max_tokens={POLLINATIONS_MAX_TOKENS}(cloud)/256(local), history={MODEL_HISTORY_LIMIT}"
         )
 
     async def close(self) -> None:
@@ -155,7 +158,7 @@ class AIRouter:
 
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
-        """Route chat: Pollinations → Local → static fallback."""
+        """Route chat: Pollinations (multi-model) → Local → static fallback."""
         self._total_requests += 1
         priority = kwargs.get("priority", "high")
 
@@ -167,14 +170,7 @@ class AIRouter:
     async def vision(self, prompt: str, image_data: bytes,
                      image_format: str = "jpeg", system_prompt: str = "",
                      **kwargs) -> AIResponse:
-        """Route vision request: Pollinations vision → fallback to caption-only.
-
-        Args:
-            prompt: Text prompt about the image
-            image_data: Raw image bytes
-            image_format: Image format (jpeg, png, webp)
-            system_prompt: System instructions
-        """
+        """Route vision request: Pollinations vision (multi-model) → fallback."""
         self._total_requests += 1
         self._vision_requests += 1
 
@@ -217,9 +213,9 @@ class AIRouter:
 
     async def _route_chat(self, prompt: str, system_prompt: str,
                           messages: Optional[List[Dict]], **kwargs) -> AIResponse:
-        """Chat route: Pollinations → Local → static fallback."""
+        """Chat route: Pollinations (multi-model) → Local → static fallback."""
 
-        # ── 1. Pollinations — PRIMARY ──
+        # ── 1. Pollinations — PRIMARY (multi-model load balancing!) ──
         if self._pollinations and self._pollinations.is_available():
             try:
                 # Use reasoning for complex queries
@@ -229,7 +225,7 @@ class AIRouter:
                     prompt,
                     system_prompt=system_prompt,
                     messages=messages,
-                    max_tokens=800,  # Pollinations can handle longer responses
+                    max_tokens=POLLINATIONS_MAX_TOKENS,
                     reasoning_effort=reasoning,
                 )
                 if result and result.text:
@@ -246,7 +242,9 @@ class AIRouter:
             except ProviderError as e:
                 err_str = str(e)
                 if "429" in err_str:
-                    logger.warning("Pollinations rate-limited! Falling back to local model.")
+                    logger.warning("Pollinations rate-limited (all models)! Falling back to local model.")
+                elif "All models failed" in err_str:
+                    logger.warning("All Pollinations models failed! Falling back to local model.")
                 else:
                     logger.warning(f"Pollinations chat error: {e}")
             except Exception as e:
@@ -418,8 +416,15 @@ class AIRouter:
         status["pollinations"] = {
             "available": self._pollinations is not None and self._pollinations.is_available(),
             "role": "PRIMARY",
+            "models": len(CHAT_MODELS),
             "vision": True,
         }
+        # Add model stats if available
+        if self._pollinations:
+            try:
+                status["pollinations"]["model_stats"] = self._pollinations.get_model_stats()
+            except Exception:
+                pass
         if self._local:
             stats = self._local.get_stats()
             status["local"] = {

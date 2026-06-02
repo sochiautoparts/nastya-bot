@@ -1,16 +1,18 @@
-name: Nastya Bot — POLLINATIONS + VISION v42
+name: Nastya Bot — MULTI-MODEL v43
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v42.0 — POLLINATIONS PRIMARY + VISION + LOCAL FALLBACK!
+# Nastya Bot v43.0 — MULTI-MODEL POLLINATIONS + VISION + LOCAL FALLBACK!
 #
 # Architecture:
-#   - Pollinations.ai (GPT-5.4 Nano) as PRIMARY AI — cloud, fast, smart, VISION!
-#   - Pollinations.ai (GPT-5.4) for REASONING — complex questions
+#   - Pollinations.ai MULTI-MODEL (7 chat models, load balanced!)
+#     - openai (GPT-5.4 Nano) PRIMARY — fast, vision-capable
+#     - mistral, deepseek, llama, gemma — BACKUP models
+#     - Automatic failover on 429/timeout
 #   - Qwen3-4B-Instruct GGUF as LOCAL FALLBACK — offline reserve
 #   - REAL PHOTO UNDERSTANDING via Pollinations vision API!
 #   - Typing delay indicators — human-like behavior
 #   - Group chat message length limiting
-#   - Pollinations API key for higher rate limits
+#   - Proactive messaging — Настя активный собеседник
 #   - /no_think + stop=["<think"] for Qwen3 fallback
 #   - AVX2 acceleration for local model
 #   - RSS + template commentary for news (NO AI for news!)
@@ -139,26 +141,40 @@ jobs:
             echo "OK: Qwen3-4B-Instruct-Q4_K_M (${MODEL_SIZE}) — LOCAL FALLBACK"
           fi
 
-      # ── Test Pollinations API (v42: /v1/chat/completions endpoint!) ──
+      # ── Test Pollinations API (v43: multi-model!) ──
       - name: Test Pollinations API connectivity
         run: |
-          echo "=== Testing Pollinations.ai API (v1/chat/completions) ==="
+          echo "=== Testing Pollinations.ai API (MULTI-MODEL) ==="
+          # Test primary model
+          echo "Testing PRIMARY model (openai)..."
           RESPONSE=$(curl -s --max-time 30 https://gen.pollinations.ai/v1/chat/completions \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.POLLINATIONS_API_KEY }}" \
             -d '{"model": "openai", "messages": [{"role": "user", "content": "Скажи ОК"}], "max_tokens": 5, "reasoning_effort": "none", "stream": false}' 2>&1)
-          echo "Response: $(echo "$RESPONSE" | head -3)"
+          echo "Primary Response: $(echo "$RESPONSE" | head -3)"
           if echo "$RESPONSE" | grep -q '"content"'; then
-            echo "Pollinations API OK! (v1/chat/completions working)"
+            echo "PRIMARY model (openai) OK!"
           else
-            echo "WARNING: Pollinations API test failed — local model will be used"
+            echo "WARNING: PRIMARY model failed"
+          fi
+
+          # Test backup model
+          echo "Testing BACKUP model (mistral)..."
+          RESPONSE2=$(curl -s --max-time 30 https://gen.pollinations.ai/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.POLLINATIONS_API_KEY }}" \
+            -d '{"model": "mistral", "messages": [{"role": "user", "content": "Say OK"}], "max_tokens": 5, "stream": false}' 2>&1)
+          echo "Backup Response: $(echo "$RESPONSE2" | head -3)"
+          if echo "$RESPONSE2" | grep -q '"content"'; then
+            echo "BACKUP model (mistral) OK!"
+          else
+            echo "WARNING: BACKUP model failed"
           fi
 
       # ── Test Pollinations Vision API ──
       - name: Test Pollinations Vision API
         run: |
           echo "=== Testing Pollinations.ai Vision API ==="
-          # Create a tiny test image (1x1 red pixel PNG in base64)
           TEST_IMAGE="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
           RESPONSE=$(curl -s --max-time 30 https://gen.pollinations.ai/v1/chat/completions \
             -H "Content-Type: application/json" \
@@ -178,7 +194,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v42
+          key: nastya-db-v43
           restore-keys: |
             nastya-db-
 
@@ -189,7 +205,7 @@ jobs:
           OWNER_ID: ${{ secrets.OWNER_ID }}
           ADMIN_IDS: ${{ secrets.OWNER_ID }}
           BOT_USERNAME: asnastya_bot
-          # Pollinations.ai — PRIMARY AI + VISION
+          # Pollinations.ai — MULTI-MODEL PRIMARY + VISION
           POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
           # Qwen3-4B — LOCAL FALLBACK
           MODEL_PATH: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
@@ -205,11 +221,11 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v42.0 (POLLINATIONS + VISION + QWEN3 FALLBACK) ==="
-          echo "PRIMARY: Pollinations.ai (GPT-5.4 Nano + Vision)"
-          echo "REASONING: Pollinations.ai (GPT-5.4)"
+          echo "=== Starting Nastya Bot v43.0 (MULTI-MODEL POLLINATIONS + VISION + QWEN3 FALLBACK) ==="
+          echo "PRIMARY: Pollinations.ai MULTI-MODEL (7 models: openai, mistral, deepseek, llama, gemma +2)"
+          echo "REASONING: Pollinations.ai (openai-large / GPT-5.4)"
           echo "FALLBACK: Qwen3-4B-Instruct-Q4_K_M (local GGUF)"
-          echo "Config: vision=yes, reasoning=GPT-5.4, max_tokens=800(cloud)/256(local), history=10"
+          echo "Config: vision=yes, reasoning=openai-large, max_tokens=1000(cloud)/256(local), history=10, load_balancing=yes"
           ls -lh models/*.gguf 2>/dev/null || echo "WARNING: No GGUF models — CLOUD-ONLY mode!"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
@@ -251,7 +267,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v42-${{ github.run_id }}
+          key: nastya-db-v43-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation

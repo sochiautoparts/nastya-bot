@@ -1,4 +1,4 @@
-"""Nastya Chat Handler v10.0 — INTELLIGENT + VISION + HUMAN-LIKE!
+"""Nastya Chat Handler v11.0 — MULTI-MODEL + VISION + HUMAN-LIKE!
 
 STABILITY RULES:
   - Bot ALWAYS responds, even if ALL AI providers fail (fallback responses)
@@ -7,9 +7,10 @@ STABILITY RULES:
   - 30-day context memory + news context injection
   - Short, effective system prompt
 
-INTELLIGENCE FEATURES v10.0 (POLLINATIONS VISION + HUMAN-LIKE):
-  - Pollinations.ai as PRIMARY AI — fast, smart, VISION!
-  - Qwen3-4B local GGUF as FALLBACK
+INTELLIGENCE FEATURES v11.0 (MULTI-MODEL POLLINATIONS + HUMAN-LIKE):
+  - Pollinations.ai MULTI-MODEL — 7 models with load balancing!
+  - Automatic failover: if one model fails, next one picks up
+  - Qwen3-4B local GGUF as LAST FALLBACK
   - REAL PHOTO UNDERSTANDING — Настя ВИДИТ что на фото!
   - Typing delay indicators — Настя "живой" собеседник
   - Web search integration — Nastya can find and verify information!
@@ -37,6 +38,9 @@ from bot.config import (
     NASTYA_SYSTEM_PROMPT, DONATION_AMOUNTS, DONATION_LABELS,
     PROACTIVE_COOLDOWN, BOT_USERNAME, CHANNEL_ID, CHANNEL_USERNAME,
     KNOWLEDGE_TOPICS, NASTYA_VOCABULARY, MODEL_HISTORY_LIMIT,
+    GROUP_MAX_MESSAGE_LENGTH, GROUP_RESPONSE_CHANCE,
+    TYPING_DELAY_THRESHOLD, TYPING_DELAY_CHANCE,
+    POLLINATIONS_MAX_TOKENS,
 )
 from bot.web_search import (
     search_web, should_search,

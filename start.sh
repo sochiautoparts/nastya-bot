@@ -1,14 +1,15 @@
 #!/bin/bash
-# Nastya Bot v42 — POLLINATIONS PRIMARY + VISION + LOCAL FALLBACK!
-# Pollinations GPT-5.4 Nano = PRIMARY (cloud, fast, smart, VISION!)
-# Pollinations GPT-5.4 = REASONING (complex questions)
+# Nastya Bot v43 — MULTI-MODEL POLLINATIONS + VISION + LOCAL FALLBACK!
+# Pollinations.ai = MULTI-MODEL (7 chat models, load balanced!)
+# Models: openai (PRIMARY), mistral, deepseek, llama, gemma, openai-fast, mistral-4
+# Automatic failover: if one model fails, next one picks up
 # Qwen3-4B-Instruct = LOCAL FALLBACK (offline reserve)
 # AVX2 acceleration — faster inference on CPU
-# v42: Real photo understanding, typing indicators, group limits
+# v43: Multi-model load balancing, enhanced human-like behavior
 
 set -e
 
-echo "=== Nastya Bot v42 (POLLINATIONS + VISION + LOCAL FALLBACK) ==="
+echo "=== Nastya Bot v43 (MULTI-MODEL POLLINATIONS + VISION + LOCAL FALLBACK) ==="
 
 # ── Install llama-cpp-python with AVX2 acceleration ──
 if ! python3 -c "import llama_cpp" 2>/dev/null; then
@@ -67,7 +68,7 @@ fi
 
 # ── Check Pollinations API key ──
 if [ -n "$POLLINATIONS_API_KEY" ]; then
-    echo "POLLINATIONS: API key configured (PRIMARY + VISION)"
+    echo "POLLINATIONS: API key configured (MULTI-MODEL + VISION)"
 else
     echo "POLLINATIONS: no API key — using anonymous mode (rate limited)"
 fi
@@ -82,7 +83,7 @@ pip install -r requirements.txt 2>&1 || {
 mkdir -p data
 
 # ── Start bot ──
-echo "=== Starting Nastya Bot v42 (Pollinations + VISION + Qwen3 FALLBACK) ==="
-echo "Config: Pollinations=PRIMARY (GPT-5.4 Nano + Vision), Local=FALLBACK (Qwen3-4B)"
-echo "Features: vision=yes, reasoning=GPT-5.4, max_tokens=800, typing_indicators=yes"
+echo "=== Starting Nastya Bot v43 (MULTI-MODEL Pollinations + VISION + Qwen3 FALLBACK) ==="
+echo "Config: Pollinations=MULTI-MODEL (7 models: openai, mistral, deepseek, llama, gemma +2), Local=FALLBACK (Qwen3-4B)"
+echo "Features: vision=yes, reasoning=openai-large, max_tokens=1000, typing_indicators=yes, load_balancing=yes"
 python3 -m bot.main

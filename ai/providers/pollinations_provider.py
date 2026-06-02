@@ -1,25 +1,26 @@
-"""Pollinations.ai Provider v7.0 — PRIMARY AI provider for Nastya Bot.
+"""Pollinations.ai Provider v8.0 — MULTI-MODEL LOAD BALANCING!
 
-v7.0 MAJOR UPDATE for 2026 Pollinations API:
-  - Endpoint: gen.pollinations.ai/v1/chat/completions (OpenAI-compatible)
-  - PRIMARY model: 'openai' (GPT-5.4 Nano) — fast, cheap, vision-capable!
-  - REASONING model: 'openai-large' (GPT-5.4) — for complex questions
-  - VISION: Full image understanding via OpenAI multimodal content format!
-  - Bearer token auth with API key
-  - reasoning_effort: 'none' for fast chat, 'low' for reasoning
-  - Proper OpenAI chat completion response parsing
-  - Rate limit handling with cooldown
-  - SSE artifact stripping as fallback
-  - Base64 image support for photo understanding
-  - Multiple model routing for different use cases
+v8.0 MAJOR UPDATE — Multi-model load distribution:
+  - PRIMARY: 'openai' (GPT-5.4 Nano) — fast, cheap, vision-capable
+  - BACKUP 1: 'mistral' (Mistral Small 3.2) — fast, good Russian
+  - BACKUP 2: 'deepseek' (DeepSeek V4 Flash) — reasoning, cheap
+  - BACKUP 3: 'llama' (Llama 3.3 70B) — open-source, strong
+  - BACKUP 4: 'gemma' (Gemma 4 26B) — fast MoE, good quality
+  - REASONING: 'openai-large' (GPT-5.4) — for complex questions
+  - VISION: 'openai' (GPT-5.4 Nano) — supports image input!
+
+  Round-robin distribution across models to handle growing user load.
+  Automatic failover on 429/rate-limit/timeout — next model picks up.
+  Per-model health tracking with cooldown on failures.
+  Unified Pollinations API endpoint: gen.pollinations.ai/v1/chat/completions
 """
 import base64
-import io
 import json
 import logging
+import random
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
@@ -29,12 +30,24 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://gen.pollinations.ai"
 
-# ── Model Selection ──
-# 'openai' = GPT-5.4 Nano — fast, cheap, supports vision, excellent Russian
-# 'openai-large' = GPT-5.4 — reasoning, vision, slower but smarter
-MODEL_CHAT = "openai"           # PRIMARY — fast chat + vision
-MODEL_REASONING = "openai-large"  # For complex questions
-MODEL_VISION = "openai"         # Vision model (same as chat — supports images!)
+# ── Model Selection — LOAD BALANCING POOL ──
+# Models are ordered by priority/quality for chat
+# Each model has: cost tier, vision support, reasoning support
+
+CHAT_MODELS = [
+    # (model_name, weight_for_round_robin, supports_vision, cost_tier)
+    # Cost tiers: 1=cheapest, 2=cheap, 3=moderate, 4=expensive
+    ("openai",       4, True,  1),   # GPT-5.4 Nano — PRIMARY, fast, vision, cheapest
+    ("mistral",      3, True,  1),   # Mistral Small 3.2 — fast, good multilingual
+    ("deepseek",     2, False, 1),   # DeepSeek V4 Flash — reasoning, cheap
+    ("llama",        2, False, 1),   # Llama 3.3 70B — open-source, strong
+    ("gemma",        2, True,  1),   # Gemma 4 26B — fast MoE, vision
+    ("openai-fast",  1, True,  1),   # GPT-5 Nano — ultra fast fallback
+    ("mistral-4",    1, True,  2),   # Mistral Small 4 — better but pricier
+]
+
+MODEL_REASONING = "openai-large"    # GPT-5.4 — for complex questions
+MODEL_VISION = "openai"             # Vision model (same as chat — supports images!)
 
 # Reasoning effort levels: 'none', 'minimal', 'low', 'medium', 'high'
 REASONING_CHAT = "none"       # Fastest for regular chat
@@ -122,27 +135,34 @@ def _parse_json_response(text: str) -> Optional[str]:
 
 
 class PollinationsProvider(BaseProvider):
-    """Pollinations.ai provider — PRIMARY AI for Nastya Bot.
+    """Pollinations.ai provider v8.0 — MULTI-MODEL LOAD BALANCING!
 
     Uses gen.pollinations.ai/v1/chat/completions (OpenAI-compatible).
+    Round-robin across multiple models for load distribution.
+    Automatic failover on 429/rate-limit errors.
     Supports vision via multimodal content format (image_url with base64).
-    Models: 'openai' (fast chat+vision), 'openai-large' (reasoning+vision).
     """
 
     name: str = "pollinations"
     supports_streaming: bool = False
-    supports_vision: bool = True  # VISION SUPPORT via multimodal content!
+    supports_vision: bool = True
 
     def __init__(self, api_key: str = "", timeout: float = 45.0):
         super().__init__(api_key=api_key, timeout=timeout)
         self._api_key = api_key
         self._last_429_time: float = 0
         self._429_count: int = 0
+        # ── Per-model health tracking ──
+        self._model_health: Dict[str, Dict] = {}
+        # {model_name: {"fail_count": int, "last_fail": float, "last_success": float, "total_requests": int, "total_failures": int}}
+        self._round_robin_index: int = 0
+        self._total_requests: int = 0
+        self._model_usage: Dict[str, int] = {}  # Track usage per model
 
     async def init(self) -> None:
         """Initialize httpx async client with connection pooling and auth."""
         headers = {
-            "User-Agent": "NastyaBot/42.0",
+            "User-Agent": "NastyaBot/43.0",
             "Accept": "application/json",
         }
         if self._api_key:
@@ -150,32 +170,161 @@ class PollinationsProvider(BaseProvider):
 
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout, connect=15.0),
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            limits=httpx.Limits(max_connections=30, max_keepalive_connections=15),
             follow_redirects=True,
             headers=headers,
         )
+
+        # Initialize health tracking for all models
+        for model_name, _, _, _ in CHAT_MODELS:
+            self._model_health[model_name] = {
+                "fail_count": 0,
+                "last_fail": 0,
+                "last_success": 0,
+                "total_requests": 0,
+                "total_failures": 0,
+            }
+        self._model_health[MODEL_REASONING] = {
+            "fail_count": 0, "last_fail": 0, "last_success": 0,
+            "total_requests": 0, "total_failures": 0,
+        }
+
         logger.info(
-            f"PollinationsProvider initialized: model={MODEL_CHAT}, "
-            f"vision_model={MODEL_VISION}, reasoning_model={MODEL_REASONING}, "
+            f"PollinationsProvider v8 initialized: {len(CHAT_MODELS)} chat models, "
+            f"vision={MODEL_VISION}, reasoning={MODEL_REASONING}, "
             f"auth={'yes' if self._api_key else 'anonymous'}, "
             f"timeout={self.timeout}s"
         )
 
     def is_available(self) -> bool:
-        """Available if client is initialized and not in 429 cooldown."""
+        """Available if client is initialized and not in global 429 cooldown."""
         if not self._client:
             return False
-        if self._429_count > 0 and time.time() - self._last_429_time < 60:
+        if self._429_count > 3 and time.time() - self._last_429_time < 30:
             return False
         return True
 
-    async def generate(self, prompt: str, **kwargs) -> AIResponse:
-        """Generate text via Pollinations OpenAI-compatible API.
+    def _is_model_healthy(self, model_name: str) -> bool:
+        """Check if a specific model is healthy enough to use."""
+        health = self._model_health.get(model_name)
+        if not health:
+            return True  # Unknown model = assume healthy
 
-        Supports:
-        - Regular text chat (model='openai')
-        - Vision/image understanding (model='openai' with image_url)
-        - Reasoning mode (model='openai-large')
+        # If model failed recently, apply cooldown
+        if health["fail_count"] >= 3:
+            # Cooldown: 60s after 3+ consecutive failures
+            if time.time() - health["last_fail"] < 60:
+                return False
+            else:
+                # Reset after cooldown
+                health["fail_count"] = 0
+                return True
+
+        # If model failed once/twice, short cooldown (15s)
+        if health["fail_count"] > 0:
+            if time.time() - health["last_fail"] < 15:
+                return False
+
+        return True
+
+    def _record_model_success(self, model_name: str) -> None:
+        """Record successful request for a model."""
+        health = self._model_health.get(model_name)
+        if health:
+            health["fail_count"] = 0
+            health["last_success"] = time.time()
+            health["total_requests"] += 1
+        self._model_usage[model_name] = self._model_usage.get(model_name, 0) + 1
+        self._total_requests += 1
+
+    def _record_model_failure(self, model_name: str) -> None:
+        """Record failed request for a model."""
+        health = self._model_health.get(model_name)
+        if health:
+            health["fail_count"] += 1
+            health["last_fail"] = time.time()
+            health["total_failures"] += 1
+            health["total_requests"] += 1
+
+    def _select_model(self, prefer_model: str = "", need_vision: bool = False,
+                      need_reasoning: bool = False) -> str:
+        """Select the best available model using weighted round-robin.
+
+        Args:
+            prefer_model: Preferred model to use (if healthy)
+            need_vision: Must support image input
+            need_reasoning: Need reasoning capability
+
+        Returns:
+            Model name to use
+        """
+        # If a specific model is preferred and healthy, use it
+        if prefer_model and self._is_model_healthy(prefer_model):
+            return prefer_model
+
+        # For reasoning, use the reasoning model
+        if need_reasoning:
+            if self._is_model_healthy(MODEL_REASONING):
+                return MODEL_REASONING
+            # Fallback: any model that's healthy
+            logger.warning(f"Reasoning model {MODEL_REASONING} unhealthy, falling back to chat model")
+
+        # Filter healthy models
+        candidates = []
+        for model_name, weight, supports_vision, cost_tier in CHAT_MODELS:
+            if need_vision and not supports_vision:
+                continue
+            if self._is_model_healthy(model_name):
+                candidates.append((model_name, weight))
+
+        if not candidates:
+            # ALL models unhealthy — reset all and try primary
+            logger.warning("ALL models unhealthy! Resetting health and trying primary.")
+            for h in self._model_health.values():
+                h["fail_count"] = 0
+            if need_vision:
+                return MODEL_VISION
+            return CHAT_MODELS[0][0]
+
+        # Weighted random selection
+        total_weight = sum(w for _, w in candidates)
+        r = random.uniform(0, total_weight)
+        cumulative = 0
+        for model_name, weight in candidates:
+            cumulative += weight
+            if r <= cumulative:
+                return model_name
+
+        # Fallback
+        return candidates[0][0]
+
+    def _select_model_round_robin(self, need_vision: bool = False) -> str:
+        """Select next model using round-robin (for fair load distribution).
+
+        Only cycles through healthy models that meet requirements.
+        """
+        # Filter healthy models
+        healthy = []
+        for model_name, weight, supports_vision, cost_tier in CHAT_MODELS:
+            if need_vision and not supports_vision:
+                continue
+            if self._is_model_healthy(model_name):
+                healthy.append(model_name)
+
+        if not healthy:
+            return MODEL_VISION if need_vision else CHAT_MODELS[0][0]
+
+        # Round-robin through healthy models
+        self._round_robin_index = self._round_robin_index % len(healthy)
+        selected = healthy[self._round_robin_index]
+        self._round_robin_index += 1
+        return selected
+
+    async def generate(self, prompt: str, **kwargs) -> AIResponse:
+        """Generate text via Pollinations with MULTI-MODEL load balancing.
+
+        Tries multiple models if primary fails (429, timeout, etc.)
+        This ensures the bot keeps working even under high load.
         """
         if not self._client:
             await self.init()
@@ -189,12 +338,70 @@ class PollinationsProvider(BaseProvider):
         # Build messages array
         messages = self._build_messages(prompt, system_prompt, messages_history)
 
-        # Choose model based on reasoning effort
-        if reasoning_effort in ("medium", "high"):
-            model = MODEL_REASONING
-        else:
-            model = MODEL_CHAT
+        # Select models to try
+        need_reasoning = reasoning_effort in ("medium", "high")
+        primary_model = self._select_model(
+            need_vision=False,
+            need_reasoning=need_reasoning,
+        )
 
+        # Build list of models to try: primary first, then fallbacks
+        models_to_try = [primary_model]
+        # Add other healthy models as fallbacks
+        for model_name, _, supports_vision, _ in CHAT_MODELS:
+            if model_name != primary_model and self._is_model_healthy(model_name):
+                models_to_try.append(model_name)
+
+        # If reasoning, add reasoning model
+        if need_reasoning and primary_model != MODEL_REASONING:
+            if self._is_model_healthy(MODEL_REASONING):
+                models_to_try.insert(1, MODEL_REASONING)
+
+        # Try each model in order
+        last_error = None
+        for model in models_to_try[:3]:  # Max 3 attempts
+            try:
+                result = await self._call_api(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    reasoning_effort=reasoning_effort if need_reasoning else REASONING_CHAT,
+                )
+                if result and result.text:
+                    self._record_model_success(model)
+                    return result
+            except ProviderError as e:
+                last_error = e
+                self._record_model_failure(model)
+                err_str = str(e)
+                if "429" in err_str:
+                    logger.warning(f"Model {model} rate-limited (429), trying next model...")
+                elif "PAYMENT_REQUIRED" in err_str:
+                    logger.warning(f"Model {model} insufficient balance, trying next model...")
+                    # Mark this model as expensive — avoid for a while
+                    self._model_health.setdefault(model, {})["fail_count"] = 5
+                    self._model_health.setdefault(model, {})["last_fail"] = time.time()
+                else:
+                    logger.warning(f"Model {model} error: {e}, trying next...")
+                continue
+            except Exception as e:
+                last_error = e
+                self._record_model_failure(model)
+                logger.warning(f"Model {model} unexpected error: {e}, trying next...")
+                continue
+
+        # All models failed
+        raise ProviderError(
+            self.name,
+            f"All models failed (tried {len(models_to_try[:3])}). Last error: {last_error}",
+            retryable=True,
+        )
+
+    async def _call_api(self, model: str, messages: List[Dict],
+                         temperature: float, max_tokens: int,
+                         reasoning_effort: str = REASONING_CHAT) -> AIResponse:
+        """Make a single API call to Pollinations with a specific model."""
         payload: Dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -208,93 +415,66 @@ class PollinationsProvider(BaseProvider):
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
 
-        try:
-            response = await self._client.post(
-                f"{BASE_URL}/v1/chat/completions",
-                json=payload,
-                headers=headers,
-            )
-            response.raise_for_status()
+        response = await self._client.post(
+            f"{BASE_URL}/v1/chat/completions",
+            json=payload,
+            headers=headers,
+        )
+        response.raise_for_status()
 
-            raw_text = response.text
+        raw_text = response.text
 
-            if not raw_text:
-                raise ProviderError(self.name, "Empty response from Pollinations", retryable=True)
+        if not raw_text:
+            raise ProviderError(self.name, f"Empty response from model {model}", retryable=True)
 
-            # STEP 1: Try JSON chat completion format
-            parsed = _parse_json_response(raw_text)
-            if parsed:
-                cleaned = _strip_reasoning(parsed)
-                if cleaned:
-                    return AIResponse(
-                        text=cleaned,
-                        provider=self.name,
-                        model=f"pollinations:{model}",
-                        tokens_used=0,
-                        metadata={"endpoint": "v1/chat/completions", "parsed": "json"},
-                    )
-
-            # STEP 2: Try SSE format
-            cleaned = _strip_sse_artifacts(raw_text)
+        # STEP 1: Try JSON chat completion format
+        parsed = _parse_json_response(raw_text)
+        if parsed:
+            cleaned = _strip_reasoning(parsed)
             if cleaned:
-                cleaned = _strip_reasoning(cleaned)
-                if cleaned:
-                    return AIResponse(
-                        text=cleaned,
-                        provider=self.name,
-                        model=f"pollinations:{model}",
-                        tokens_used=0,
-                        metadata={"endpoint": "v1/chat/completions", "parsed": "sse"},
-                    )
+                return AIResponse(
+                    text=cleaned,
+                    provider=self.name,
+                    model=f"pollinations:{model}",
+                    tokens_used=0,
+                    metadata={"endpoint": "v1/chat/completions", "parsed": "json", "model": model},
+                )
 
-            # STEP 3: Raw text (last resort)
-            final_text = raw_text.strip()
-            if "data:" in final_text or "[DONE]" in final_text:
-                raise ProviderError(self.name, "Unparsable SSE artifacts", retryable=True)
+        # STEP 2: Try SSE format
+        cleaned = _strip_sse_artifacts(raw_text)
+        if cleaned:
+            cleaned = _strip_reasoning(cleaned)
+            if cleaned:
+                return AIResponse(
+                    text=cleaned,
+                    provider=self.name,
+                    model=f"pollinations:{model}",
+                    tokens_used=0,
+                    metadata={"endpoint": "v1/chat/completions", "parsed": "sse", "model": model},
+                )
 
-            final_text = _strip_reasoning(final_text)
-            if not final_text:
-                raise ProviderError(self.name, "Empty content after cleaning", retryable=True)
+        # STEP 3: Raw text (last resort)
+        final_text = raw_text.strip()
+        if "data:" in final_text or "[DONE]" in final_text:
+            raise ProviderError(self.name, f"Unparsable SSE artifacts from {model}", retryable=True)
 
-            return AIResponse(
-                text=final_text,
-                provider=self.name,
-                model=f"pollinations:{model}",
-                tokens_used=0,
-                metadata={"endpoint": "v1/chat/completions", "parsed": "raw"},
-            )
+        final_text = _strip_reasoning(final_text)
+        if not final_text:
+            raise ProviderError(self.name, f"Empty content after cleaning from {model}", retryable=True)
 
-        except httpx.TimeoutException as exc:
-            raise ProviderError(self.name, f"Request timed out: {exc}", retryable=True)
-        except httpx.HTTPStatusError as exc:
-            status = exc.response.status_code
-            if status == 429:
-                self._last_429_time = time.time()
-                self._429_count += 1
-                logger.warning(f"Pollinations rate-limited (429)! Count={self._429_count}")
-            retryable = status in (429, 500, 502, 503, 504)
-            raise ProviderError(
-                self.name,
-                f"HTTP {status}: {exc.response.text[:200]}",
-                retryable=retryable,
-            )
-        except ProviderError:
-            raise
-        except Exception as exc:
-            raise ProviderError(self.name, f"Unexpected error: {exc}", retryable=True)
+        return AIResponse(
+            text=final_text,
+            provider=self.name,
+            model=f"pollinations:{model}",
+            tokens_used=0,
+            metadata={"endpoint": "v1/chat/completions", "parsed": "raw", "model": model},
+        )
 
     async def generate_vision(self, prompt: str, image_data: bytes,
                                image_format: str = "jpeg", **kwargs) -> AIResponse:
         """Generate response with image understanding via Pollinations vision.
 
-        Args:
-            prompt: Text prompt/question about the image
-            image_data: Raw image bytes
-            image_format: Image format (jpeg, png, webp)
-            **kwargs: Additional options (system_prompt, temperature, etc.)
-
-        Uses OpenAI multimodal content format:
-            [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}]
+        Tries multiple vision-capable models for reliability.
         """
         if not self._client:
             await self.init()
@@ -313,92 +493,135 @@ class PollinationsProvider(BaseProvider):
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
 
-        # User message with image + text (OpenAI multimodal format)
         user_content = [
             {"type": "text", "text": prompt},
             {"type": "image_url", "image_url": {"url": data_uri, "detail": "high"}},
         ]
         messages.append({"role": "user", "content": user_content})
 
-        payload: Dict[str, Any] = {
-            "model": MODEL_VISION,  # Model with vision support
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            "reasoning_effort": REASONING_CHAT,
-            "stream": False,
-        }
+        # Try vision-capable models in order
+        vision_models = ["openai", "mistral", "gemma", "openai-fast"]
+        # Filter to healthy ones
+        healthy_vision = [m for m in vision_models if self._is_model_healthy(m)]
+        if not healthy_vision:
+            healthy_vision = [MODEL_VISION]  # Always try primary
 
-        headers = {"Content-Type": "application/json"}
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
+        last_error = None
+        for model in healthy_vision[:2]:  # Max 2 attempts for vision
+            try:
+                payload: Dict[str, Any] = {
+                    "model": model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "reasoning_effort": REASONING_CHAT,
+                    "stream": False,
+                }
 
-        try:
-            response = await self._client.post(
-                f"{BASE_URL}/v1/chat/completions",
-                json=payload,
-                headers=headers,
-            )
-            response.raise_for_status()
+                headers = {"Content-Type": "application/json"}
+                if self._api_key:
+                    headers["Authorization"] = f"Bearer {self._api_key}"
 
-            raw_text = response.text
+                response = await self._client.post(
+                    f"{BASE_URL}/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+                response.raise_for_status()
 
-            if not raw_text:
-                raise ProviderError(self.name, "Empty vision response", retryable=True)
+                raw_text = response.text
 
-            parsed = _parse_json_response(raw_text)
-            if parsed:
-                cleaned = _strip_reasoning(parsed)
+                if not raw_text:
+                    raise ProviderError(self.name, f"Empty vision response from {model}", retryable=True)
+
+                parsed = _parse_json_response(raw_text)
+                if parsed:
+                    cleaned = _strip_reasoning(parsed)
+                    if cleaned:
+                        self._record_model_success(model)
+                        return AIResponse(
+                            text=cleaned,
+                            provider=self.name,
+                            model=f"pollinations:{model}",
+                            tokens_used=0,
+                            metadata={"endpoint": "v1/chat/completions", "mode": "vision", "model": model},
+                        )
+
+                cleaned = _strip_sse_artifacts(raw_text)
                 if cleaned:
+                    cleaned = _strip_reasoning(cleaned)
+                    if cleaned:
+                        self._record_model_success(model)
+                        return AIResponse(
+                            text=cleaned,
+                            provider=self.name,
+                            model=f"pollinations:{model}",
+                            tokens_used=0,
+                            metadata={"endpoint": "v1/chat/completions", "mode": "vision", "parsed": "sse", "model": model},
+                        )
+
+                final_text = _strip_reasoning(raw_text.strip())
+                if final_text:
+                    self._record_model_success(model)
                     return AIResponse(
-                        text=cleaned,
+                        text=final_text,
                         provider=self.name,
-                        model=f"pollinations:{MODEL_VISION}",
+                        model=f"pollinations:{model}",
                         tokens_used=0,
-                        metadata={"endpoint": "v1/chat/completions", "mode": "vision"},
+                        metadata={"endpoint": "v1/chat/completions", "mode": "vision", "parsed": "raw", "model": model},
                     )
 
-            cleaned = _strip_sse_artifacts(raw_text)
-            if cleaned:
-                cleaned = _strip_reasoning(cleaned)
-                if cleaned:
-                    return AIResponse(
-                        text=cleaned,
-                        provider=self.name,
-                        model=f"pollinations:{MODEL_VISION}",
-                        tokens_used=0,
-                        metadata={"endpoint": "v1/chat/completions", "mode": "vision", "parsed": "sse"},
+                raise ProviderError(self.name, f"Empty vision content from {model}", retryable=True)
+
+            except httpx.TimeoutException as exc:
+                self._record_model_failure(model)
+                last_error = exc
+                logger.warning(f"Vision model {model} timeout, trying next...")
+                continue
+            except httpx.HTTPStatusError as exc:
+                self._record_model_failure(model)
+                status = exc.response.status_code
+                if status == 429:
+                    self._last_429_time = time.time()
+                    self._429_count += 1
+                retryable = status in (429, 500, 502, 503, 504)
+                if not retryable:
+                    raise ProviderError(
+                        self.name,
+                        f"Vision HTTP {status} from {model}: {exc.response.text[:200]}",
+                        retryable=False,
                     )
+                last_error = exc
+                logger.warning(f"Vision model {model} HTTP {status}, trying next...")
+                continue
+            except ProviderError:
+                raise
+            except Exception as exc:
+                self._record_model_failure(model)
+                last_error = exc
+                logger.warning(f"Vision model {model} error: {exc}, trying next...")
+                continue
 
-            final_text = _strip_reasoning(raw_text.strip())
-            if not final_text:
-                raise ProviderError(self.name, "Empty vision content", retryable=True)
+        raise ProviderError(
+            self.name,
+            f"All vision models failed. Last error: {last_error}",
+            retryable=True,
+        )
 
-            return AIResponse(
-                text=final_text,
-                provider=self.name,
-                model=f"pollinations:{MODEL_VISION}",
-                tokens_used=0,
-                metadata={"endpoint": "v1/chat/completions", "mode": "vision", "parsed": "raw"},
-            )
-
-        except httpx.TimeoutException as exc:
-            raise ProviderError(self.name, f"Vision request timed out: {exc}", retryable=True)
-        except httpx.HTTPStatusError as exc:
-            status = exc.response.status_code
-            if status == 429:
-                self._last_429_time = time.time()
-                self._429_count += 1
-            retryable = status in (429, 500, 502, 503, 504)
-            raise ProviderError(
-                self.name,
-                f"Vision HTTP {status}: {exc.response.text[:200]}",
-                retryable=retryable,
-            )
-        except ProviderError:
-            raise
-        except Exception as exc:
-            raise ProviderError(self.name, f"Vision error: {exc}", retryable=True)
+    def get_model_stats(self) -> Dict[str, Any]:
+        """Get statistics about model usage and health."""
+        stats = {}
+        for model_name, health in self._model_health.items():
+            stats[model_name] = {
+                "healthy": self._is_model_healthy(model_name),
+                "fail_count": health.get("fail_count", 0),
+                "total_requests": health.get("total_requests", 0),
+                "total_failures": health.get("total_failures", 0),
+                "usage_count": self._model_usage.get(model_name, 0),
+            }
+        stats["_total_requests"] = self._total_requests
+        stats["_429_count"] = self._429_count
+        return stats
 
     async def close(self) -> None:
         """Close httpx client."""

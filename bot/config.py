@@ -1,17 +1,17 @@
-"""Nastya Bot 42.0 — Configuration (POLLINATIONS PRIMARY + VISION + LOCAL FALLBACK!)
+"""Nastya Bot 43.0 — Configuration (MULTI-MODEL POLLINATIONS + LOCAL FALLBACK!)
 
-v42.0: POLLINATIONS.ai = PRIMARY, Qwen3-4B = LOCAL FALLBACK!
-- Pollinations GPT-5.4 Nano — cloud, fast, smart, VISION!
-- Pollinations GPT-5.4 — reasoning model for complex questions
-- Qwen3-4B-Instruct — local GGUF fallback when cloud is down
-- Qwen2.5-3B REMOVED from project (single local model only)
-- max_tokens=800 for Pollinations (cloud can handle it!)
+v43.0: MULTI-MODEL LOAD BALANCING + ENHANCED HUMAN-LIKE BEHAVIOR!
+- Pollinations.ai — 7 chat models + reasoning + vision (load balanced!)
+- Models: openai (primary), mistral, deepseek, llama, gemma, openai-fast, mistral-4
+- Automatic failover on 429/rate-limit/timeout
+- Qwen3-4B-Instruct — local GGUF fallback when ALL cloud models down
+- max_tokens=1000 for Pollinations (cloud can handle it!)
 - max_tokens=256 for local model (speed optimization)
-- n_ctx=2048, history=10 — optimized for speed
 - REAL PHOTO UNDERSTANDING via Pollinations vision API!
 - Typing delay indicators — human-like behavior
 - Group chat message length limiting
-- Pollinations API key from environment/secrets
+- Proactive messaging — Настя активный собеседник
+- News discussion with emotions — подробные рассказы
 """
 import os
 from typing import Dict, List
@@ -35,17 +35,16 @@ def _env_int(name: str, default: int = 0) -> int:
 # ── Bot Core ────────────────────────────────────────────────
 BOT_TOKEN: str = _env("BOT_TOKEN")
 
-# ── Pollinations.ai — PRIMARY AI Provider ────────────────────
+# ── Pollinations.ai — MULTI-MODEL AI Provider ─────────────────
 POLLINATIONS_API_KEY: str = _env("POLLINATIONS_API_KEY", "")
-# Model: GPT-5.4 Nano (fast, vision-capable, cheap)
-POLLINATIONS_MODEL: str = "openai"  # GPT-5.4 Nano — fast, vision-capable!
+# Models pool (configured in pollinations_provider.py)
 POLLINATIONS_TIMEOUT: float = 45.0
-POLLINATIONS_MAX_TOKENS: int = 800  # Cloud can handle longer responses!
+POLLINATIONS_MAX_TOKENS: int = 1000  # Cloud can handle longer responses!
+POLLINATIONS_MAX_RETRIES: int = 3  # Try up to 3 models on failure
 
 # ── LlamaCpp Model — LOCAL FALLBACK ─────────────────────────
-# Qwen3-4B-Instruct — only when Pollinations is unavailable
+# Qwen3-4B-Instruct — only when ALL Pollinations models are unavailable
 MODEL_PATH: str = _env("MODEL_PATH", "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
-# v41: Qwen2.5-3B REMOVED — single model architecture
 
 MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 2048)
 MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 4)
@@ -107,6 +106,14 @@ DONATION_LABELS = {
 }
 
 PROACTIVE_COOLDOWN = 1800
+
+# ── Group Chat Settings ────────────────────────────────────
+GROUP_MAX_MESSAGE_LENGTH = 200  # Shorter messages in group chats
+GROUP_RESPONSE_CHANCE = 0.3  # 30% chance to respond in groups (avoid spam)
+
+# ── Typing Delay Settings ──────────────────────────────────
+TYPING_DELAY_THRESHOLD = 3.0  # Show delay message if processing > 3s
+TYPING_DELAY_CHANCE = 0.6  # 60% chance to show delay message
 
 # ── Nastya's Vocabulary ─────────────────────────────────────
 NASTYA_VOCABULARY = {
