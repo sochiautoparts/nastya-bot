@@ -1,16 +1,17 @@
-name: Nastya Bot — DUAL-MODEL v37
+name: Nastya Bot — DUAL-MODEL v38
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v37.0 — DUAL-MODEL LLAMA-CPP-PYTHON!
+# Nastya Bot v38.0 — QWEN3 PRIMARY + QWEN2.5-3B SECONDARY!
 #
 # Architecture:
 #   - llama-cpp-python as PRIMARY AI provider (GGUF model in-process!)
-#   - DUAL-MODEL: Phi-4-mini-instruct (PRIMARY) + Qwen3-4B-Instruct (SECONDARY)
-#   - Автотест при старте — выбирает лучшую для русского языка
+#   - DUAL-MODEL: Qwen3-4B (PRIMARY) + Qwen2.5-3B (SECONDARY)
+#   - /no_think для ОБЕИХ моделей — отключает thinking mode
 #   - Автопереключение при ошибках — бот всегда отвечает
-#   - AVX2/AVX512 acceleration — 2-3x faster than Ollama on CPU
-#   - Расширенный контекст 4096 токенов, ответы до 256 токенов
-#   - 10 сообщений в истории (было 4)
+#   - AVX2 acceleration — 2-3x faster than Ollama on CPU
+#   - Расширенный контекст 4096 токенов, ответы до 512 токенов
+#   - 20 сообщений в истории (было 10)
+#   - Умное разбиение длинных сообщений по предложениям
 #   - Pollinations as FALLBACK (if both models unavailable)
 #   - RSS + template commentary for news (NO AI for news!)
 #   - Single concurrency group — ONE bot instance only!
@@ -104,39 +105,16 @@ jobs:
           }
           python3 -c "from llama_cpp import Llama; print('llama-cpp-python OK!')"
 
-      # ── Download PRIMARY model: Phi-4-mini-instruct ──
-      - name: Cache PRIMARY model (Phi-4-mini)
+      # ── Download PRIMARY model: Qwen3-4B-Instruct ──
+      - name: Cache PRIMARY model (Qwen3-4B)
         id: cache-primary
         uses: actions/cache@v4
         with:
-          path: models/Phi-4-mini-instruct-Q4_K_M.gguf
-          key: phi4-mini-instruct-q4km-v1
-
-      - name: Download Phi-4-mini-instruct GGUF model
-        if: steps.cache-primary.outputs.cache-hit != 'true'
-        run: |
-          echo "=== Downloading Phi-4-mini-instruct Q4_K_M model (~2.32GB) ==="
-          mkdir -p models
-          python3 -c "
-          from huggingface_hub import hf_hub_download
-          path = hf_hub_download(
-              repo_id='unsloth/Phi-4-mini-instruct-GGUF',
-              filename='Phi-4-mini-instruct-Q4_K_M.gguf',
-              local_dir='models',
-          )
-          print('Downloaded to:', path)
-          "
-
-      # ── Download SECONDARY model: Qwen3-4B-Instruct ──
-      - name: Cache SECONDARY model (Qwen3-4B)
-        id: cache-secondary
-        uses: actions/cache@v4
-        with:
           path: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
-          key: qwen3-4b-instruct-q4km-v1
+          key: qwen3-4b-instruct-q4km-v2
 
       - name: Download Qwen3-4B-Instruct GGUF model
-        if: steps.cache-secondary.outputs.cache-hit != 'true'
+        if: steps.cache-primary.outputs.cache-hit != 'true'
         run: |
           echo "=== Downloading Qwen3-4B-Instruct Q4_K_M model (~2.4GB) ==="
           mkdir -p models
@@ -150,10 +128,43 @@ jobs:
           print('Downloaded to:', path)
           "
 
+      # ── Download SECONDARY model: Qwen2.5-3B-Instruct ──
+      - name: Cache SECONDARY model (Qwen2.5-3B)
+        id: cache-secondary
+        uses: actions/cache@v4
+        with:
+          path: models/Qwen2.5-3B-Instruct-Q4_K_M.gguf
+          key: qwen25-3b-instruct-q4km-v1
+
+      - name: Download Qwen2.5-3B-Instruct GGUF model
+        if: steps.cache-secondary.outputs.cache-hit != 'true'
+        run: |
+          echo "=== Downloading Qwen2.5-3B-Instruct Q4_K_M model (~2.0GB) ==="
+          mkdir -p models
+          python3 -c "
+          from huggingface_hub import hf_hub_download
+          path = hf_hub_download(
+              repo_id='Qwen/Qwen2.5-3B-Instruct-GGUF',
+              filename='qwen2.5-3b-instruct-q4_k_m.gguf',
+              local_dir='models',
+          )
+          print('Downloaded to:', path)
+          " || {
+            echo "WARNING: huggingface_hub download failed, trying wget..."
+            wget -q "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf" \
+              -O models/Qwen2.5-3B-Instruct-Q4_K_M.gguf || {
+              echo "WARNING: Failed to download SECONDARY model — running with PRIMARY only"
+            }
+          }
+          # Normalize filename (HF hub may download with different case)
+          if [ -f "models/qwen2.5-3b-instruct-q4_k_m.gguf" ] && [ ! -f "models/Qwen2.5-3B-Instruct-Q4_K_M.gguf" ]; then
+            mv "models/qwen2.5-3b-instruct-q4_k_m.gguf" "models/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
+          fi
+
       - name: Verify models
         run: |
           echo "=== Verifying GGUF models ==="
-          for MODEL_FILE in models/Phi-4-mini-instruct-Q4_K_M.gguf models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf; do
+          for MODEL_FILE in models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf models/Qwen2.5-3B-Instruct-Q4_K_M.gguf; do
             if [ ! -f "$MODEL_FILE" ] || [ ! -s "$MODEL_FILE" ]; then
               echo "WARNING: Model file missing or empty: $MODEL_FILE"
             else
@@ -164,12 +175,12 @@ jobs:
           # Quick test with PRIMARY model
           python3 -c "
           from llama_cpp import Llama
-          llm = Llama(model_path='models/Phi-4-mini-instruct-Q4_K_M.gguf', n_ctx=512, n_threads=2, verbose=False)
+          llm = Llama(model_path='models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf', n_ctx=512, n_threads=2, verbose=False)
           resp = llm.create_chat_completion(
-              messages=[{'role': 'system', 'content': 'Ты Настя.'}, {'role': 'user', 'content': 'Привет, как дела?'}],
+              messages=[{'role': 'system', 'content': 'Ты Настя.'}, {'role': 'user', 'content': '/no_think\nПривет, как дела?'}],
               max_tokens=15,
           )
-          print('Phi-4-mini test OK:', resp['choices'][0]['message']['content'][:80])
+          print('Qwen3 test OK:', resp['choices'][0]['message']['content'][:80])
           "
 
       - name: Create data directory
@@ -179,7 +190,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v37
+          key: nastya-db-v38
           restore-keys: |
             nastya-db-
 
@@ -190,16 +201,16 @@ jobs:
           OWNER_ID: ${{ secrets.OWNER_ID }}
           ADMIN_IDS: ${{ secrets.OWNER_ID }}
           BOT_USERNAME: asnastya_bot
-          # PRIMARY: Phi-4-mini-instruct (better Russian, officially supported)
-          MODEL_PATH: models/Phi-4-mini-instruct-Q4_K_M.gguf
-          # SECONDARY: Qwen3-4B-Instruct (proven fallback)
-          MODEL2_PATH: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
-          # Auto-test models on startup
-          MODEL_PREFERENCE: auto
+          # PRIMARY: Qwen3-4B-Instruct (best Russian, live conversational)
+          MODEL_PATH: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+          # SECONDARY: Qwen2.5-3B-Instruct (lightweight fast reserve)
+          MODEL2_PATH: models/Qwen2.5-3B-Instruct-Q4_K_M.gguf
+          # Use qwen3 as primary
+          MODEL_PREFERENCE: qwen3
           MODEL_N_CTX: 4096
           MODEL_N_THREADS: 4
-          MODEL_MAX_TOKENS: 256
-          MODEL_HISTORY_LIMIT: 10
+          MODEL_MAX_TOKENS: 512
+          MODEL_HISTORY_LIMIT: 20
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           CHANNEL_USERNAME: ${{ secrets.CHANNEL_USERNAME }}
@@ -208,10 +219,10 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot 37.0 (DUAL-MODEL — v37) ==="
-          echo "Primary: Phi-4-mini-instruct-Q4_K_M"
-          echo "Secondary: Qwen3-4B-Instruct-Q4_K_M"
-          echo "Context: 4096 tokens, Max output: 256 tokens, History: 10 messages"
+          echo "=== Starting Nastya Bot v38.0 (QWEN3 + QWEN2.5-3B) ==="
+          echo "Primary: Qwen3-4B-Instruct-Q4_K_M"
+          echo "Secondary: Qwen2.5-3B-Instruct-Q4_K_M"
+          echo "Context: 4096 tokens, Max output: 512 tokens, History: 20 messages"
           ls -lh models/*.gguf 2>/dev/null || echo "WARNING: No GGUF models found!"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
@@ -253,7 +264,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v37-${{ github.run_id }}
+          key: nastya-db-v38-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation
