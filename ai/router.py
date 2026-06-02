@@ -42,7 +42,7 @@ from typing import Any, Dict, List, Optional
 from ai.providers.base import AIResponse, ProviderError
 from ai.providers.pollinations_provider import (
     PollinationsProvider, REASONING_CHAT, REASONING_COMPLEX,
-    MODEL_CHAT, MODEL_REASONING, CHAT_MODELS,
+    MODEL_REASONING, MODEL_VISION, CHAT_MODELS,
 )
 from ai.providers.llama_cpp_provider import LlamaCppProvider
 from ai.voice import transcribe_voice_ogg
