@@ -1,11 +1,12 @@
-"""AI Router v41.0 — POLLINATIONS PRIMARY + LOCAL FALLBACK!
+"""AI Router v42.0 — POLLINATIONS PRIMARY + LOCAL FALLBACK + VISION!
 
-АРХИТЕКТУРА v41:
+АРХИТЕКТУРА v42:
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
-    1. PollinationsProvider (gpt-oss-20b) — PRIMARY
-       - Cloud API, быстрый (5-15 сек), умный
-       - reasoning_effort='low' для чата, 'medium' для сложных
+    1. PollinationsProvider (GPT-5.4 Nano) — PRIMARY
+       - gen.pollinations.ai/v1/chat/completions — OpenAI-compatible
+       - Vision support via multimodal content format
        - API ключ для повышенных лимитов
+       - reasoning_effort: 'none' для чата, 'low' для сложных
        - 429 кулдаун: 60 сек после rate limit
     2. LlamaCppProvider (Qwen3-4B) — LOCAL FALLBACK
        - Когда Pollinations недоступен (429, timeout, etc.)
@@ -18,11 +19,17 @@
     - Канал: шаблонные посты, опросы, факты (channel.py)
     - AI НЕ вызывается для фоновых задач!
 
-  Ключевые преимущества v41:
-    - БЫСТРО: Pollinations ответы за 5-15 сек вместо 20-89!
-    - УМНО: gpt-oss-20b с reasoning — лучше понимает контекст
+  VISION (фото-понимание):
+    - Pollinations vision API — Настя ВИДИТ фото!
+    - Фото → base64 → multimodal content → AI понимает
+    - Работает и в чате, и с подписями
+
+  Ключевые преимущества v42:
+    - УМНО: GPT-5.4 Nano с vision — лучше понимает контекст и ВИДИТ фото!
+    - БЫСТРО: 5-15 сек вместо 20-89 на локальной модели
     - НАДЁЖНО: локальная модель как fallback если облако упало
-    - НЕ ОБРЕЗАНО: max_tokens=512 для Pollinations (было 200)
+    - НЕ ОБРЕЗАНО: max_tokens=800 для Pollinations
+    - VISION: Настя понимает что на фото!
 """
 
 import logging
@@ -33,7 +40,10 @@ import re
 from typing import Any, Dict, List, Optional
 
 from ai.providers.base import AIResponse, ProviderError
-from ai.providers.pollinations_provider import PollinationsProvider, REASONING_CHAT, REASONING_COMPLEX
+from ai.providers.pollinations_provider import (
+    PollinationsProvider, REASONING_CHAT, REASONING_COMPLEX,
+    MODEL_CHAT, MODEL_REASONING,
+)
 from ai.providers.llama_cpp_provider import LlamaCppProvider
 from ai.voice import transcribe_voice_ogg
 from bot.config import (
@@ -54,9 +64,10 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """AI Router v41.0 — Pollinations PRIMARY + Local FALLBACK.
+    """AI Router v42.0 — Pollinations PRIMARY + Local FALLBACK + VISION.
 
     Chat: Pollinations → LlamaCpp → static fallback.
+    Vision: Pollinations vision API.
     Background: NO AI — RSS + templates!
     """
 
@@ -69,6 +80,7 @@ class AIRouter:
         self._pollinations_requests: int = 0
         self._local_requests: int = 0
         self._local_fallback_count: int = 0
+        self._vision_requests: int = 0
 
     async def init(self) -> None:
         """Initialize providers: Pollinations PRIMARY + LlamaCpp FALLBACK."""
@@ -79,7 +91,7 @@ class AIRouter:
                 timeout=45.0,
             )
             await self._pollinations.init()
-            logger.info("PollinationsProvider initialized as PRIMARY for chat")
+            logger.info("PollinationsProvider initialized as PRIMARY (chat + vision)")
         except Exception as e:
             logger.warning(f"PollinationsProvider init failed: {e}")
             self._pollinations = None
@@ -120,11 +132,12 @@ class AIRouter:
         model_name = self._local._model_name if self._local and self._local._loaded else "none"
 
         logger.info(
-            f"AI Router v41.0 initialized: "
-            f"pollinations={pollinations_status} (PRIMARY), "
+            f"AI Router v42.0 initialized: "
+            f"pollinations={pollinations_status} (PRIMARY, vision=yes), "
             f"local={local_status} (FALLBACK, model={model_name}), "
             f"news=RSS+templates (no AI), "
-            f"max_tokens={MODEL_MAX_TOKENS}, history={MODEL_HISTORY_LIMIT}"
+            f"models=chat:{MODEL_CHAT}, reasoning:{MODEL_REASONING}, "
+            f"max_tokens=800(cloud)/256(local), history={MODEL_HISTORY_LIMIT}"
         )
 
     async def close(self) -> None:
@@ -151,6 +164,57 @@ class AIRouter:
         else:
             return await self._route_background(prompt, system_prompt, messages, **kwargs)
 
+    async def vision(self, prompt: str, image_data: bytes,
+                     image_format: str = "jpeg", system_prompt: str = "",
+                     **kwargs) -> AIResponse:
+        """Route vision request: Pollinations vision → fallback to caption-only.
+
+        Args:
+            prompt: Text prompt about the image
+            image_data: Raw image bytes
+            image_format: Image format (jpeg, png, webp)
+            system_prompt: System instructions
+        """
+        self._total_requests += 1
+        self._vision_requests += 1
+
+        # ── 1. Pollinations Vision — PRIMARY ──
+        if self._pollinations and self._pollinations.is_available():
+            try:
+                result = await self._pollinations.generate_vision(
+                    prompt=prompt,
+                    image_data=image_data,
+                    image_format=image_format,
+                    system_prompt=system_prompt,
+                    max_tokens=600,
+                    temperature=0.85,
+                )
+                if result and result.text:
+                    cleaned = self.clean_ai_response(result.text)
+                    if cleaned:
+                        return AIResponse(
+                            text=cleaned,
+                            provider=result.provider,
+                            model=result.model,
+                            tokens_used=result.tokens_used,
+                            metadata={**result.metadata, "role": "vision_primary"},
+                        )
+            except ProviderError as e:
+                logger.warning(f"Pollinations vision error: {e}")
+            except Exception as e:
+                logger.warning(f"Pollinations vision unexpected error: {e}")
+
+        # ── 2. No fallback for vision — local model can't see images ──
+        self._total_fallbacks += 1
+        logger.warning("Vision failed — Pollinations unavailable, local model can't see images")
+        return AIResponse(
+            text="Ой, Настя не может разглядеть фотку... Попробуй ещё раз? 📸💅",
+            provider="fallback",
+            model="none",
+            tokens_used=0,
+            metadata={"role": "vision_fallback"},
+        )
+
     async def _route_chat(self, prompt: str, system_prompt: str,
                           messages: Optional[List[Dict]], **kwargs) -> AIResponse:
         """Chat route: Pollinations → Local → static fallback."""
@@ -158,14 +222,14 @@ class AIRouter:
         # ── 1. Pollinations — PRIMARY ──
         if self._pollinations and self._pollinations.is_available():
             try:
-                # Use 'medium' reasoning for complex queries
-                reasoning = REASONING_COMPLEX if len(prompt) > 200 else REASONING_CHAT
+                # Use reasoning for complex queries
+                reasoning = REASONING_COMPLEX if len(prompt) > 300 else REASONING_CHAT
 
                 result = await self._pollinations.generate(
                     prompt,
                     system_prompt=system_prompt,
                     messages=messages,
-                    max_tokens=512,  # Pollinations can handle longer responses
+                    max_tokens=800,  # Pollinations can handle longer responses
                     reasoning_effort=reasoning,
                 )
                 if result and result.text:
@@ -234,7 +298,7 @@ class AIRouter:
                     prompt,
                     system_prompt=system_prompt,
                     messages=messages,
-                    max_tokens=256,
+                    max_tokens=300,
                     reasoning_effort=REASONING_CHAT,
                 )
                 if result and result.text:
@@ -308,7 +372,7 @@ class AIRouter:
         for pattern in sse_patterns:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-        # Strip think tags (Qwen3, gpt-oss-20b reasoning)
+        # Strip think tags (Qwen3, reasoning models)
         text = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<thinking\b[^>]*>.*?</thinking\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'</?think[^>]*>', '', text, flags=re.IGNORECASE)
@@ -354,6 +418,7 @@ class AIRouter:
         status["pollinations"] = {
             "available": self._pollinations is not None and self._pollinations.is_available(),
             "role": "PRIMARY",
+            "vision": True,
         }
         if self._local:
             stats = self._local.get_stats()
@@ -370,5 +435,6 @@ class AIRouter:
             "pollinations_requests": self._pollinations_requests,
             "local_requests": self._local_requests,
             "local_fallback_count": self._local_fallback_count,
+            "vision_requests": self._vision_requests,
         }
         return status

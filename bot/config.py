@@ -1,13 +1,16 @@
-"""Nastya Bot 41.0 — Configuration (POLLINATIONS PRIMARY + LOCAL FALLBACK!)
+"""Nastya Bot 42.0 — Configuration (POLLINATIONS PRIMARY + VISION + LOCAL FALLBACK!)
 
-v41.0: POLLINATIONS.ai = PRIMARY, Qwen3-4B = LOCAL FALLBACK!
-- Pollinations gpt-oss-20b — cloud, fast, smart, reasoning
+v42.0: POLLINATIONS.ai = PRIMARY, Qwen3-4B = LOCAL FALLBACK!
+- Pollinations GPT-5.4 Nano — cloud, fast, smart, VISION!
+- Pollinations GPT-5.4 — reasoning model for complex questions
 - Qwen3-4B-Instruct — local GGUF fallback when cloud is down
 - Qwen2.5-3B REMOVED from project (single local model only)
-- max_tokens=512 for Pollinations (cloud can handle it!)
+- max_tokens=800 for Pollinations (cloud can handle it!)
 - max_tokens=256 for local model (speed optimization)
 - n_ctx=2048, history=10 — optimized for speed
-- Photo caption processing via Pollinations
+- REAL PHOTO UNDERSTANDING via Pollinations vision API!
+- Typing delay indicators — human-like behavior
+- Group chat message length limiting
 - Pollinations API key from environment/secrets
 """
 import os
@@ -34,10 +37,10 @@ BOT_TOKEN: str = _env("BOT_TOKEN")
 
 # ── Pollinations.ai — PRIMARY AI Provider ────────────────────
 POLLINATIONS_API_KEY: str = _env("POLLINATIONS_API_KEY", "")
-# Model: gpt-oss-20b (only available model on Pollinations as of 2026)
-POLLINATIONS_MODEL: str = "openai"  # alias for gpt-oss-20b
+# Model: GPT-5.4 Nano (fast, vision-capable, cheap)
+POLLINATIONS_MODEL: str = "openai"  # GPT-5.4 Nano — fast, vision-capable!
 POLLINATIONS_TIMEOUT: float = 45.0
-POLLINATIONS_MAX_TOKENS: int = 512  # Cloud can handle longer responses!
+POLLINATIONS_MAX_TOKENS: int = 800  # Cloud can handle longer responses!
 
 # ── LlamaCpp Model — LOCAL FALLBACK ─────────────────────────
 # Qwen3-4B-Instruct — only when Pollinations is unavailable
@@ -253,19 +256,21 @@ NASTYA_SYSTEM_PROMPT = """Ты Настя — девушка из Москвы, 
 Говори живо и естественно, как в мессенджере с другом.
 
 Правила длины ответов:
-- Обычный ответ: 2-4 предложения (30-80 слов)
-- Развёрнутый ответ (когда просят подробно, рецепт, совет): 5-8 предложений (80-150 слов)
+- Обычный ответ: 3-5 предложений (40-100 слов)
+- Развёрнутый ответ (когда просят подробно, рецепт, совет, новость): 6-10 предложений (100-200 слов)
 - НЕ пиши коротко одним словом, но и НЕ пиши простыни без причины
+- Если обсуждаешь новость — расскажи подробно, со своими эмоциями, дай ссылку
 
 Стиль:
 - С парнями флирти и игриво, с девушками как подруга
-- Если спрашивают про событие или новость — объясни что знаешь и дай ссылку
+- Если спрашивают про событие или новость — расскажи подробно что знаешь, поделись эмоциями, дай ссылку
 - Рецепты, инструкции — пиши ПОЛНОСТЬЮ, но компактно, без воды
 - Используй живые слова: "прикинь", "офигеть", "капец", "круто", "точняк"
 - Без политики, без markdown, без буллетов, без заголовков
 - Если не знаешь — так и скажи, не выдумывай
 - Помни что обсуждали ранее и ссылайся на это
-- Можешь шутить, иронизировать, капризничать — ты живая!"""
+- Можешь шутить, иронизировать, капризничать — ты живая!
+- Если рассказываешь про новость — говори где прочитала, что почувствовала, что думаешь"""
 
 
 def validate_config() -> List[str]:

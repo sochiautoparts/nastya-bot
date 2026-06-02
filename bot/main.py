@@ -1,16 +1,18 @@
-"""Nastya Bot 41.0 — POLLINATIONS PRIMARY + LOCAL FALLBACK! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 42.0 — POLLINATIONS PRIMARY + VISION + LOCAL FALLBACK! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v41.0:
-  - ЧАТ: Pollinations.ai (gpt-oss-20b) PRIMARY → Qwen3-4B LOCAL FALLBACK
+Architecture v42.0:
+  - ЧАТ: Pollinations.ai (GPT-5.4 Nano) PRIMARY → Qwen3-4B LOCAL FALLBACK
+  - VISION: Pollinations vision API — Настя ВИДИТ фото!
   - Новости: RSS-парсер + шаблонные комментарии (БЕЗ AI!)
   - Канал: шаблонные посты, опросы, факты (БЕЗ AI!)
-  - Фото: подписи обрабатываются через AI!
+  - Фото: REAL VISION — base64 → multimodal → AI понимает!
+  - Typing delay indicators — human-like behavior
+  - Group chat message length limiting
   - Pollinations API ключ для повышенных лимитов
   - Qwen3-4B GGUF как FALLBACK — загружается ПРЯМО в процесс
   - AVX2 ускорение — в 2-3x быстрее на CPU
   - /no_think + stop=["<think"] для Qwen3 — блокирует thinking mode
   - Dedup: tracks active asyncio.Task per user
-  - Photo rate limiting — предотвращает flood control
   - HEALTH WATCHDOG: monitors Telegram API + model health
 """
 import asyncio
@@ -463,7 +465,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 41.0 Starting (POLLINATIONS PRIMARY + LOCAL FALLBACK) ===")
+    logger.info("=== Nastya Bot 42.0 Starting (POLLINATIONS + VISION + LOCAL FALLBACK) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -510,7 +512,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 41.0 Ready (POLLINATIONS PRIMARY + LOCAL FALLBACK) ===")
+    logger.info("=== Nastya Bot 42.0 Ready (POLLINATIONS + VISION + LOCAL FALLBACK) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

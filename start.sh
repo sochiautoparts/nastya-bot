@@ -1,13 +1,14 @@
 #!/bin/bash
-# Nastya Bot v41 — POLLINATIONS PRIMARY + LOCAL FALLBACK!
-# Pollinations gpt-oss-20b = PRIMARY (cloud, fast, smart)
+# Nastya Bot v42 — POLLINATIONS PRIMARY + VISION + LOCAL FALLBACK!
+# Pollinations GPT-5.4 Nano = PRIMARY (cloud, fast, smart, VISION!)
+# Pollinations GPT-5.4 = REASONING (complex questions)
 # Qwen3-4B-Instruct = LOCAL FALLBACK (offline reserve)
 # AVX2 acceleration — faster inference on CPU
-# v41: Single model, Pollinations primary, photo caption AI
+# v42: Real photo understanding, typing indicators, group limits
 
 set -e
 
-echo "=== Nastya Bot v41 (POLLINATIONS + LOCAL FALLBACK) ==="
+echo "=== Nastya Bot v42 (POLLINATIONS + VISION + LOCAL FALLBACK) ==="
 
 # ── Install llama-cpp-python with AVX2 acceleration ──
 if ! python3 -c "import llama_cpp" 2>/dev/null; then
@@ -66,7 +67,7 @@ fi
 
 # ── Check Pollinations API key ──
 if [ -n "$POLLINATIONS_API_KEY" ]; then
-    echo "POLLINATIONS: API key configured (PRIMARY)"
+    echo "POLLINATIONS: API key configured (PRIMARY + VISION)"
 else
     echo "POLLINATIONS: no API key — using anonymous mode (rate limited)"
 fi
@@ -81,7 +82,7 @@ pip install -r requirements.txt 2>&1 || {
 mkdir -p data
 
 # ── Start bot ──
-echo "=== Starting Nastya Bot v41 (Pollinations PRIMARY + Qwen3 FALLBACK) ==="
-echo "Config: Pollinations=PRIMARY (gpt-oss-20b), Local=FALLBACK (Qwen3-4B)"
-echo "Features: reasoning_effort=low, max_tokens=512, photo captions, web search"
+echo "=== Starting Nastya Bot v42 (Pollinations + VISION + Qwen3 FALLBACK) ==="
+echo "Config: Pollinations=PRIMARY (GPT-5.4 Nano + Vision), Local=FALLBACK (Qwen3-4B)"
+echo "Features: vision=yes, reasoning=GPT-5.4, max_tokens=800, typing_indicators=yes"
 python3 -m bot.main

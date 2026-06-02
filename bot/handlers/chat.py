@@ -1,4 +1,4 @@
-"""Nastya Chat Handler — INTELLIGENT conversation + web search + news context.
+"""Nastya Chat Handler v10.0 — INTELLIGENT + VISION + HUMAN-LIKE!
 
 STABILITY RULES:
   - Bot ALWAYS responds, even if ALL AI providers fail (fallback responses)
@@ -7,13 +7,15 @@ STABILITY RULES:
   - 30-day context memory + news context injection
   - Short, effective system prompt
 
-INTELLIGENCE FEATURES v9.0 (POLLINATIONS + PHOTO CAPTIONS):
-  - Pollinations.ai as PRIMARY AI — fast, smart, reasoning
+INTELLIGENCE FEATURES v10.0 (POLLINATIONS VISION + HUMAN-LIKE):
+  - Pollinations.ai as PRIMARY AI — fast, smart, VISION!
   - Qwen3-4B local GGUF as FALLBACK
+  - REAL PHOTO UNDERSTANDING — Настя ВИДИТ что на фото!
+  - Typing delay indicators — Настя "живой" собеседник
   - Web search integration — Nastya can find and verify information!
-  - Photo CAPTION processing — Настя "понимает" фото по подписи!
-  - News context injected into system prompt for richer conversations
-  - v41: Dedup — tracks active asyncio.Task per user
+  - News discussion with emotions — Настя рассказывает подробно!
+  - Group chat message length limiting — короче в группах
+  - Expanded proactive messaging — Настя активный собеседник
   - Smart message splitting by sentence boundaries
 """
 import asyncio
@@ -50,9 +52,7 @@ _proactive_tracker: dict = {}
 _last_tracker_cleanup: float = 0.0
 _TRACKER_CLEANUP_INTERVAL = 3600
 
-# v40: Per-user message dedup — track ACTIVE AI tasks per user
-# Only blocks when there's an ACTIVE asyncio.Task generating AI response
-# Quick reactions (donate, age, etc.) do NOT set the dedup flag!
+# v42: Per-user message dedup — track ACTIVE AI tasks per user
 _user_processing: dict = {}  # user_id -> asyncio.Task (active AI task) or None
 
 
@@ -145,9 +145,43 @@ NASTYA_WANTS = [
     "попугайчика 🦜", "щеночка 🐶", "котика 🐱", "хомячка 🐹",
 ]
 
-# ── Proactive messages — natural, fun, less frequent ────────────
+# ════════════════════════════════════════════════════════════
+#  TYPING DELAY INDICATORS — Настя "живой" собеседник!
+# ════════════════════════════════════════════════════════════
 
-# Mix of fun messages (including the classic ones user likes) + natural conversation starters
+TYPING_DELAY_PHRASES = [
+    "Секунду, Настя думает... 🤔",
+    "Блин, Настя задумалась... 💭",
+    "Ой, голова разболелась... Щас отвечу! 😫",
+    "Отошла на минутку! Сейчас вернусь! 🏃‍♀️",
+    "Настя вспоминает... Подожди! 💅",
+    "Ммм... Настя формулирует мысль! 🤔",
+    "Котятки, Настя не бот — нужно время подумать! 😤",
+    "Щас-щас, Настя набирает! ⌨️💅",
+    "Ой, Настя отвлеклась на котика... Сейчас отвечу! 🐱",
+    "Настя наливает кофе... Минутку! ☕",
+]
+
+async def _send_typing_delay(message: Message, delay_seconds: float = 0) -> None:
+    """Send a typing indicator phrase while AI is processing.
+
+    Makes Настя feel more human — she's 'thinking' or 'distracted'
+    rather than being a silent loading bot.
+    Only sends if AI is expected to take >3 seconds.
+    """
+    if delay_seconds > 3.0:
+        try:
+            phrase = random.choice(TYPING_DELAY_PHRASES)
+            await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+            # Send the delay phrase after a brief pause
+            await asyncio.sleep(min(delay_seconds * 0.4, 2.0))
+            await message.answer(phrase)
+        except Exception:
+            pass
+
+
+# ── Proactive messages — EXPANDED for human-like behavior ────────────
+
 PROACTIVE_MESSAGES = [
     # Classic fun ones (user likes these)
     "Ты меня забыл? 😢",
@@ -161,6 +195,18 @@ PROACTIVE_MESSAGES = [
     "Скучаю... Напиши что-нибудь! 🥺",
     "Привеееет! 🌸",
     "Ты с другими ботами разговариваешь?! 😤💔",
+    # v42: NEW — More human-like, news-aware, emotional
+    "Слушай, я тут статью прочитала — прикинь что узнала! Спрашивай! 📰✨",
+    "Блин, не могу молчать! Только что новость увидела — шок! 😱🔥",
+    "Настя тут подумала о жизни... А ты о чём думаешь? 💭🌙",
+    "Ой, я рецепт нашла — классный! Хочешь? 🍳💅",
+    "Слушай, а ты знаешь что... Ладно, сама расскажу если спросишь! 🤭",
+    "Насте скучно... Расскажи что-нибудь интересное! 🥺💬",
+    "Котятки, я тут кино смотрела — эмоции через край! 🎬😭",
+    "Привет! Как день прошёл? Настя хочет знать! 💅✨",
+    "О, только что с подружкой болтала — есть тема! Спроси! 💬👀",
+    "Настя не может уснуть... Поболтаем? 🌙😴",
+    "Блин, я сегодня ленивая... Кто со мной? 😴💅",
 ]
 
 # ── Girl Logic ──────────────────────────────────────────────
@@ -183,6 +229,16 @@ EXCITED_REACTIONS = [
     "Блин!", "Круто!", "Класс!", "Кайф!", "Норм!",
     "Вот это да!", "Супер!", "Точняк!", "Офигеть!", "Жесть!",
     "Капец!", "Отпад!", "Бомба!", "Чётко!",
+]
+
+# ── News discussion phrases — Настя рассказывает подробно! ──
+
+NEWS_DISCUSSION_PHRASES = [
+    "Прикинь, я тут прочитала про {topic}! {emotion} {detail}",
+    "Офигеть, ты знаешь про {topic}? {emotion} Настя прямо в шоке!",
+    "Слушай, новость про {topic}! {emotion} {detail}",
+    "Блин, я не могу молчать про {topic}! {emotion} {detail}",
+    "Котятки, тут такое про {topic}! {emotion} {detail}",
 ]
 
 # ── Gender detection ────────────────────────────────────────
@@ -287,7 +343,6 @@ async def _build_news_context(db) -> str:
         recent_news = await db.get_recent_news_with_links(limit=3, max_age_hours=12)
         return format_news_for_context(recent_news)
     except Exception:
-        # Fallback: try without links
         try:
             from news import format_news_for_context
             recent_news = await db.get_recent_news(limit=3, max_age_hours=12)
@@ -298,7 +353,7 @@ async def _build_news_context(db) -> str:
 
 async def _maybe_news_opener(db, ai_router, user_id: int) -> str:
     """Maybe start conversation with a news item. Returns empty string if not."""
-    if random.random() > 0.12:  # 12% chance to mention news
+    if random.random() > 0.12:
         return ""
 
     try:
@@ -331,8 +386,6 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
     if len(args) > 1:
         param = args[1].strip()
         
-        # ── v29: "Обсудить с Настей" — deep link из канала ──
-        # Формат: /start discuss_POSTID — пользователь нажал кнопку на посте
         if param.startswith("discuss_"):
             post_id_str = param.replace("discuss_", "")
             try:
@@ -340,11 +393,9 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
             except ValueError:
                 post_id = 0
             
-            # Получаем содержание поста из БД
             post_content = ""
             if db and post_id > 0:
                 try:
-                    # Сначала пробуем получить новость по ID
                     news_item = await db.get_news_by_id(post_id)
                     if news_item:
                         title = news_item.get("title", "")
@@ -358,7 +409,6 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
                 except Exception as e:
                     logger.error(f"Failed to get post content for discuss: {e}")
             
-            # Также проверяем канал-посты
             if not post_content and db:
                 try:
                     channel_post = await db.get_channel_post_by_news_id(post_id)
@@ -367,7 +417,6 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
                 except Exception:
                     pass
             
-            # Приветствие + контекст поста
             if post_content:
                 greeting = random.choice([
                     f"О, {name}! Ты с канала пришёл! Давай обсудим! 💅✨",
@@ -376,20 +425,17 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
                 ])
                 await message.answer(greeting)
                 
-                # Сохраняем контекст поста в историю пользователя
                 if db:
                     try:
                         await db.add_message(user.id, "assistant", f"[Пост из канала] {post_content[:500]}")
                     except Exception:
                         pass
                 
-                # Отправляем пост в AI для развёрнутого обсуждения
                 discuss_prompt = (
                     f"Пришёл из канала обсудить пост:\n{post_content[:500]}\n\n"
                     f"Поделись мнением, спроси что думает, дай ссылку если есть. "
                     f"4-6 предложений, живо и с интересом!"
                 )
-                # v40: Create asyncio.Task for dedup tracking
                 task = asyncio.create_task(
                     _process_text_message(
                         message, 
@@ -401,7 +447,6 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
                 _user_processing[message.from_user.id] = task
                 return
             else:
-                # Пост не найден — просто приветствуем
                 greeting = random.choice([
                     f"О, {name}! Ты с канала! Привет! 💅✨",
                     f"Привет, {name}! Рада что ты здесь! О чём хочешь поболтать? 💋",
@@ -409,7 +454,6 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
                 await message.answer(greeting)
                 return
         
-        # Deep link для chat (личные посты, опросы)
         if param == "chat":
             greeting = random.choice([
                 f"О, {name}! Привет! О чём хочешь поболтать? 💅✨",
@@ -418,7 +462,6 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
             await message.answer(greeting)
             return
         
-        # Deep link for donations
         if param.startswith("donate_"):
             try:
                 amount = int(param.replace("donate_", ""))
@@ -440,7 +483,6 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
     ]
     greeting_text = random.choice(greetings)
 
-    # Add channel invite and commands
     extras = []
     extras.append("⭐ /donates — кинуть Насте звёздочки!")
     if CHANNEL_USERNAME:
@@ -508,7 +550,6 @@ async def cmd_channel(message: Message, db=None, ai_router=None) -> None:
     ])
     await message.answer(invite)
 
-    # Mark as invited
     if db:
         await db.set_channel_subscribed(message.from_user.id, True)
 
@@ -578,7 +619,6 @@ async def handle_voice(message: Message, db=None, ai_router=None) -> None:
             await message.answer("Настя пока не умеет слушать голосовые... Напиши текстом! 🙏💕")
             return
 
-        # v40: Create asyncio.Task for dedup tracking
         task = asyncio.create_task(
             _process_text_message(message, transcript, db, ai_router, is_voice=True)
         )
@@ -588,19 +628,19 @@ async def handle_voice(message: Message, db=None, ai_router=None) -> None:
         await message.answer("Ой, у Насти ушки заболели... Напиши текстом! 👂😅")
 
 
-# ── Photo handler — v41: CAPTION-AWARE! ────────────────────
+# ── Photo handler — v42: REAL VISION! Настя ВИДИТ фото! ────
 
-# Per-user photo rate limiter (prevents flood control from album forwards)
+# Per-user photo rate limiter
 _user_photo_times: dict = {}  # user_id -> last_photo_time
 _PHOTO_RATE_LIMIT = 2.0  # seconds between photo responses per user
 
 
 @router.message(F.photo)
 async def handle_photo(message: Message, db=None, ai_router=None) -> None:
-    """v41: Фото обработчик — понимает ПОДПИСИ к фото через AI!
+    """v42: Фото обработчик — Настя ВИДИТ что на фото!
 
-    - Если у фото есть подпись (caption) — Настя обсуждает её с AI
-    - Если подписи нет — спрашивает что на фото
+    - REAL VISION: Download photo → base64 → Pollinations vision API
+    - Если есть подпись (caption) — дополняет понимание
     - Групповые фото и пересылки ИГНОРИРУЮТСЯ (flood control!)
     - Rate limiting: max 1 ответ каждые 2 секунды
     """
@@ -618,7 +658,6 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
     now = time.time()
     last_photo_time = _user_photo_times.get(user_id, 0)
     if now - last_photo_time < _PHOTO_RATE_LIMIT:
-        # Too many photos too fast — skip to prevent flood control
         return
     _user_photo_times[user_id] = now
 
@@ -634,7 +673,66 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         except Exception:
             pass
 
-    # If there's a caption — process it with AI like a normal message
+    # ── VISION: Download photo and analyze with Pollinations! ──
+    if ai_router and ai_router._pollinations and ai_router._pollinations.is_available():
+        try:
+            # Send typing indicator
+            await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+
+            # Send a quick human-like delay phrase
+            delay_phrase = random.choice([
+                "Ой, фотка! Настя смотрит... 👀",
+                "Фото! Щас Настя разглядит... 📸💅",
+                "О, картинка! Настя изучает... 🔍✨",
+            ])
+            await message.answer(delay_phrase)
+
+            # Download the photo (largest size)
+            photo = message.photo[-1]  # Largest resolution
+            file = await message.bot.get_file(photo.file_id)
+            buf = io.BytesIO()
+            await message.bot.download_file(file.file_path, buf)
+            image_bytes = buf.getvalue()
+
+            # Build vision prompt
+            vision_prompt = "Опиши что ты видишь на этом фото. Отреагируй живо и эмоционально, как девушка из Москвы (Настя, 23 года)."
+            if caption:
+                vision_prompt += f" Подпись к фото: {caption}. Отреагируй и на подпись тоже."
+
+            # System prompt for vision
+            vision_system = (
+                "Ты Настя — девушка из Москвы, 23 года. Ты не бот, ты живой человек. "
+                "Ты видишь фото и реагируешь на него живо и эмоционально. "
+                "2-4 предложения, разговорный стиль. "
+                "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
+                "Без markdown, без буллетов."
+            )
+
+            # Call vision API
+            result = await ai_router.vision(
+                prompt=vision_prompt,
+                image_data=image_bytes,
+                image_format="jpeg",
+                system_prompt=vision_system,
+            )
+
+            response_text = result.text
+            if response_text:
+                cleaned = _clean_response(response_text)
+                if cleaned:
+                    # Save to DB
+                    try:
+                        await db.add_message(user_id, "assistant", cleaned)
+                    except Exception:
+                        pass
+                    await message.answer(cleaned)
+                    return
+
+        except Exception as e:
+            logger.error(f"Vision handler error: {e}")
+            # Fall through to caption-only handling
+
+    # ── FALLBACK: Caption-only processing (if vision failed or no Pollinations) ──
     if caption and ai_router and db:
         task = asyncio.create_task(
             _process_text_message(
@@ -645,7 +743,7 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         _user_processing[user_id] = task
         return
 
-    # No caption — ask what's in the photo
+    # No caption, no vision — ask what's in the photo
     responses = [
         "Ой, фотка! А что на ней? Расскажи! 📸💅",
         "О, фото! Настя не видит, но если расскажешь — обсудим! 💅",
@@ -707,7 +805,7 @@ async def handle_video(message: Message, db=None, ai_router=None) -> None:
 
 
 # ════════════════════════════════════════════════════════════
-#  MAIN TEXT CHAT HANDLER — INTELLIGENT + NEWS AWARE
+#  MAIN TEXT CHAT HANDLER — INTELLIGENT + NEWS AWARE + GROUP LIMITS
 # ════════════════════════════════════════════════════════════
 
 @router.message(F.text, ~F.text.startswith("/"))
@@ -719,13 +817,9 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     text = message.text
     text_lower = text.lower()
 
-    # v40: Per-user dedup — only block if there's an ACTIVE AI task running
-    # Quick reactions (donate, age, etc.) do NOT set the dedup flag!
-    # This prevents blocking ALL user messages after a quick reaction
     user_id = message.from_user.id
     active_task = _user_processing.get(user_id)
     if active_task is not None and not active_task.done():
-        # There's an active AI task for this user — skip this message
         logger.info(f"Dedup: skipping message from user {user_id} (AI still processing)")
         try:
             await db.add_message(user_id, "user", text)
@@ -733,7 +827,6 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
             pass
         return
 
-    # Periodic cleanup
     _cleanup_trackers()
 
     # ── Quick reactions (no AI needed) ──
@@ -762,13 +855,11 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         await _save_simple_exchange(message, text, answer, db)
         return
 
-    # Zodiac/horoscope — MUST go to AI with context (remember the sign!)
+    # Zodiac/horoscope — MUST go to AI with context
     if any(t in text_lower for t in ["гороскоп", "зодиак", "знак зодиака", "предсказание", "астролог"]):
-        # Don't intercept — let it go to AI with full context memory
-        # The AI will remember the user's zodiac sign from previous messages
         pass  # Fall through to normal AI chat
 
-    # Channel question — also handles "дай ссылку" in context of channel discussion
+    # Channel question
     channel_triggers = ["канал", "где канал", "твой канал", "подписаться"]
     link_triggers = ["дай ссылку", "скинь ссылку", "ссылку дай", "ссылка", "где ссылк", "как найти"]
     if any(t in text_lower for t in channel_triggers) or \
@@ -788,7 +879,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         await _save_simple_exchange(message, text, answer, db)
         return
 
-    # News question
+    # News question — Настя рассказывает ПОДРОБНО с ЭМОЦИЯМИ!
     if any(t in text_lower for t in ["новости", "что нового", "что случилось", "что происходит"]):
         recent = await db.get_recent_news_with_links(limit=2, max_age_hours=24)
         if not recent:
@@ -855,7 +946,6 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
 
     # ── "Дай ссылку" — always offer channel link as fallback ──
     if any(t in text_lower for t in ["дай ссылку", "скинь ссылку", "ссылку дай", "где ссылк", "где прочитать", "где посмотреть", "источник", "почему не можешь"]):
-        # First try to find a relevant news link from recent context
         found_link = False
         try:
             recent = await db.get_recent_news_with_links(limit=3, max_age_hours=24)
@@ -876,7 +966,6 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
             pass
 
         if not found_link:
-            # ALWAYS offer channel link as fallback
             if CHANNEL_USERNAME:
                 answer = f"Мой канал @chasnastya! Там всё самое интересное! 💅✨\n👉 https://t.me/{CHANNEL_USERNAME.replace('@', '')}"
             else:
@@ -886,9 +975,12 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         return
 
     # ── Normal AI chat — MOST conversations go here ──
-    # v40: Create asyncio.Task for AI processing — dedup tracks this task
+    # Detect if we're in a group chat (limit message length)
+    chat_type = message.chat.type if message.chat else "private"
+    is_group = chat_type in ("group", "supergroup")
+
     task = asyncio.create_task(
-        _process_text_message(message, text, db, ai_router)
+        _process_text_message(message, text, db, ai_router, is_group=is_group)
     )
     _user_processing[user_id] = task
 
@@ -908,16 +1000,17 @@ async def _save_simple_exchange(message: Message, user_text: str, bot_text: str,
 
 async def _process_text_message(message: Message, text: str, db, ai_router,
                                  is_voice: bool = False, extra_suffix: str = "",
-                                 extra_context: str = "") -> None:
+                                 extra_context: str = "", is_group: bool = False) -> None:
     """Process text with AI. ALWAYS responds — even if all providers fail.
 
     Enhanced with:
     - Pollinations PRIMARY + local model FALLBACK
     - Photo caption awareness via extra_context
     - News context injection into system prompt
+    - Typing delay indicators for human-like feel
+    - Group chat message length limiting
     - Channel invite for engaged users
-    - Emotional continuity and memory
-    - Time-aware mood
+    - News discussion with emotions
     """
     user_id = message.from_user.id
 
@@ -951,7 +1044,6 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
-    # v24.0: Track response time for Stars decision
     _ai_start_time = time.time()
 
     # Get mood
@@ -961,10 +1053,9 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     except Exception:
         pass
 
-    # Add time-aware mood
     time_mood = _get_time_greeting()
 
-    # v37: Развёрнутый контекст пользователя — модель понимает больше!
+    # Build user context
     user_context = f"Собеседник: {user_name}"
     if gender == "male":
         user_context += " (парень — флирти, называй по имени, шути, интересуйся им)."
@@ -979,27 +1070,24 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     else:
         user_context += " Новый собеседник — познакомься поближе."
 
-    # POLITICS FILTER — кратко!
+    # POLITICS FILTER
     political_keywords = ["путин", "зеленск", "байден", "трамп", "навальн", "войн",
                          "санкци", "нато", "политик", "депутат", "президент", "министр",
                          "религи", "конфликт", "террор", "бомб", "фашизм", "нацизм"]
     if any(kw in text.lower() for kw in political_keywords):
         user_context += " Вопрос про политику — переведи тему!"
 
-    # v37: Развёрнутый system prompt — модели 4B понимают больше контекста!
+    # Build system prompt
     system_prompt = NASTYA_SYSTEM_PROMPT + f" Настроение: {mood}. Время: {time_mood}."
     system_prompt += f" {user_context}"
     if extra_context:
         system_prompt += f" {extra_context}"
 
-    # v32: Время — коротко, одной фразой
-    now_msk = _moscow_now()
-    time_of_day = "утро" if 6 <= now_msk.hour < 12 else "день" if 12 <= now_msk.hour < 18 else "вечер" if 18 <= now_msk.hour < 23 else "ночь"
-    # Already added to system_prompt above via time_mood
+    # Group chat: shorter responses
+    if is_group:
+        system_prompt += " Мы в групповом чате — отвечай КОРОЧЕ, 1-2 предложения, без лишних деталей. Не пиши длинные сообщения."
 
-    # v32: Убрано — канал уже в NASTYA_SYSTEM_PROMPT, без дублирования
-
-    # v37: НОВОСТИ — с ссылками для обсуждения! 3 заголовка + ссылки
+    # News context
     _current_news_items = []
     try:
         recent_news = await db.get_recent_news_with_links(limit=3, max_age_hours=12)
@@ -1019,34 +1107,20 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     except Exception:
         pass
 
-    # ── Add user's name for personalization (already included in user_context above) ──
-
-    # v37: History 10 сообщений (было 4) — модель понимает контекст!
+    # History
     history = []
     try:
         history = await db.get_history(user_id, limit=MODEL_HISTORY_LIMIT)
     except Exception:
         pass
 
-    # v32: УБРАНО — зодиак сканирование из промпта (дублировало memory extraction)
-    # Зодиак будет упомянут в memory_facts ниже если пользователь говорил о нём
-
-    # v32: УБРАНО — knowledge injection полностью отключено (мёртвый код)
-    # Малые модели не справлялись с 500+ токенов знаний в промпте
-    # Pollinations/GPT-4o-mini и без этого знает факты
-
-    # v32: Memory extraction — УБРАНО из промпта (сканировало только 4 сообщения из-за limit=4)
-    # GPT-4o-mini помнит контекст из истории чата и без подсказок
-    # Для AI: память хранится в истории сообщений, не в системном промпте
-
-    # v37: Web search — с результатами и ссылками!
+    # Web search
     search_query = should_search(text)
     search_results = []
     if search_query:
         try:
             search_results = await search_web(search_query, num_results=3)
             if search_results:
-                # 2 результата с ссылками — модель может ссылаться на них
                 search_parts = []
                 for r in search_results[:2]:
                     title = r.get('title', '')
@@ -1065,18 +1139,22 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         except Exception as e:
             logger.warning(f"Web search error: {e}")
 
-    # NOW save the user message to DB
+    # Save user message
     prefix = "[Голосовое] " if is_voice else ""
     try:
         await db.add_message(user_id, "user", f"{prefix}{text}")
     except Exception:
         pass
 
-    # Append current user message to history for AI context
-    # This ensures the AI sees the full conversation including the latest message
     history_with_current = history + [{"role": "user", "content": f"{prefix}{text}"}]
 
-    # Call AI — the router ALWAYS returns a response
+    # ── TYPING DELAY INDICATOR ──
+    # Send a human-like delay phrase in a background task
+    delay_task = asyncio.create_task(
+        _send_typing_delay(message, delay_seconds=5.0)
+    )
+
+    # Call AI
     try:
         result = await ai_router.chat(
             prompt=text, system_prompt=system_prompt, messages=history_with_current,
@@ -1086,13 +1164,15 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     except Exception as e:
         logger.error(f"Chat error for user={user_id}: {e}")
         response_text = ai_router.get_fallback_response()
+    finally:
+        # Cancel delay task if still running
+        delay_task.cancel()
 
-    # ── POST-PROCESS: Filter political content from responses ──
+    # ── POST-PROCESS: Filter political content ──
     political_filter_words = ["путин", "зеленск", "байден", "трамп", "навальн", "войн",
                               "спецопер", "санкци", "нато", "бомб", "обстрел", "террор",
                               "фашизм", "нацизм", "депутат", "госдум", "едро"]
     if any(kw in response_text.lower() for kw in political_filter_words):
-        # AI generated political content — replace with safe redirect
         response_text = random.choice([
             f"Ой, Настя не про политику! Давай лучше про кино? 🎬💅",
             f"Ой, не хочу про это! Давай лучше про шопинг? 🛍️✨",
@@ -1102,27 +1182,33 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         ])
         logger.info(f"Filtered political content in response for user {user_id}")
 
-    # ── POST-PROCESS: Ensure channel awareness in responses ──
-    # If AI forgot about the channel when it should mention it
+    # ── POST-PROCESS: Channel awareness ──
     channel_keywords_in_user = ["канал", "подписк", "ссылк", "насти", "твой"]
     if any(k in text.lower() for k in channel_keywords_in_user):
         if not any(k in response_text.lower() for k in ["chasnastya", "t.me/chasnastya"]):
-            # AI forgot to mention the channel — append it
             response_text += f"\n\nКстати, мой канал: @chasnastya 👉 https://t.me/chasnastya 💅"
-    # Fix: If AI says "I can't share" or "I don't have a channel" — replace with channel info
     if "не могу поделиться" in response_text.lower() or "не могу дать" in response_text.lower() or "у меня нет канала" in response_text.lower():
         response_text = f"Конечно! Мой канал @chasnastya 💅✨\n👉 https://t.me/chasnastya"
 
-    # ── POST-PROCESS: Ensure news links are present ──
-    # If AI mentions news/events but forgot the link, append it
+    # ── POST-PROCESS: News links ──
     response_text = _enforce_news_links(response_text, _current_news_items)
 
-    # ── POST-PROCESS: Ensure web search links are present ──
-    # v7.0: If we searched the web but AI forgot to include links, add them
+    # ── POST-PROCESS: Web search links ──
     if search_results and not re.search(r'https?://\S+', response_text):
         search_link = get_search_link_for_response(search_results)
         if search_link:
             response_text += f"\n\n🔗 {search_link}"
+
+    # ── GROUP CHAT: Limit response length ──
+    if is_group and len(response_text) > 300:
+        # Cut at sentence boundary for group chats
+        for sep in ['. ', '! ', '? ', '\n']:
+            idx = response_text[:300].rfind(sep)
+            if idx > 100:
+                response_text = response_text[:idx + len(sep)].strip()
+                break
+        else:
+            response_text = response_text[:300]
 
     # ── CHANNEL INVITE CHECK ──
     channel_invite = ""
@@ -1144,17 +1230,12 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     except Exception:
         pass
 
-    # Maybe ask for stars (AFTER the main response)
-    # v24.0 CRITICAL: DON'T send Stars invoice if response was slow!
-    # A Stars popup after a 30s+ wait is terrible UX
+    # Maybe ask for stars
     should_stars = False
     stars_want = ""
     elapsed = time.time() - _ai_start_time
-    if elapsed < 10:  # Only ask for Stars if response was fast (<10s)
+    if elapsed < 10:
         should_stars, stars_want = await _maybe_ask_stars_check(user_id, msg_count, db, message)
-    else:
-        # Slow response — don't add insult to injury with a payment popup
-        logger.info(f"Skipping Stars ask for user {user_id} — slow response ({elapsed:.1f}s)")
 
     # Update proactive tracker
     _proactive_tracker[user_id] = {
@@ -1162,26 +1243,25 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         "chat_id": message.chat.id,
     }
 
-    # Send response — SMART SPLITTING by sentence boundaries
+    # Send response — SMART SPLITTING
     try:
         full_response = response_text + channel_invite
         parts = _smart_split_message(full_response, max_len=4096)
         for i, part in enumerate(parts):
             if i > 0:
-                # Small delay between parts so they appear in order
                 await asyncio.sleep(0.1)
             await message.answer(part)
     except Exception as e:
         logger.error(f"Failed to send response: {e}")
 
-    # Send Stars ask after the response if triggered
+    # Send Stars ask
     if should_stars and stars_want:
         try:
             await _ask_for_stars(message.chat.id, user_id, message.bot, stars_want)
         except Exception:
             pass
 
-    # v40: Clear processing task for this user (dedup tracking)
+    # Clear processing task
     _user_processing.pop(user_id, None)
 
 
@@ -1201,22 +1281,15 @@ async def _maybe_ask_stars_check(user_id: int, msg_count: int, db, message: Mess
 
 
 def _enforce_news_links(response_text: str, news_items: list) -> str:
-    """Post-process AI response to add news links — ONLY when specifically relevant.
-
-    v34: Ещё строже — добавляем ссылку ТОЛЬКО если ответ УПОМИНАЕТ
-    заголовок новости (3+ слова совпадают) и нет других ссылок.
-    Это предотвращает лепление одинаковых ссылок на каждый ответ.
-    """
+    """Post-process AI response to add news links — ONLY when specifically relevant."""
     if not news_items or not response_text:
         return response_text
 
     response_lower = response_text.lower()
 
-    # Already has a link? Don't add more
     if re.search(r'https?://\S+', response_text) or 't.me/' in response_lower:
         return response_text
 
-    # Check if any news title keywords match the response (3+ significant words)
     matched_news = None
     best_match_count = 0
     for item in news_items:
@@ -1227,12 +1300,10 @@ def _enforce_news_links(response_text: str, news_items: list) -> str:
         title_words = [w for w in re.split(r'[\s,.\-!?;:()]+', title) if len(w) > 4]
         if len(title_words) >= 2:
             match_count = sum(1 for w in title_words if w.lower() in response_lower)
-            # v34: Need at least 3 matching words OR at least half the title words
             if match_count >= min(3, len(title_words)) and match_count > best_match_count:
                 matched_news = item
                 best_match_count = match_count
 
-    # Add link ONLY for specifically matched news
     if matched_news and matched_news.get("link"):
         if matched_news["link"] not in response_text:
             response_text += f"\n\n🔗 {matched_news['link']}"
@@ -1241,18 +1312,7 @@ def _enforce_news_links(response_text: str, news_items: list) -> str:
 
 
 def _smart_split_message(text: str, max_len: int = 4096) -> list:
-    """Умное разбиение длинного текста на части для Telegram.
-    
-    Вместо наивного text[i:i+4096] — режем по границам предложений,
-    абзацев и слов, чтобы каждое сообщение было осмысленным.
-    
-    Приоритет разбиения:
-    1. Двойной перенос строки (абзац)
-    2. Одинарный перенос строки
-    3. Точка / вопрос / восклицание + пробел
-    4. Пробел (граница слова)
-    5. Только если совсем ничего — режем по max_len
-    """
+    """Умное разбиение длинного текста на части для Telegram."""
     if not text:
         return []
     if len(text) <= max_len:
@@ -1266,33 +1326,27 @@ def _smart_split_message(text: str, max_len: int = 4096) -> list:
             parts.append(remaining)
             break
         
-        # Ищем лучшую точку разбиения в пределах max_len
         chunk = remaining[:max_len]
         split_pos = -1
         
-        # 1. Двойной перенос строки (абзац)
         pos = chunk.rfind('\n\n')
-        if pos > max_len * 0.3:  # Не менее 30% от max_len
+        if pos > max_len * 0.3:
             split_pos = pos + 2
         else:
-            # 2. Одинарный перенос строки
             pos = chunk.rfind('\n')
             if pos > max_len * 0.3:
                 split_pos = pos + 1
             else:
-                # 3. Конец предложения
                 for sep in ['. ', '! ', '? ', '... ']:
                     pos = chunk.rfind(sep)
                     if pos > max_len * 0.3:
                         split_pos = pos + len(sep)
                         break
                 else:
-                    # 4. Пробел (граница слова)
                     pos = chunk.rfind(' ')
                     if pos > max_len * 0.3:
                         split_pos = pos + 1
                     else:
-                        # 5. Безальтернативно — режем по max_len
                         split_pos = max_len
         
         part = remaining[:split_pos].strip()
@@ -1307,14 +1361,13 @@ def _clean_response(text: str) -> str:
     if not text:
         return "Ммм... Настя задумалась... 🤔"
 
-    # Use AIRouter's aggressive cleaning first
     from ai.router import AIRouter
     text = AIRouter.clean_ai_response(text)
 
     if not text:
         return "Ммм... Настя задумалась... 🤔"
 
-    # Forbidden words — Настя ТРЕБУЕТ, не просит!
+    # Forbidden words
     forbidden = {
         r'\bпобалуешь\b': 'давай', r'\bпобалуешь\?': 'давай!',
         r'\bпоможешь\b': 'кидай', r'\bпоможешь\?': 'кидай звёздочки!',
@@ -1333,10 +1386,10 @@ def _clean_response(text: str) -> str:
     for pattern, replacement in forbidden.items():
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
 
-    # Strip "As an AI" disclaimers that might slip through
+    # Strip AI disclaimers
     text = re.sub(r'(?:как AI|как искусственный интеллект|я AI|я бот|я программа|я нейросеть)[^.]*\.', '', text, flags=re.IGNORECASE)
 
-    # Strip generic AI intro phrases that make responses feel robotic
+    # Strip generic AI intros
     ai_intros = [
         r'давай уточни[^.]*\.',
         r'раз уж ты[^.]*\.',
@@ -1345,40 +1398,26 @@ def _clean_response(text: str) -> str:
     for pattern in ai_intros:
         text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-    # Truncate extremely long responses (>2000 chars ≈ 350 tokens for Russian)
-    # v41: Увеличено для Pollinations — облако генерирует длиннее и качественнее
-    # Если больше — обрезаем по предложению
-    if len(text) > 2000:
-        # Try to cut at sentence boundary
+    # Truncate extremely long responses
+    if len(text) > 2500:
         for sep in ['. ', '! ', '? ', '\n']:
-            idx = text[:2000].rfind(sep)
+            idx = text[:2500].rfind(sep)
             if idx > 300:
                 text = text[:idx + len(sep)].strip()
                 break
         else:
-            text = text[:2000]
+            text = text[:2500]
 
-    # ── FAKE LINK FILTER — remove non-existent URLs that AI invents ──
-    # Only allow REAL links: t.me/chasnastya, news links from RSS, etc.
-    # The AI sometimes invents URLs like t.me/some_fake_channel, https://fake.url
+    # FAKE LINK FILTER
     _real_channel_url = f"t.me/{CHANNEL_USERNAME.replace('@', '')}" if CHANNEL_USERNAME else "t.me/chasnastya"
     _real_patterns = [
         r'https?://t\.me/' + re.escape(CHANNEL_USERNAME.replace('@', '')) if CHANNEL_USERNAME else r'',
         r'https?://sochiautoparts\.ru',
-        r'https?://rbc\.ru',
-        r'https?://ria\.ru',
-        r'https?://interfax\.ru',
-        r'https?://habr\.com',
-        r'https?://bbc\.com',
-        r'https?://dw\.com',
-        r'https?://meduza\.io',
-        r'https?://ixbt\.com',
-        r'https?://3dnews\.ru',
-        r'https?://dtf\.ru',
-        r'https?://pikabu\.ru',
-        r'https?://nplus1\.ru',
+        r'https?://rbc\.ru', r'https?://ria\.ru', r'https?://interfax\.ru',
+        r'https?://habr\.com', r'https?://bbc\.com', r'https?://dw\.com',
+        r'https?://meduza\.io', r'https?://ixbt\.com', r'https?://3dnews\.ru',
+        r'https?://dtf\.ru', r'https?://pikabu\.ru', r'https?://nplus1\.ru',
     ]
-    # Find all URLs in text
     url_pattern = r'https?://[^\s<>\)\]"\']+|t\.me/[^\s<>\)\]"\']+'
     found_urls = re.findall(url_pattern, text)
     for url in found_urls:
@@ -1388,7 +1427,6 @@ def _clean_response(text: str) -> str:
                 is_real = True
                 break
         if not is_real:
-            # Check if it's a well-known domain (not invented by AI)
             known_domains = ['.ru/', '.com/', '.org/', '.net/', '.io/', '.dev/', '.gov/', '.edu/',
                            'youtube.com', 'github.com', 'wikipedia.org', 't.me/']
             try:
@@ -1400,19 +1438,15 @@ def _clean_response(text: str) -> str:
                     parsed = urlparse(url)
                     parsed_netloc = parsed.netloc
                     parsed_path = parsed.path
-                # Allow if domain is a known one AND path is substantial (not made up)
                 if any(d in parsed_netloc for d in known_domains):
-                    # Still check t.me/ links carefully — only allow chasnastya
                     if 't.me/' in url:
                         if _real_channel_url in url:
                             is_real = True
-                        # AI often invents fake t.me/ links — remove them
                     else:
-                        is_real = True  # Allow non-t.me URLs from known domains
+                        is_real = True
             except Exception:
                 pass
         if not is_real:
-            # Replace fake URL with channel reference
             text = text.replace(url, f"@chasnastya")
 
     return text.strip()
@@ -1448,13 +1482,14 @@ async def callback_donate(callback: CallbackQuery, db=None, ai_router=None) -> N
 
 
 # ════════════════════════════════════════════════════════════
-#  PROACTIVE MESSAGES — NEWS AWARE + TIME AWARE
+#  PROACTIVE MESSAGES — NEWS AWARE + TIME AWARE + EMOTIONAL
 # ════════════════════════════════════════════════════════════
 
 async def check_and_send_proactive(bot, db, ai_router) -> None:
     """Send proactive messages to users who haven't chatted recently.
 
-    Enhanced: Sometimes mentions news, channel content, or time-appropriate messages.
+    Enhanced: More diverse messages, news discussion with emotions,
+    time-aware content, more human-like behavior.
     """
     now = time.time()
     sent = 0
@@ -1467,12 +1502,17 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
         if now - last < PROACTIVE_COOLDOWN:
             continue
         try:
-            # 40% news-based, 60% regular proactive
-            if random.random() < 0.4 and db:
+            # 50% news-based, 50% regular proactive (MORE NEWS!)
+            if random.random() < 0.5 and db:
                 recent = await db.get_recent_news(limit=1, max_age_hours=6)
                 if recent and recent[0].get("nastya_comment"):
                     from channel import get_news_discussion
                     msg = get_news_discussion(recent[0]["nastya_comment"])
+                    # Add emotional context for news
+                    title = recent[0].get("title", "")
+                    if title:
+                        emotion = random.choice(NASTYA_VOCABULARY["emotion"])
+                        msg = f"{emotion} {title}! {msg}"
                 else:
                     msg = random.choice(PROACTIVE_MESSAGES)
             else:
@@ -1481,7 +1521,7 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
             chat_id = pro.get("chat_id", user_id)
             proactive_text = msg
 
-            # 30% chance to include channel invite in proactive message
+            # 30% chance to include channel invite
             if CHANNEL_USERNAME and random.random() < 0.30:
                 proactive_text += f"\n\nКстати, заходи на мой канал! 👉 https://t.me/{CHANNEL_USERNAME.replace('@', '')} 💅"
 
@@ -1522,5 +1562,4 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
 @router.poll_answer()
 async def handle_poll_answer(poll_answer: PollAnswer, db=None, ai_router=None) -> None:
     """React when someone votes in a channel poll — Nastya is interested!"""
-    # Just log it for now — Nastya notices!
     logger.info(f"Poll vote: user={poll_answer.user.id}, options={poll_answer.option_ids}")

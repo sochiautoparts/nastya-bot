@@ -1,16 +1,20 @@
-"""Pollinations.ai Provider v6.0 — PRIMARY AI provider for Nastya Bot.
+"""Pollinations.ai Provider v7.0 — PRIMARY AI provider for Nastya Bot.
 
-v6.0 REWRITE for 2026 API:
-  - Model: gpt-oss-20b (GPT-OSS 20B Reasoning LLM) — ONLY available model
-  - OpenAI-compatible POST endpoint: text.pollinations.ai/openai
+v7.0 MAJOR UPDATE for 2026 Pollinations API:
+  - Endpoint: gen.pollinations.ai/v1/chat/completions (OpenAI-compatible)
+  - PRIMARY model: 'openai' (GPT-5.4 Nano) — fast, cheap, vision-capable!
+  - REASONING model: 'openai-large' (GPT-5.4) — for complex questions
+  - VISION: Full image understanding via OpenAI multimodal content format!
   - Bearer token auth with API key
-  - reasoning_effort: 'low' for fast chat, 'medium' for reasoning tasks
-  - No vision support (model limitation) — photos handled by caption
+  - reasoning_effort: 'none' for fast chat, 'low' for reasoning
   - Proper OpenAI chat completion response parsing
-  - Reasoning field stripped from responses (internal thinking)
   - Rate limit handling with cooldown
   - SSE artifact stripping as fallback
+  - Base64 image support for photo understanding
+  - Multiple model routing for different use cases
 """
+import base64
+import io
 import json
 import logging
 import re
@@ -23,31 +27,28 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
-TEXT_BASE = "https://text.pollinations.ai"
+BASE_URL = "https://gen.pollinations.ai"
 
-# The ONLY available model on Pollinations (as of 2026-06)
-MODEL_ID = "openai"  # Alias for gpt-oss-20b
+# ── Model Selection ──
+# 'openai' = GPT-5.4 Nano — fast, cheap, supports vision, excellent Russian
+# 'openai-large' = GPT-5.4 — reasoning, vision, slower but smarter
+MODEL_CHAT = "openai"           # PRIMARY — fast chat + vision
+MODEL_REASONING = "openai-large"  # For complex questions
+MODEL_VISION = "openai"         # Vision model (same as chat — supports images!)
 
-# Reasoning effort levels: 'none', 'low', 'medium', 'high'
-# 'low' = fast responses for chat, 'medium' = for complex questions
-REASONING_CHAT = "low"
-REASONING_COMPLEX = "medium"
+# Reasoning effort levels: 'none', 'minimal', 'low', 'medium', 'high'
+REASONING_CHAT = "none"       # Fastest for regular chat
+REASONING_COMPLEX = "low"     # Slight reasoning for complex questions
 
 
 def _strip_reasoning(text: str) -> str:
-    """Remove reasoning/thinking content from response.
-    
-    gpt-oss-20b returns a 'reasoning' field in the message, but
-    sometimes it bleeds into the content. Strip any remnants.
-    """
+    """Remove reasoning/thinking content from response."""
     if not text:
         return ""
-    # Strip <think/> blocks
     text = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r'<thinking\b[^>]*>.*?</thinking\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r'</?think[^>]*>', '', text, flags=re.IGNORECASE)
     text = re.sub(r'</?thinking[^>]*>', '', text, flags=re.IGNORECASE)
-    # Strip incomplete think tags at end
     text = re.sub(r'<think\b[^>]*$', '', text, flags=re.IGNORECASE)
     return text.strip()
 
@@ -123,14 +124,14 @@ def _parse_json_response(text: str) -> Optional[str]:
 class PollinationsProvider(BaseProvider):
     """Pollinations.ai provider — PRIMARY AI for Nastya Bot.
 
-    Uses gpt-oss-20b (OpenAI-compatible endpoint) with Bearer token auth.
-    Reasoning effort configurable: 'low' for chat speed, 'medium' for complex queries.
-    No vision support — photo captions handled separately.
+    Uses gen.pollinations.ai/v1/chat/completions (OpenAI-compatible).
+    Supports vision via multimodal content format (image_url with base64).
+    Models: 'openai' (fast chat+vision), 'openai-large' (reasoning+vision).
     """
 
     name: str = "pollinations"
     supports_streaming: bool = False
-    supports_vision: bool = False  # gpt-oss-20b does NOT support vision
+    supports_vision: bool = True  # VISION SUPPORT via multimodal content!
 
     def __init__(self, api_key: str = "", timeout: float = 45.0):
         super().__init__(api_key=api_key, timeout=timeout)
@@ -141,7 +142,7 @@ class PollinationsProvider(BaseProvider):
     async def init(self) -> None:
         """Initialize httpx async client with connection pooling and auth."""
         headers = {
-            "User-Agent": "NastyaBot/41.0",
+            "User-Agent": "NastyaBot/42.0",
             "Accept": "application/json",
         }
         if self._api_key:
@@ -154,7 +155,8 @@ class PollinationsProvider(BaseProvider):
             headers=headers,
         )
         logger.info(
-            f"PollinationsProvider initialized: model={MODEL_ID}, "
+            f"PollinationsProvider initialized: model={MODEL_CHAT}, "
+            f"vision_model={MODEL_VISION}, reasoning_model={MODEL_REASONING}, "
             f"auth={'yes' if self._api_key else 'anonymous'}, "
             f"timeout={self.timeout}s"
         )
@@ -163,15 +165,17 @@ class PollinationsProvider(BaseProvider):
         """Available if client is initialized and not in 429 cooldown."""
         if not self._client:
             return False
-        # 429 cooldown: 60 seconds after last 429
         if self._429_count > 0 and time.time() - self._last_429_time < 60:
             return False
         return True
 
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
-        """Generate text via Pollinations OpenAI-compatible POST API.
+        """Generate text via Pollinations OpenAI-compatible API.
 
-        Uses reasoning_effort='low' for fast chat responses.
+        Supports:
+        - Regular text chat (model='openai')
+        - Vision/image understanding (model='openai' with image_url)
+        - Reasoning mode (model='openai-large')
         """
         if not self._client:
             await self.init()
@@ -180,12 +184,19 @@ class PollinationsProvider(BaseProvider):
         temperature: float = kwargs.get("temperature", 0.85)
         messages_history: Optional[List[Dict[str, Any]]] = kwargs.get("messages")
         reasoning_effort: str = kwargs.get("reasoning_effort", REASONING_CHAT)
-        max_tokens: int = kwargs.get("max_tokens", 512)
+        max_tokens: int = kwargs.get("max_tokens", 800)
 
+        # Build messages array
         messages = self._build_messages(prompt, system_prompt, messages_history)
 
+        # Choose model based on reasoning effort
+        if reasoning_effort in ("medium", "high"):
+            model = MODEL_REASONING
+        else:
+            model = MODEL_CHAT
+
         payload: Dict[str, Any] = {
-            "model": MODEL_ID,
+            "model": model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -193,14 +204,13 @@ class PollinationsProvider(BaseProvider):
             "stream": False,
         }
 
-        # Build headers — always include auth if available
         headers = {"Content-Type": "application/json"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
 
         try:
             response = await self._client.post(
-                f"{TEXT_BASE}/openai",
+                f"{BASE_URL}/v1/chat/completions",
                 json=payload,
                 headers=headers,
             )
@@ -219,9 +229,9 @@ class PollinationsProvider(BaseProvider):
                     return AIResponse(
                         text=cleaned,
                         provider=self.name,
-                        model=f"pollinations:{MODEL_ID}",
+                        model=f"pollinations:{model}",
                         tokens_used=0,
-                        metadata={"endpoint": "openai", "parsed": "json"},
+                        metadata={"endpoint": "v1/chat/completions", "parsed": "json"},
                     )
 
             # STEP 2: Try SSE format
@@ -232,9 +242,9 @@ class PollinationsProvider(BaseProvider):
                     return AIResponse(
                         text=cleaned,
                         provider=self.name,
-                        model=f"pollinations:{MODEL_ID}",
+                        model=f"pollinations:{model}",
                         tokens_used=0,
-                        metadata={"endpoint": "openai", "parsed": "sse"},
+                        metadata={"endpoint": "v1/chat/completions", "parsed": "sse"},
                     )
 
             # STEP 3: Raw text (last resort)
@@ -249,9 +259,9 @@ class PollinationsProvider(BaseProvider):
             return AIResponse(
                 text=final_text,
                 provider=self.name,
-                model=f"pollinations:{MODEL_ID}",
+                model=f"pollinations:{model}",
                 tokens_used=0,
-                metadata={"endpoint": "openai", "parsed": "raw"},
+                metadata={"endpoint": "v1/chat/completions", "parsed": "raw"},
             )
 
         except httpx.TimeoutException as exc:
@@ -272,6 +282,123 @@ class PollinationsProvider(BaseProvider):
             raise
         except Exception as exc:
             raise ProviderError(self.name, f"Unexpected error: {exc}", retryable=True)
+
+    async def generate_vision(self, prompt: str, image_data: bytes,
+                               image_format: str = "jpeg", **kwargs) -> AIResponse:
+        """Generate response with image understanding via Pollinations vision.
+
+        Args:
+            prompt: Text prompt/question about the image
+            image_data: Raw image bytes
+            image_format: Image format (jpeg, png, webp)
+            **kwargs: Additional options (system_prompt, temperature, etc.)
+
+        Uses OpenAI multimodal content format:
+            [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}]
+        """
+        if not self._client:
+            await self.init()
+
+        system_prompt: str = kwargs.get("system_prompt", "")
+        temperature: float = kwargs.get("temperature", 0.85)
+        max_tokens: int = kwargs.get("max_tokens", 600)
+
+        # Encode image as base64 data URI
+        mime_type = f"image/{image_format}"
+        b64_image = base64.b64encode(image_data).decode("utf-8")
+        data_uri = f"data:{mime_type};base64,{b64_image}"
+
+        # Build messages with multimodal content
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        # User message with image + text (OpenAI multimodal format)
+        user_content = [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": data_uri, "detail": "high"}},
+        ]
+        messages.append({"role": "user", "content": user_content})
+
+        payload: Dict[str, Any] = {
+            "model": MODEL_VISION,  # Model with vision support
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "reasoning_effort": REASONING_CHAT,
+            "stream": False,
+        }
+
+        headers = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+
+        try:
+            response = await self._client.post(
+                f"{BASE_URL}/v1/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+
+            raw_text = response.text
+
+            if not raw_text:
+                raise ProviderError(self.name, "Empty vision response", retryable=True)
+
+            parsed = _parse_json_response(raw_text)
+            if parsed:
+                cleaned = _strip_reasoning(parsed)
+                if cleaned:
+                    return AIResponse(
+                        text=cleaned,
+                        provider=self.name,
+                        model=f"pollinations:{MODEL_VISION}",
+                        tokens_used=0,
+                        metadata={"endpoint": "v1/chat/completions", "mode": "vision"},
+                    )
+
+            cleaned = _strip_sse_artifacts(raw_text)
+            if cleaned:
+                cleaned = _strip_reasoning(cleaned)
+                if cleaned:
+                    return AIResponse(
+                        text=cleaned,
+                        provider=self.name,
+                        model=f"pollinations:{MODEL_VISION}",
+                        tokens_used=0,
+                        metadata={"endpoint": "v1/chat/completions", "mode": "vision", "parsed": "sse"},
+                    )
+
+            final_text = _strip_reasoning(raw_text.strip())
+            if not final_text:
+                raise ProviderError(self.name, "Empty vision content", retryable=True)
+
+            return AIResponse(
+                text=final_text,
+                provider=self.name,
+                model=f"pollinations:{MODEL_VISION}",
+                tokens_used=0,
+                metadata={"endpoint": "v1/chat/completions", "mode": "vision", "parsed": "raw"},
+            )
+
+        except httpx.TimeoutException as exc:
+            raise ProviderError(self.name, f"Vision request timed out: {exc}", retryable=True)
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status == 429:
+                self._last_429_time = time.time()
+                self._429_count += 1
+            retryable = status in (429, 500, 502, 503, 504)
+            raise ProviderError(
+                self.name,
+                f"Vision HTTP {status}: {exc.response.text[:200]}",
+                retryable=retryable,
+            )
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError(self.name, f"Vision error: {exc}", retryable=True)
 
     async def close(self) -> None:
         """Close httpx client."""
