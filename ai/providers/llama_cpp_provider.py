@@ -1,10 +1,12 @@
 """LlamaCppProvider v2.0 — DUAL-MODEL llama-cpp-python provider.
 
-v37: DUAL-MODEL SYSTEM!
-  - Поддерживает ДВЕ GGUF модели: PRIMARY + SECONDARY
-  - Автотест при старте — выбирает лучшую для русского языка
+v38: QWEN3 PRIMARY + QWEN2.5-3B SECONDARY!
+  - Qwen3-4B-Instruct = PRIMARY — лучший русский, живые ответы, эмоции
+  - Qwen2.5-3B-Instruct = SECONDARY — быстрая лёгкая резервная модель
   - Если PRIMARY не отвечает — переключается на SECONDARY
   - Автопереключение при ошибках (failover)
+  - max_tokens=512 для развёрнутых ответов
+  - /no_think для ОБЕИХ Qwen-моделей (отключает thinking mode)
 
 АРХИТЕКТУРА:
   - Только ОДНА модель загружена в память (экономия RAM)
@@ -37,7 +39,7 @@ DEFAULT_MODEL_CONFIG = {
 
 # Параметры генерации по умолчанию
 DEFAULT_GEN_CONFIG = {
-    "max_tokens": 256,       # Развёрнутые ответы — 2-5 предложений!
+    "max_tokens": 512,       # Развёрнутые ответы — 3-6 предложений и более!
     "temperature": 0.82,     # Чуть ниже = стабильнее, но живо
     "top_p": 0.92,          # Nucleus sampling — чуть выше для разнообразия
     "top_k": 50,            # Ограничиваем top-k для качества
@@ -51,8 +53,8 @@ class LlamaCppProvider(BaseProvider):
     """Провайдер на базе llama-cpp-python — DUAL-MODEL система.
 
     Поддерживает две GGUF модели:
-    - primary_model_path: основная модель (Phi-4-mini или Qwen3)
-    - secondary_model_path: резервная модель (автопереключение при ошибках)
+    - primary_model_path: основная модель (Qwen3-4B — лучший русский)
+    - secondary_model_path: резервная модель (Qwen2.5-3B — быстрая лёгкая)
 
     В любой момент загружена ТОЛЬКО одна модель.
     При ошибке генерации — модель переключается автоматически.
@@ -177,8 +179,9 @@ class LlamaCppProvider(BaseProvider):
         logger.info("LlamaCppProvider: warming up model...")
         start = time.time()
         try:
-            # Для Qwen3: добавляем /no_think, для Phi-4: не нужно
-            warmup_msg = "Привет, как дела?" if self._is_secondary else "/no_think\nПривет, как дела?"
+            # Для Qwen-моделей: добавляем /no_think — отключает thinking mode
+            # Обе модели (Qwen3 и Qwen2.5) поддерживают /no_think
+            warmup_msg = "/no_think\nПривет, как дела?"
             await asyncio.to_thread(
                 self._llm.create_chat_completion,
                 messages=[
@@ -251,9 +254,9 @@ class LlamaCppProvider(BaseProvider):
         # Строим сообщения
         messages = self._build_messages(prompt, system_prompt, messages_history)
 
-        # Для Qwen3 (secondary): добавляем /no_think — отключает thinking mode
-        # Для Phi-4 (primary): НЕ добавляем /no_think — модель работает без него
-        if self._is_secondary and messages and messages[-1].get("role") == "user":
+        # Для Qwen-моделей (BOTH primary and secondary): добавляем /no_think
+        # Qwen3 и Qwen2.5 обе поддерживают /no_think — отключает thinking mode
+        if messages and messages[-1].get("role") == "user":
             content = messages[-1]["content"]
             if not content.startswith("/no_think"):
                 messages[-1]["content"] = f"/no_think\n{content}"

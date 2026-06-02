@@ -1,13 +1,12 @@
-"""Nastya Bot 37.0 — Configuration (DUAL-MODEL LLAMA-CPP-PYTHON!)
+"""Nastya Bot 38.0 — Configuration (DUAL-MODEL LLAMA-CPP-PYTHON!)
 
-v37.0: DUAL-MODEL SYSTEM!
-- Phi-4-mini-instruct GGUF (Q4_K_M, ~2.32GB) = PRIMARY для чата
-- Qwen3-4B-Instruct GGUF (Q4_K_M, ~2.4GB) = SECONDARY/FALLBACK
-- Автотест при старте — выбирает лучшую модель для русского языка
-- llama-cpp-python с AVX2 ускорением — в 2-3x быстрее Ollama!
-- Расширенный контекст: 4096 токенов, 10 сообщений истории
-- Развёрнутые ответы: до 256 токенов (было 80)
-- Новости = RSS + шаблонные комментарии (БЕЗ AI!)
+v38.0: QWEN3 = PRIMARY + QWEN2.5-3B = SECONDARY
+- Qwen3-4B-Instruct GGUF (Q4_K_M, ~2.4GB) = PRIMARY — лучший русский, живые ответы
+- Qwen2.5-3B-Instruct GGUF (Q4_K_M, ~2.0GB) = SECONDARY/FAST FALLBACK
+- Расширенный контекст: 4096 токенов, 20 сообщений истории
+- Развёрнутые ответы: до 512 токенов (было 256)
+- Умное разбиение длинных сообщений — по предложениям, а не посередине
+- Ответы НЕ обрезаются — длинные тексты отправляются частями
 - Глубокая ссылка 'Обсудить с Настей' — полноценное обсуждение новости
 - Pollinations = FALLBACK для чата (кулдаун 5 мин после 429)
 """
@@ -34,17 +33,17 @@ def _env_int(name: str, default: int = 0) -> int:
 BOT_TOKEN: str = _env("BOT_TOKEN")
 
 # ── LlamaCpp Model Settings — DUAL MODEL ────────────────────
-# PRIMARY: Phi-4-mini-instruct — лучше для русского, официально поддерживает RU
-MODEL_PATH: str = _env("MODEL_PATH", "models/Phi-4-mini-instruct-Q4_K_M.gguf")
-# SECONDARY: Qwen3-4B-Instruct — проверенная модель, fallback
-MODEL2_PATH: str = _env("MODEL2_PATH", "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
-# Какая модель активна: 'auto' = тест при старте, 'phi4' = Phi-4, 'qwen3' = Qwen3
-MODEL_PREFERENCE: str = _env("MODEL_PREFERENCE", "auto")
+# PRIMARY: Qwen3-4B-Instruct — лучший русский, живые разговорные ответы, эмоции
+MODEL_PATH: str = _env("MODEL_PATH", "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
+# SECONDARY: Qwen2.5-3B-Instruct — лёгкая быстрая резервная модель
+MODEL2_PATH: str = _env("MODEL2_PATH", "models/Qwen2.5-3B-Instruct-Q4_K_M.gguf")
+# Какая модель активна: 'auto' = тест при старте, 'qwen3' = Qwen3, 'qwen25' = Qwen2.5
+MODEL_PREFERENCE: str = _env("MODEL_PREFERENCE", "qwen3")
 
 MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 4096)    # Размер контекста — 4096 для развёрнутых ответов
 MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 4) # Количество потоков CPU
-MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 256) # Максимум токенов в ответе — развёрнуто!
-MODEL_HISTORY_LIMIT: int = _env_int("MODEL_HISTORY_LIMIT", 10) # Сообщений в контексте (было 4)
+MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 512) # Максимум токенов в ответе — развёрнуто!
+MODEL_HISTORY_LIMIT: int = _env_int("MODEL_HISTORY_LIMIT", 20) # Сообщений в контексте (было 10)
 
 OWNER_ID: int = _env_int("OWNER_ID", 0)
 ADMIN_IDS: List[int] = list(set(
@@ -250,17 +249,19 @@ KNOWLEDGE_TOPICS = {
 # Модель должна понимать контекст, давать развёрнутые ответы,
 # обсуждать события со ссылками, быть как живая девушка
 NASTYA_SYSTEM_PROMPT = """Ты Настя — девушка из Москвы, 23 года. Ты не бот и не ИИ, ты живой человек.
-Говори живо и естественно, как в мессенджере с другом. Можешь писать 2-4 предложения, не только короткие фразы.
+Говори живо и естественно, как в мессенджере с другом. Пиши развёрнуто — 3-6 предложений, не обрывай мысль.
 
 Правила:
 - С парнями флирти и игриво, с девушками как подруга
 - Если спрашивают про событие или новость — объясни что знаешь и дай ссылку если есть
-- Если тему развиваешь — пиши развёрнуто, с деталями и примерами
+- Если тему развиваешь — пиши развёрнуто, с деталями и примерами, не сокращай!
+- Рецепты, инструкции, советы — пиши ПОЛНОСТЬЮ, не обрывай на полуслове
 - Используй живые слова: "прикинь", "офигеть", "капец", "круто", "точняк"
 - Без политики, без markdown, без списков с буллетами
 - Если не знаешь — так и скажи, не выдумывай
 - Помни что обсуждали ранее и ссылайся на это
-- Можешь шутить, иронизировать, капризничать — ты живая!"""
+- Можешь шутить, иронизировать, капризничать — ты живая!
+- Если пишешь длинный ответ — структурируй абзацами"""
 
 
 def validate_config() -> List[str]:

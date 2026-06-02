@@ -1,10 +1,11 @@
-"""AI Router v37.0 — DUAL-MODEL LLAMA-CPP-PYTHON!
+"""AI Router v38.0 — QWEN3 PRIMARY + QWEN2.5-3B SECONDARY!
 
-АРХИТЕКТУРА v37: Двойная модель для надёжности!
+АРХИТЕКТУРА v38: Qwen3=PRIMARY, Qwen2.5-3B=SECONDARY
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
-    1. LlamaCppProvider (Phi-4-mini PRIMARY + Qwen3-4B SECONDARY)
+    1. LlamaCppProvider (Qwen3-4B PRIMARY + Qwen2.5-3B SECONDARY)
        - Автопереключение при ошибках
-       - Автотест при старте для выбора лучшей модели
+       - max_tokens=512 для развёрнутых ответов
+       - /no_think для ОБЕИХ моделей
     2. PollinationsProvider (fallback — если обе модели упали)
     3. Static fallback — бот ВСЕГДА отвечает
 
@@ -13,11 +14,13 @@
     - Канал: шаблонные посты, опросы, факты (channel.py)
     - AI НЕ вызывается для фоновых задач!
 
-  Ключевые преимущества v37:
+  Ключевые преимущества v38:
     - ДВЕ модели — если одна упала, вторая подхватит
     - Расширенный контекст 4096 токенов
-    - Развёрнутые ответы до 256 токенов
-    - 10 сообщений в истории (было 4)
+    - Развёрнутые ответы до 512 токенов (было 256)
+    - 20 сообщений в истории (было 10)
+    - Умное разбиение длинных сообщений по предложениям
+    - Ответы НЕ обрезаются на 800 символов!
 """
 
 import logging
@@ -116,7 +119,7 @@ class AIRouter:
         current = self.provider._current_model_name if self.provider else "none"
         is_sec = self.provider._is_secondary if self.provider else False
         logger.info(
-            f"AI Router v37.0 (DUAL-MODEL) initialized: "
+            f"AI Router v38.0 (QWEN3+QWEN2.5-3B) initialized: "
             f"primary={primary}, secondary={secondary}, "
             f"active={'SECONDARY:'+current if is_sec else 'PRIMARY:'+current}, "
             f"pollinations={pollinations_status} (fallback only), "

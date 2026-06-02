@@ -20,6 +20,7 @@ INTELLIGENCE FEATURES v8.0 (PURE TEXT BOT):
   - /search command for explicit web searches
   - НЕТ ОБРАБОТКИ ФОТО — бот чисто текстовый! (v28)
 """
+import asyncio
 import logging
 import random
 import re
@@ -1117,15 +1118,15 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         "chat_id": message.chat.id,
     }
 
-    # Send response
+    # Send response — SMART SPLITTING by sentence boundaries
     try:
-        # Main response
         full_response = response_text + channel_invite
-        if len(full_response) > 4096:
-            for i in range(0, len(full_response), 4096):
-                await message.answer(full_response[i:i + 4096])
-        else:
-            await message.answer(full_response)
+        parts = _smart_split_message(full_response, max_len=4096)
+        for i, part in enumerate(parts):
+            if i > 0:
+                # Small delay between parts so they appear in order
+                await asyncio.sleep(0.1)
+            await message.answer(part)
     except Exception as e:
         logger.error(f"Failed to send response: {e}")
 
@@ -1195,6 +1196,69 @@ def _enforce_news_links(response_text: str, news_items: list) -> str:
     return response_text
 
 
+def _smart_split_message(text: str, max_len: int = 4096) -> list:
+    """Умное разбиение длинного текста на части для Telegram.
+    
+    Вместо наивного text[i:i+4096] — режем по границам предложений,
+    абзацев и слов, чтобы каждое сообщение было осмысленным.
+    
+    Приоритет разбиения:
+    1. Двойной перенос строки (абзац)
+    2. Одинарный перенос строки
+    3. Точка / вопрос / восклицание + пробел
+    4. Пробел (граница слова)
+    5. Только если совсем ничего — режем по max_len
+    """
+    if not text:
+        return []
+    if len(text) <= max_len:
+        return [text]
+    
+    parts = []
+    remaining = text
+    
+    while remaining:
+        if len(remaining) <= max_len:
+            parts.append(remaining)
+            break
+        
+        # Ищем лучшую точку разбиения в пределах max_len
+        chunk = remaining[:max_len]
+        split_pos = -1
+        
+        # 1. Двойной перенос строки (абзац)
+        pos = chunk.rfind('\n\n')
+        if pos > max_len * 0.3:  # Не менее 30% от max_len
+            split_pos = pos + 2
+        else:
+            # 2. Одинарный перенос строки
+            pos = chunk.rfind('\n')
+            if pos > max_len * 0.3:
+                split_pos = pos + 1
+            else:
+                # 3. Конец предложения
+                for sep in ['. ', '! ', '? ', '... ']:
+                    pos = chunk.rfind(sep)
+                    if pos > max_len * 0.3:
+                        split_pos = pos + len(sep)
+                        break
+                else:
+                    # 4. Пробел (граница слова)
+                    pos = chunk.rfind(' ')
+                    if pos > max_len * 0.3:
+                        split_pos = pos + 1
+                    else:
+                        # 5. Безальтернативно — режем по max_len
+                        split_pos = max_len
+        
+        part = remaining[:split_pos].strip()
+        if part:
+            parts.append(part)
+        remaining = remaining[split_pos:].strip()
+    
+    return parts
+
+
 def _clean_response(text: str) -> str:
     if not text:
         return "Ммм... Настя задумалась... 🤔"
@@ -1237,16 +1301,19 @@ def _clean_response(text: str) -> str:
     for pattern in ai_intros:
         text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-    # Truncate long responses
-    if len(text) > 800:
-        # Try to cut at sentence boundary
-        for sep in ['. ', '! ', '? ', '। ', '。']:
-            idx = text[:800].rfind(sep)
-            if idx > 200:
+    # Truncate long responses — NO! We split instead of truncating!
+    # Old: truncate at 800 chars = broken recipes and incomplete thoughts
+    # New: keep full text, split into multiple messages at sentence boundaries
+    # Only truncate if text is insanely long (>4000 chars which is near Telegram limit)
+    if len(text) > 3900:
+        # Try to cut at sentence boundary, but keep as much as possible
+        for sep in ['. ', '! ', '? ', '\n']:
+            idx = text[:3900].rfind(sep)
+            if idx > 500:
                 text = text[:idx + len(sep)].strip()
                 break
         else:
-            text = text[:800]
+            text = text[:3900]
 
     # ── FAKE LINK FILTER — remove non-existent URLs that AI invents ──
     # Only allow REAL links: t.me/chasnastya, news links from RSS, etc.
