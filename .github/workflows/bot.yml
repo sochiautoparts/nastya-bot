@@ -112,7 +112,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
-          key: qwen3-4b-instruct-q4km-v2
+          key: qwen3-4b-instruct-q4km-v3
 
       - name: Download Qwen3-4B-Instruct GGUF model
         if: steps.cache-primary.outputs.cache-hit != 'true'
