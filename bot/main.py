@@ -1,26 +1,26 @@
-"""Nastya Bot 47.0 — FIX LINKS + WRITE FROM SELF + MORE MODELS! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 49.0 — FIX LINKS + GROUP COMMENTS + MORE MODELS! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v47.0:
-  - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (15 моделей, балансировка нагрузки!)
+Architecture v49.0:
+  - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (25 моделей, балансировка нагрузки!)
     - openai (GPT-5.4 Nano) PRIMARY — fast, vision-capable
-    - grok, gpt-5.4-mini, llama-scout, qwen-vision
-    - mistral, deepseek, mistral-4, gemma, openai-fast — BACKUP models
-    - gemini-fast, gpt-5.5, deepseek-pro, gemini, claude-fast — NEW!
-    - Automatic failover on 429/timeout
+    - + 24 backup models with automatic failover
+    - NEW: kimi-k2.6, nova-fast, glm, minimax, grok-4.3, qwen-large, gemini-3.5-flash
   - INLINE MODE: Настя работает в любом чате через @asnastya_bot!
-  - VISION: Pollinations vision API — Настя ВИДИТ фото! 6 vision-моделей
+  - VISION: Pollinations vision API — Настя ВИДИТ фото! 14 vision-моделей
   - SEARCH: /find — поиск товаров, услуг, лучших цен с ссылками!
   - DISCOVERY: Авто-посты — рецепты, нумерология, астрология, мероприятия!
   - URL: Настя понимает ссылки!
   - PHOTO SEARCH: фото → распознавание → поиск товаров/цен!
   - Новости: RSS-парсер + AI-комментарии для канала!
   - Канал: AI-посты на основе новостей, опросы, факты, рецепты
-  - /horoscope, /recipe, /numerology — новые команды!
+  - /horoscope, /recipe, /numerology — команды!
   - Typing delay indicators — human-like behavior
-  - Group chat response chance: 50%
+  - Group chat: Nastya COMMENTS in groups — mentions, keywords, random chance!
   - Proactive messaging + discovery sharing — Настя активный собеседник
+  - FIX: Links — real product/service links stay real, channel link only when asked
+  - FIX: Channel posts — channel link in every post, no source links
+  - FIX: AIRouter.provider bug — health watchdog works correctly
   - Qwen3-4B GGUF как LAST FALLBACK — отключено по умолчанию!
-    - Включить: ENABLE_LOCAL_MODEL=true в GitHub Secrets
   - Dedup: tracks active asyncio.Task per user
   - HEALTH WATCHDOG: monitors Telegram API + model health
 """
@@ -507,7 +507,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 48.0 Starting (FIX ALL + EXPANDED MODELS + LINK PROTECTION!) ===")
+    logger.info("=== Nastya Bot 49.0 Starting (FIX LINKS + GROUP COMMENTS + MORE MODELS!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -555,7 +555,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 48.0 Ready (FIX ALL + EXPANDED MODELS + LINK PROTECTION!) ===")
+    logger.info("=== Nastya Bot 49.0 Ready (FIX LINKS + GROUP COMMENTS + MORE MODELS!) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

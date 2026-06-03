@@ -415,24 +415,24 @@ class AIRouter:
         text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
         text = re.sub(r'^\s*[-•]\s+', '', text, flags=re.MULTILINE)
 
-        # ── LINK PROTECTION: Remove channel link when AI incorrectly replaced real links ──
-        # The AI sometimes replaces actual URLs with the channel link.
-        # Pattern: "t.me/chasnastya" or "https://t.me/chasnastya" when it should be a real URL
-        # We remove it ONLY if it appears in a context that looks like it replaced a real link
-        channel_link_patterns = [
-            r'https?://t\.me/chasnastya\b',
-            r't\.me/chasnastya\b',
-        ]
-        for pattern in channel_link_patterns:
-            # Only remove if the message has other content suggesting it was a link replacement
-            # (e.g., "вот ссылка: t.me/chasnastya" or "ссылка на товар: t.me/chasnastya")
-            link_context_patterns = [
-                rf'(?:ссылк[аиу]|источник|читай|здесь|тут|по ссылке|найти|купить|читать):\s*{pattern}',
-                rf'{pattern}\s*(?:—|–|-)\s*(?:источник|ссылка|читать)',
-                rf'(?:🔗|📌|📎|🔗)\s*{pattern}',
-            ]
-            for ctx_pattern in link_context_patterns:
-                text = re.sub(ctx_pattern, '', text, flags=re.IGNORECASE)
+        # ── LINK PROTECTION: Detect and fix when AI replaced a real link with channel link ──
+        # The AI sometimes replaces actual product/service URLs with the channel link.
+        # We detect this by checking if the context suggests a product/service/search link
+        # but only the channel link is present.
+        channel_link = r'(?:https?://)?t\.me/chasnastya\b'
+        # If the message contains a channel link AND context words that suggest
+        # a different link was expected, remove the channel link
+        product_context = re.search(
+            r'(?:ссылк[аиу]\s*(?:на\s*)?(?:товар|магазин|сайт|стать[юя]|новость|услуг|купить|найти)|'
+            r'купить|найти\s*(?:товар|цен[уы]|магазин)|'
+            r'🔗\s*(?:товар|магазин|сайт|купить|найти|источник)|'
+            r'по\s*ссылке\s*(?:на\s*)?(?:товар|магазин|сайт))',
+            text, re.IGNORECASE
+        )
+        if product_context and re.search(channel_link, text, re.IGNORECASE):
+            # The AI replaced a real link with channel link — remove the channel link
+            text = re.sub(r'\s*(?:🔗\s*)?' + channel_link, '', text, flags=re.IGNORECASE)
+            text = re.sub(r'\s*(?:ссылк[аиу]:?\s*)$', '', text, flags=re.IGNORECASE)
 
         # Clean up whitespace
         text = re.sub(r'\n{3,}', '\n\n', text)

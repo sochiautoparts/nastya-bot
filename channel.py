@@ -326,7 +326,12 @@ def _get_time_posts() -> List[str]:
 
 def format_news_post(title: str, comment: str, link: str = "", category: str = "general",
                        summary: str = "") -> str:
-    """Format a news item as a channel post with CLICKABLE link and SUMMARY."""
+    """Format a news item as a channel post — Nastya writes from herself.
+    
+    Links in channel: ONLY for products, services, news, events, recipes.
+    Channel link t.me/chasnastya added to EVERY post.
+    Source links (article origins) are NOT included — Nastya writes from herself.
+    """
     template = random.choice(NEWS_POST_TEMPLATES)
     # Truncate summary for post readability
     short_summary = ""
@@ -337,11 +342,6 @@ def format_news_post(title: str, comment: str, link: str = "", category: str = "
         if short_summary:
             short_summary = f"\n💡 {short_summary}"
     post = template.format(comment=comment, title=title, summary=short_summary)
-
-    # Add clickable link if available — ALWAYS INCLUDE LINK!
-    if link:
-        post += f"\n\n🔗 <a href=\"{link}\">Читать полностью</a>"
-    # NOTE: Do NOT add "Подробнее в @chasnastya" here — post is already IN that channel!
 
     # Category emoji
     cat_emojis = {
@@ -357,29 +357,25 @@ def format_news_post(title: str, comment: str, link: str = "", category: str = "
     cat_emoji = cat_emojis.get(category, "📰")
     post += f"\n{cat_emoji} #{category.capitalize()}"
 
-    # Category emoji
-    # NOTE: Do NOT add @chasnastya signature here — this post is already IN the channel!
-    # Adding @chasnastya to a post that's already in @chasnastya is redundant.
+    # Channel link in EVERY post
+    post += f"\n\n👉 t.me/chasnastya"
 
     return post
 
 
 def format_personality_post(text: str) -> str:
-    """Format a personality post for the channel.
-
-    NOTE: Do NOT add @chasnastya signature — this post is already IN the channel!
-    """
+    """Format a personality post for the channel — adds channel link."""
+    if "t.me/chasnastya" not in text and "chasnastya" not in text:
+        text += f"\n\n👉 t.me/chasnastya"
     return text
 
 
 def format_knowledge_post(fact: str) -> str:
-    """Format a knowledge fact as a channel post.
-
-    NOTE: Do NOT add @chasnastya signature — this post is already IN the channel!
-    """
+    """Format a knowledge fact as a channel post — adds channel link."""
     template = random.choice(KNOWLEDGE_POST_TEMPLATES)
     post = template.format(fact=fact)
-
+    # Channel link in every post
+    post += f"\n\n👉 t.me/chasnastya"
     return post
 
 
@@ -738,8 +734,9 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
                     "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
                     "Без markdown, без буллетов, без заголовков. "
                     "Не пиши 'Настя' в начале — говори от первого лица. "
-                    "В канале ссылки допускаются ТОЛЬКО на товары, услуги, новости, мероприятия, рецепты — "
-                    "не добавляй случайные ссылки."
+                    "НЕ добавляй ссылки на источник — ты пишешь от себя. "
+                    "Ссылки допускаются ТОЛЬКО на конкретные товары, услуги, мероприятия. "
+                    "НЕ вставляй ссылку на свой канал — она добавится автоматически."
                 ),
                 max_tokens=300,
                 priority="low",  # Background priority — don't block user chat
@@ -779,10 +776,6 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
         if short_summary:
             post_text += f"\n💡 {short_summary}"
 
-    # Add clickable link
-    if link:
-        post_text += f"\n\n🔗 <a href=\"{link}\">Читать полностью</a>"
-
     # Category emoji + hashtag
     cat_emojis = {
         "auto": "🚗", "general": "📰", "tech": "💻", "gaming": "🎮",
@@ -790,6 +783,9 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
     }
     cat_emoji = cat_emojis.get(category, "📰")
     post_text += f"\n{cat_emoji} #{category.capitalize()}"
+
+    # Channel link in EVERY post
+    post_text += f"\n\n👉 t.me/chasnastya"
 
     # Validate before posting
     if not _validate_post_text(post_text):

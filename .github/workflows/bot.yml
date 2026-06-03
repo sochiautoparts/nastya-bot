@@ -1,15 +1,13 @@
-name: Nastya Bot — CLOUD-ONLY v48
+name: Nastya Bot — CLOUD-ONLY v49
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v48.0 — FIX ALL BUGS + EXPANDED MODELS + LINK PROTECTION!
+# Nastya Bot v49.0 — FIX LINKS + GROUP COMMENTS + MORE MODELS!
 #
 # Architecture:
-#   - Pollinations.ai EXPANDED MULTI-MODEL (19 chat models!)
+#   - Pollinations.ai EXPANDED MULTI-MODEL (25 chat models!)
 #     - openai (GPT-5.4 Nano) PRIMARY — fast, vision-capable
-#     - grok, gpt-5.4-mini, llama-scout, qwen-vision, qwen-vision-pro
-#     - mistral, deepseek, mistral-4, gemma, openai-fast — BACKUP
-#     - gpt-5.5, deepseek-pro, gemini, claude-fast — QUALITY
-#     - mistral-large, grok-large, llama-maverick, kimi — NEW powerful!
+#     - + 24 backup models with automatic failover
+#     - NEW: kimi-k2.6, nova-fast, glm, minimax, grok-4.3, qwen-large, gemini-3.5-flash
 #     - REMOVED: gemini-fast (402 Payment Required)
 #     - Automatic failover on 429/timeout
 #   - INLINE MODE — Настя работает в любом чате через @asnastya_bot!
@@ -17,15 +15,16 @@ name: Nastya Bot — CLOUD-ONLY v48
 #   - PHOTO SEARCH — фото → распознавание → поиск!
 #   - DISCOVERY ENGINE — рецепты, нумерология, астрология, мероприятия!
 #   - /find — поиск товаров и лучших цен с ссылками
-#   - /horoscope, /recipe, /numerology — новые команды!
-#   - AI-POWERED CHANNEL POSTS — развёрнутые посты с ссылками!
-#   - REAL PHOTO UNDERSTANDING via Pollinations vision API (6 models!)
+#   - /horoscope, /recipe, /numerology — команды!
+#   - AI-POWERED CHANNEL POSTS — Настя пишет от себя!
+#   - REAL PHOTO UNDERSTANDING via Pollinations vision API (14 models!)
 #   - URL UNDERSTANDING — Настя читает ссылки!
-#   - FIX: Health watchdog uses correct AIRouter attributes
-#   - FIX: Link protection — AI can no longer replace real links with channel link
+#   - FIX: Links — real product/service links stay real, channel link only when asked
+#   - FIX: Channel posts — channel link in every post, no source links
+#   - FIX: AIRouter.provider bug — health watchdog works correctly
+#   - FIX: Nastya comments in groups — mentions, keywords, random chance
 #   - FIX: Stars invoice only on /donates, not auto on /start
 #   - FIX: Removed broken vesti.ru RSS feed (404)
-#   - FIX: Permanently disable models returning 402 Payment Required
 #
 # LOCAL MODEL (Qwen3-4B):
 #   - DISABLED by default for faster startup
@@ -171,7 +170,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v48
+          key: nastya-db-v49
           restore-keys: |
             nastya-db-
 
@@ -200,13 +199,17 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v48.0 (FIX ALL + EXPANDED MODELS + LINK PROTECTION!) ==="
-          echo "PRIMARY: Pollinations.ai EXPANDED 19-MODEL (openai, mistral, gpt-5.4-mini, grok, deepseek, mistral-4, gemma, llama-scout, qwen-vision, openai-fast, gpt-5.5, deepseek-pro, gemini, claude-fast, mistral-large, grok-large, llama-maverick, qwen-vision-pro, kimi)"
+          echo "=== Starting Nastya Bot v49.0 (FIX LINKS + GROUP COMMENTS + MORE MODELS!) ==="
+          echo "PRIMARY: Pollinations.ai EXPANDED 25-MODEL (openai + 24 backups)"
+          echo "NEW: kimi-k2.6, nova-fast, glm, minimax, grok-4.3, qwen-large, gemini-3.5-flash"
           echo "REMOVED: gemini-fast (402 Payment Required)"
           echo "INLINE: @asnastya_bot works in any chat!"
           echo "SEARCH: /find — товары и лучшие цены! /search — поиск информации!"
           echo "DISCOVERY: рецепты, нумерология, астрология, мероприятия, скидки!"
           echo "REASONING: Pollinations.ai (openai-large / GPT-5.4)"
+          echo "FIX: Links — real links stay real, channel link only when asked"
+          echo "FIX: Channel posts — channel link in every post, no source links"
+          echo "FIX: Nastya comments in groups!"
 
           if [ "${ENABLE_LOCAL_MODEL}" = "true" ]; then
             echo "LOCAL FALLBACK: ENABLED — but model steps are commented out in workflow!"
@@ -216,7 +219,7 @@ jobs:
             echo "To enable: set ENABLE_LOCAL_MODEL=true in GitHub Secrets AND uncomment model steps in bot.yml"
           fi
 
-          echo "Config: inline=yes, vision=yes(8), search=yes, discovery=yes, ai_news=yes, group_chance=50%, max_tokens=1000(cloud), history=10, link_protection=yes"
+          echo "Config: inline=yes, vision=yes(14), search=yes, discovery=yes, ai_news=yes, group_comments=yes, max_tokens=1000(cloud), history=10"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -257,7 +260,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v48-${{ github.run_id }}
+          key: nastya-db-v49-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation

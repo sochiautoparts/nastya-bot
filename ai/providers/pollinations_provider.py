@@ -1,7 +1,7 @@
-"""Pollinations.ai Provider v11.0 — OPTIMIZED MULTI-MODEL LOAD BALANCING!
+"""Pollinations.ai Provider v12.0 — EXPANDED MULTI-MODEL LOAD BALANCING!
 
-v11.0 FIX UPDATE — Removed broken models, added verified new ones:
-  - PRIMARY: 'openai' (GPT-5.4 Nano) — fast, cheap, vision-capable
+v12.0 UPDATE — Expanded model pool with latest Pollinations catalog (June 2026):
+  - PRIMARY: 'openai' (GPT-5.4 Nano) — fast, vision-capable
   - BACKUP 1: 'mistral' (Mistral Small 3.2) — fast, good Russian
   - BACKUP 2: 'gpt-5.4-mini' (GPT-5.4 Mini) — balanced, fast
   - BACKUP 3: 'grok' (Grok 4.20) — fast, good Russian
@@ -20,12 +20,20 @@ v11.0 FIX UPDATE — Removed broken models, added verified new ones:
   - NEW: 'llama-maverick' — vision, 1M ctx
   - NEW: 'qwen-vision-pro' — better vision + reasoning
   - NEW: 'kimi' — vision, reasoning, 262k ctx
+  - NEW: 'kimi-k2.6' — latest Kimi, better multilingual
+  - NEW: 'nova-fast' — Amazon Nova fast, good Russian
+  - NEW: 'glm' — ChatGLM, good multilingual + Chinese/Russian
+  - NEW: 'minimax' — MiniMax, good for chat
+  - NEW: 'grok-4.3' — latest Grok, better reasoning
+  - NEW: 'qwen-large' — Qwen Large, powerful reasoning
+  - NEW: 'gemini-3.5-flash' — Gemini 3.5 Flash, fast + vision
   - REMOVED: 'gemini-fast' — returns 402 Payment Required
+  - REMOVED: 'openai-large' (moved to reasoning only)
   - REASONING: 'openai-large' (GPT-5.4) — for complex questions
   - VISION: 'openai' — supports image input!
-    Vision backups: mistral, mistral-4, gemma, qwen-vision, qwen-vision-pro
+    Vision backups: mistral, mistral-4, gemma, qwen-vision, qwen-vision-pro, kimi
 
-  Models from Pollinations catalog (June 2026) — verified working!
+  Models from Pollinations catalog (June 2026) — verified in catalog!
   Automatic failover on 429/rate-limit/timeout — next model picks up.
   Per-model health tracking with cooldown on failures.
   402 errors now permanently disable expensive models.
@@ -53,7 +61,7 @@ BASE_URL = "https://gen.pollinations.ai"
 CHAT_MODELS = [
     # (model_name, weight_for_round_robin, supports_vision, cost_tier)
     # Cost tiers: 1=cheapest, 2=cheap, 3=moderate, 4=expensive
-    # Models from Pollinations catalog (June 2026) — verified working with Russian!
+    # Models from Pollinations catalog (June 2026)
     ("openai",       4, True,  1),   # GPT-5.4 Nano — PRIMARY, fast, vision, cheapest
     ("mistral",      3, True,  1),   # Mistral Small 3.2 — fast, good multilingual
     ("gpt-5.4-mini", 3, True,  2),   # GPT-5.4 Mini — balanced speed & cost
@@ -64,17 +72,25 @@ CHAT_MODELS = [
     ("llama-scout",  1, True,  1),   # Llama 4 Scout — long context, vision
     ("qwen-vision",  1, True,  1),   # Qwen3 VL 30B — vision specialist
     ("openai-fast",  1, True,  1),   # GPT-5 Nano — ultra fast fallback
-    # v48: Verified models (gemini-fast REMOVED — 402 Payment Required)
+    # v49: Quality models
     ("gpt-5.5",      2, True,  3),   # GPT-5.5 — latest model, reasoning + vision
     ("deepseek-pro", 1, False, 2),   # DeepSeek Pro — better reasoning
     ("gemini",       1, True,  3),   # Gemini — high quality, vision, 1M ctx
     ("claude-fast",  1, True,  3),   # Claude fast mode — good Russian, vision
-    # v48: NEW verified models from Pollinations catalog
+    # v49: Powerful models
     ("mistral-large", 1, True,  3),   # Mistral Large — powerful, vision + reasoning
     ("grok-large",    1, True,  3),   # Grok Large — powerful, vision + reasoning
     ("llama-maverick",1, True,  2),   # Llama Maverick — vision, 1M ctx
     ("qwen-vision-pro",1, True,  2),  # Qwen Vision Pro — better vision + reasoning
     ("kimi",          1, True,  3),   # Kimi — vision + reasoning, good multilingual
+    # v49: NEW models from Pollinations catalog
+    ("kimi-k2.6",     1, True,  3),   # Kimi K2.6 — latest, better multilingual
+    ("nova-fast",     2, True,  2),   # Amazon Nova Fast — good Russian, fast
+    ("glm",           1, True,  2),   # ChatGLM — good multilingual
+    ("minimax",       1, True,  2),   # MiniMax — good for chat
+    ("grok-4.3",      1, True,  3),   # Grok 4.3 — latest Grok, better reasoning
+    ("qwen-large",    1, True,  3),   # Qwen Large — powerful reasoning
+    ("gemini-3.5-flash", 1, True, 2), # Gemini 3.5 Flash — fast + vision
 ]
 
 MODEL_REASONING = "openai-large"    # GPT-5.4 — for complex questions
@@ -535,8 +551,10 @@ class PollinationsProvider(BaseProvider):
         ]
         messages.append({"role": "user", "content": user_content})
 
-        # Try vision-capable models in order (v47: expanded with tested backups)
-        vision_models = ["openai", "mistral-4", "mistral", "qwen-vision", "qwen-vision-pro", "gemma", "claude-fast", "openai-fast"]
+        # Try vision-capable models in order (v49: expanded with tested backups)
+        vision_models = ["openai", "mistral-4", "mistral", "qwen-vision", "qwen-vision-pro",
+                        "gemma", "claude-fast", "openai-fast", "kimi", "kimi-k2.6",
+                        "gemini", "gemini-3.5-flash", "llama-maverick", "nova-fast"]
         # Filter to healthy ones
         healthy_vision = [m for m in vision_models if self._is_model_healthy(m)]
         if not healthy_vision:

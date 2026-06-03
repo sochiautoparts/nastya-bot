@@ -222,7 +222,9 @@ async def discover_content(ai_router) -> Optional[Dict]:
                     "Пиши развёрнуто и познавательно — это важно! "
                     "Без markdown, без буллетов, без заголовков. "
                     "Не пиши 'Настя' в начале — говори от первого лица. "
-                    "Ссылки допускаются ТОЛЬКО на товары, услуги, новости, мероприятия, рецепты."
+                    "НЕ добавляй ссылки на источник — ты пишешь от себя. "
+                    "Ссылки допускаются ТОЛЬКО на конкретные товары, услуги, мероприятия, рецепты. "
+                    "НЕ вставляй ссылку на свой канал — она добавится автоматически."
                 ),
                 max_tokens=500,
                 priority="low",
@@ -273,9 +275,8 @@ async def post_discovery_to_channel(bot: Bot, db, ai_router, discovery: Dict) ->
 
     post_text = template.format(content=content)
 
-    # Add source link at the end — ALWAYS!
-    if source_url:
-        post_text += f"\n\n🔗 Источник: {source_url}"
+    # Channel link in EVERY post (instead of source link — Nastya writes from herself)
+    post_text += f"\n\n👉 t.me/chasnastya"
 
     # Add category hashtag
     category_hashtags = {

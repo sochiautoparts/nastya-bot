@@ -82,16 +82,26 @@ async def cmd_reset(message: Message, db=None, ai_router=None) -> None:
     if not ai_router:
         return
 
-    # Перезагрузка модели
-    if ai_router.provider:
+    # Перезагрузка провайдеров
+    reloaded = []
+    if ai_router._pollinations:
         try:
-            await ai_router.provider.close()
-            await ai_router.provider.init()
-            await message.answer("🔄 Модель перезагружена!")
+            await ai_router._pollinations.close()
+            await ai_router._pollinations.init()
+            reloaded.append("Pollinations")
         except Exception as e:
-            await message.answer(f"❌ Ошибка перезагрузки: {e}")
+            logger.error(f"Pollinations reload error: {e}")
+    if ai_router._local:
+        try:
+            await ai_router._local.close()
+            await ai_router._local.init()
+            reloaded.append("Local")
+        except Exception as e:
+            logger.error(f"Local model reload error: {e}")
+    if reloaded:
+        await message.answer(f"🔄 Провайдеры перезагружены: {', '.join(reloaded)}!")
     else:
-        await message.answer("❌ Провайдер не найден!")
+        await message.answer("❌ Провайдеры не найдены!")
 
 
 @router.message(Command("fetchnews"))

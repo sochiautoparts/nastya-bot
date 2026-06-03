@@ -1106,6 +1106,33 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     text = message.text
     text_lower = text.lower()
 
+    # ── GROUP CHAT: Decide whether to respond ──
+    chat_type = message.chat.type if message.chat else "private"
+    is_group = chat_type in ("group", "supergroup")
+
+    if is_group:
+        # In groups: Always respond if mentioned or if bot username is in text
+        is_mentioned = f"@{BOT_USERNAME}" in text_lower if BOT_USERNAME else False
+        is_reply_to_bot = False
+        if message.reply_to_message and message.reply_to_message.from_user:
+            is_reply_to_bot = message.reply_to_message.from_user.username == BOT_USERNAME.replace("@", "")
+
+        # Keywords that trigger Nastya's interest in groups
+        interest_keywords = ["настя", "насть", "насти", "настю", "настёна",
+                            "девушк", "красив", "рецепт", "гороскоп", "совет",
+                            "авто", "запчас", "сочи", "погода", "новости",
+                            "скидк", "покупк", "факт", "интересн"]
+        has_interest = any(kw in text_lower for kw in interest_keywords)
+
+        # Decide: respond if mentioned/replied, or by probability for interesting content
+        should_respond = is_mentioned or is_reply_to_bot or has_interest
+        if not should_respond:
+            # Random chance to comment even without being mentioned — Nastya is active in groups!
+            if random.random() < GROUP_RESPONSE_CHANCE:
+                should_respond = True
+            else:
+                return  # Skip this group message
+
     user_id = message.from_user.id
     active_task = _user_processing.get(user_id)
     if active_task is not None and not active_task.done():
@@ -1307,9 +1334,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
                 url_context += f"Пользователь скинул ссылку: {url}. Отреагируй и спроси что там интересного. "
 
     # ── Normal AI chat — MOST conversations go here ──
-    # Detect if we're in a group chat (limit message length)
-    chat_type = message.chat.type if message.chat else "private"
-    is_group = chat_type in ("group", "supergroup")
+    # is_group is already computed above for group chat handling
 
     task = asyncio.create_task(
         _process_text_message(message, text, db, ai_router, is_group=is_group, url_context=url_context)
