@@ -1,32 +1,20 @@
-"""Nastya Bot 51.0 — FIX HALLUCINATED LINKS + AI-ONLY COMMENTS + GROUP ACTIVE! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 52.0 — MOSCOW BLOGGER + REAL LINKS + EXPANDED NEWS! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v51.0:
+Architecture v52.0:
+  - PERSONA: Настя — москвичка, 23 года, блогер, ведёт Telegram канал @chasnastya
   - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (23 модели, балансировка нагрузки!)
-    - openai (GPT-5.4 Nano) PRIMARY — fast, vision-capable
-    - + 22 backup models with automatic failover
   - INLINE MODE: Настя работает в любом чате через @asnastya_bot!
   - VISION: Pollinations vision API — Настя ВИДИТ фото! 13 vision-моделей
-  - SEARCH: /find — поиск товаров, услуг, лучших цен с ссылками!
+  - SEARCH: /find — поиск товаров, услуг, лучших цен с РЕАЛЬНЫМИ ссылками!
   - DISCOVERY: Авто-посты — рецепты, нумерология, астрология, мероприятия!
   - URL: Настя понимает ссылки!
   - PHOTO SEARCH: фото → распознавание → поиск товаров/цен!
-  - Новости: RSS-парсер + AI-комментарии (AI ONLY, NO templates!)
+  - Новости: 16 RSS-источников + AI-комментарии (AI ONLY, NO templates!)
   - Канал: AI-посты на основе новостей, опросы, факты, рецепты
-  - /horoscope, /recipe, /numerology — команды!
-  - Typing delay indicators — human-like behavior
-  - Group chat: Nastya COMMENTS ACTIVELY in groups — 70% response, longer messages!
+  - FIX v52: Nastya gives ONLY real links from web search — hallucinated URLs are REMOVED!
+  - Channel posts: @chasnastya link format
+  - Group chat: Nastya COMMENTS ACTIVELY in groups — 70% response!
   - Proactive messaging + discovery sharing — Настя активный собеседник
-  - FIX v51: Nastya gives ONLY real links from web search — hallucinated URLs are REMOVED!
-  - FIX: Channel posts — channel link in every post, no source links
-  - FIX: AIRouter.provider bug — health watchdog works correctly
-  - NO MODEL RESTRICTIONS — max_tokens=2000, full detailed responses!
-  - AI-GENERATED news commentary — NO MORE template-based comments!
-  - REMOVED: grok (500), grok-large (500), qwen-vision (error)
-  - Qwen3-4B GGUF как LAST FALLBACK — отключено по умолчанию!
-  - Dedup: tracks active asyncio.Task per user
-  - HEALTH WATCHDOG: monitors Telegram API + model health
-  - FORCE WEB SEARCH when user asks for products/services/links
-  - HALLUCINATED URL DETECTION — commercial URLs not in search results are removed
 """
 import asyncio
 import fcntl
@@ -511,7 +499,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 51.0 Starting (FIX HALLUCINATED LINKS + AI-ONLY COMMENTS!) ===")
+    logger.info("=== Nastya Bot 52.0 Starting (MOSCOW BLOGGER + REAL LINKS + EXPANDED NEWS!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -559,7 +547,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 51.0 Ready (FIX HALLUCINATED LINKS + AI-ONLY COMMENTS!) ===")
+    logger.info("=== Nastya Bot 52.0 Ready (MOSCOW BLOGGER + REAL LINKS + EXPANDED NEWS!) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

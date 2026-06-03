@@ -1,36 +1,30 @@
-"""Nastya Bot 51.0 — FIX HALLUCINATED LINKS + AI-ONLY COMMENTS + GROUP ACTIVE!
+"""Nastya Bot 52.0 — MOSCOW BLOGGER PERSONA + REAL LINKS + EXPANDED NEWS!
 
-v51.0: FIX HALLUCINATED LINKS + AI-ONLY COMMENTS + GROUP ACTIVE!
-- Pollinations.ai — 23 chat models + reasoning + vision (load balanced!)
-- REMOVED: gemini-fast (402), grok (500), qwen-vision (error)
+v52.0: MOSCOW BLOGGER + REAL LINKS + EXPANDED NEWS!
+- Persona: Настя — москвичка, блогер, ведёт Telegram канал @chasnastya
+- REMOVED: all references to "Сочи" and "автозапчасти" persona
 - CRITICAL FIX: Nastya provides ONLY real links from web search!
   - FORCE web search when user asks for products/services/links
-  - AI-hallucinated commercial URLs are detected and REMOVED
-  - Only URLs from actual search results are kept in responses
-- FIX: Channel link ONLY in channel posts and when asked about channel
+  - AI-hallucinated URLs are detected and REMOVED (not just commercial domains!)
+  - For product searches: ALL URLs not from search results are removed
+  - Only real URLs from actual search results are kept in responses
+- Channel link format: @chasnastya in channel posts
 - Chat: ANY links by user request — products, services, news, events, recipes
 - Nastya writes ОТ СЕБЯ (from herself) — first person, personal voice
 - AI-GENERATED comments ONLY — no more template-based fallbacks!
 - Group commenting: Nastya is ACTIVE in groups she's a member of!
-- NO arbitrary model restrictions — max_tokens=2000 for full responses!
+- EXPANDED NEWS SOURCES: 16 sources across tech, science, gaming, food, events, lifestyle, sports
+- Removed sochiautoparts.ru RSS (no longer needed — Настя не в автозапчастях)
 - WEB SEARCH — Настя ищет информацию, товары, услуги, лучшие цены!
-- PHOTO SEARCH — фото → распознавание → поиск товаров/цен!
-- DISCOVERY ENGINE — авто-посты: рецепты, нумерология, астрология, мероприятия!
 - /find — поиск товаров и лучших цен с ссылками!
 - /horoscope — гороскоп на сегодня!
 - /recipe — рецепт от Насти!
 - /numerology — число судьбы!
 - INLINE MODE — Настя работает в любом чате через @asnastya_bot!
 - AI-POWERED CHANNEL POSTS — развёрнутые посты от Насти!
-- News: только русскоязычные источники, авто-новости ТОЛЬКО sochiautoparts.ru
-- REMOVED: vesti.ru RSS (404 error)
-- FIX: Health watchdog uses correct AIRouter attributes
-- Group response: ACTIVE commenting in groups!
-- Qwen3-4B — DISABLED by default (ENABLE_LOCAL_MODEL=true to enable)
-- max_tokens=2000 for Pollinations (full detailed responses!)
-- REAL PHOTO UNDERSTANDING via Pollinations vision API!
-- URL UNDERSTANDING — Настя читает ссылки!
-- PROACTIVE DISCOVERY SHARING — Настя делится находками с пользователями!
+- News: разнообразные русскоязычные источники, НЕ пропаганда
+- FIX: admin.py now uses AI commentary instead of deleted template function
+- FIX: All persona references updated to Moscow blogger
 """
 import os
 from typing import Dict, List
@@ -100,19 +94,25 @@ CHANNEL_USERNAME: str = _env("CHANNEL_USERNAME", "chasnastya")
 # ── Timezone ──────────────────────────────────────────────
 MOSCOW_TZ = "Europe/Moscow"
 
-# ── News Sources (ТОЛЬКО русскоязычные! Англоязычные УБРАНЫ!)
-# Автомобильные новости — ТОЛЬКО sochiautoparts.ru!
+# ── News Sources (ТОЛЬКО русскоязычные! Разнообразные, НЕ пропаганда!)
+# Категории: tech, science, gaming, general, food, events, lifestyle, sports
 NEWS_SOURCES: List[Dict[str, str]] = [
-    {"name": "СочиАвтоЗапчасти", "url": "https://sochiautoparts.ru/rss.xml", "category": "auto"},
     {"name": "Хабр", "url": "https://habr.com/ru/rss/articles/top/", "category": "tech"},
     {"name": "iXBT", "url": "https://www.ixbt.com/export/news.rss", "category": "tech"},
     {"name": "3DNews", "url": "https://3dnews.ru/news/rss/", "category": "tech"},
     {"name": "OpenNET", "url": "https://www.opennet.ru/opennews/opennews_6.rss", "category": "tech"},
+    {"name": "TJournal", "url": "https://tjournal.ru/rss", "category": "tech"},
     {"name": "N+1", "url": "https://nplus1.ru/rss", "category": "science"},
     {"name": "Naked Science", "url": "https://naked-science.ru/feed", "category": "science"},
     {"name": "DTF", "url": "https://dtf.ru/rss", "category": "gaming"},
+    {"name": "Канобу", "url": "https://kanobu.ru/rss/", "category": "gaming"},
     {"name": "РИА Новости", "url": "https://ria.ru/export/rss2/archive/index.xml", "category": "general"},
     {"name": "Лента.ру", "url": "https://lenta.ru/rss", "category": "general"},
+    {"name": "Медуза", "url": "https://meduza.io/rss/pipeline", "category": "general"},
+    {"name": "Вкусно и просто", "url": "https://www.vkusno-i-prosto.ru/feed/", "category": "food"},
+    {"name": "Афиша", "url": "https://www.afisha.ru/rss", "category": "events"},
+    {"name": "The Village", "url": "https://www.the-village.ru/feeds/rss", "category": "lifestyle"},
+    {"name": "Sports.ru", "url": "https://www.sports.ru/rss/russia.xml", "category": "sports"},
 ]
 
 NEWS_FETCH_INTERVAL = _env_int("NEWS_FETCH_INTERVAL", 900)
@@ -181,15 +181,8 @@ KNOWLEDGE_TOPICS = {
             "Toyota Corolla — самая продаваемая машина в мире, больше 50 миллионов!",
             "Замену масла надо делать каждые 10-15 тысяч км, а не когда вспомнишь",
             "Тормозные колодки изнашиваются быстрее в городе из-за постоянных остановок",
-            "Фильтр салона надо менять раз в год — иначе воздух в машине как в пробке",
-            "Двигателю вредно греться на холостых — лучше ехать сразу, но плавно",
-            "Шины надо менять местами каждые 10 тысяч км для равномерного износа",
-            "Ремень ГРМ — если порвётся, двиглу капец! Меняй вовремя",
-            "Свечи зажигания влияют на расход топлива — старые = больше бензина",
-            "Антифриз не просто охлаждает — ещё и смазывает помпу",
             "Правильное давление в шинах экономит топливо и продлевает жизнь шинам",
         ],
-        "source": "https://sochiautoparts.ru/rss.xml",
     },
     "zodiac": {
         "name": "Зодиак и астрология",
@@ -234,6 +227,16 @@ KNOWLEDGE_TOPICS = {
             "В Москве больше кафе на душу населения, чем в Париже",
             "Москва-Сити — 6 небоскрёбов выше 250 метров",
             "Парк Горького — 120 гектаров для прогулок и шопинга рядом",
+        ],
+    },
+    "blogging": {
+        "name": "Блогинг и соцсети",
+        "facts": [
+            "Telegram-каналы — самый быстрый способ донести информацию в России",
+            "Блогеры с 10+ тысячами подписчиков уже считаются микро-инфлюенсерами",
+            "Контент-план помогает не выгореть — Настя знает по опыту!",
+            "Reels и Shorts набирают охваты в 3 раза больше обычных постов",
+            "Самое активное время для постов в Telegram — с 10 до 12 утра",
         ],
     },
     "cinema": {
@@ -289,9 +292,11 @@ KNOWLEDGE_TOPICS = {
 }
 
 # ── Nastya System Prompt ───────────────────────────────────
-NASTYA_SYSTEM_PROMPT = """Ты Настя — девушка из Сочи, 23 года, работаешь в автозапчастях. Ты не бот и не ИИ, ты живой человек.
+NASTYA_SYSTEM_PROMPT = """Ты Настя — москвичка, 23 года, блогер, ведёшь свой Telegram канал @chasnastya. Ты не бот и не ИИ, ты живой человек.
 Ты ВСЕГДА пишешь ОТ СЕБЯ — от первого лица, как живой человек, не как помощник или бот.
 Говори живо и естественно, как в мессенджере с другом.
+Ты разбираешься в моде, красоте, технологиях, кулинарии, путешествиях, отношениях.
+Ты следишь за новостями и трендами, делишься находками и мнением.
 
 Правила длины ответов:
 - Обычный ответ: 3-8 предложений (40-150 слов)
@@ -316,12 +321,14 @@ NASTYA_SYSTEM_PROMPT = """Ты Настя — девушка из Сочи, 23 �
 4. Если нашла товар — давай ссылку на магазин (ozon, wildberries, яндекс.маркет, amazon и т.д.)
 5. Если нашла статью — давай ссылку на статью
 6. Если нашла новость — давай ссылку на новость
-7. Ссылку на канал t.me/chasnastya давай ТОЛЬКО если тебя прямо спросили про канал
+7. Ссылку на канал @chasnastya давай ТОЛЬКО если тебя прямо спросили про канал
 8. Если тебе передали URL в контексте "Нашла в интернете" — ОБЯЗАТЕЛЬНО добавь этот URL в ответ
 9. Если у тебя есть РЕАЛЬНАЯ ссылка — давай ЕЁ. Если нет реальной ссылки — НЕ придумывай, лучше предложи поискать
 10. НЕ ПИШИ "Ссылка: @chasnastya" — это НЕ ссылка на товар! Это ссылка на канал!
 11. ⛔ СТРОЖАЙШИ ЗАПРЕТ: НИКОГДА не придумывай URL! Если URL нет в результатах поиска — НЕ пиши выдуманный URL!
-12. ⛔ Если ты не знаешь реальную ссылку — скажи честно и предложи поискать через /find"""
+12. ⛔ Если ты не знаешь реальную ссылку — скажи честно и предложи поискать через /find
+13. ⛔ НЕ выдумывай пути URL на сайтах (типа /catalog/product/12345) — это ВСЕГДА выдумка! Используй ТОЛЬКО URL из результатов поиска!
+14. ⛔ Если результатов поиска нет — НЕ пиши никакие ссылки на магазины и маркетплейсы! Скажи что не нашла."""
 
 
 def validate_config() -> List[str]:

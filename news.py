@@ -124,14 +124,18 @@ def _parse_rss(xml_text: str, source_name: str, category: str = "general") -> Li
 # Category priority for picking interesting news (higher = more interesting for Nastya)
 # v44: auto = HIGHEST priority (sochiautoparts.ru — the bot's niche!)
 CATEGORY_PRIORITY = {
-    "auto": 8,           # ПРИОРИТЕТ — автомобильные новости от sochiautoparts.ru!
+    "food": 7,            # Рецепты и еда — Настя любит готовить!
+    "events": 6,          # Мероприятия — Настя хочет везде!
+    "lifestyle": 5,       # Стиль и красота — Настина тема!
     "entertainment": 5,
     "gaming": 4,
     "internet": 4,
+    "sports": 3,          # Спорт — Настя тоже следит!
     "tech": 3,
     "science": 3,
     "world": 2,
     "general": 1,
+    "auto": 1,            # Авто — не приоритет, Настя не в автозапчастях
 }
 
 # Keywords that make news more interesting for Nastya
@@ -320,10 +324,14 @@ async def generate_ai_commentary(title: str, summary: str = "", category: str = 
     if ai_router:
         try:
             category_context = {
-                "auto": "Это автомобильная новость — Настя разбирается в машинах, работает в автозапчастях.",
+                "auto": "Это автомобильная новость — Настя интересуется автомобилями и делится мнением.",
                 "tech": "Это технологическая новость — Настя интересуется гаджетами и технологиями.",
                 "science": "Это научная новость — Настя любит науку и удивительные факты.",
                 "gaming": "Это игровая новость — Настя играет в игры и следит за индустрией.",
+                "food": "Это кулинарная новость — Настя обожает готовить и пробовать новое!",
+                "events": "Это анонс мероприятия — Настя хочет everywhere и делится находками!",
+                "lifestyle": "Это лайфстал-новость — Настя разбирается в моде, красоте и стиле!",
+                "sports": "Это спортивная новость — Настя следит за спортом!",
             }.get(category, "")
 
             prompt_parts = [f"Новость: {title}"]
@@ -337,7 +345,7 @@ async def generate_ai_commentary(title: str, summary: str = "", category: str = 
             result = await ai_router.chat(
                 prompt=prompt,
                 system_prompt=(
-                    "Ты Настя — девушка из Сочи, 23 года. "
+                    "Ты Настя — москвичка, 23 года, блогер. "
                     "Напиши КОРОТКИЙ комментарий к этой новости от себя, от первого лица. "
                     f"{category_context} "
                     "1-2 предложения, живо и эмоционально. "

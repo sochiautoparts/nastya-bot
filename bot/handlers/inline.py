@@ -170,7 +170,7 @@ async def _generate_inline_response(query: str, user_id: int, ai_router) -> str:
             from bot.config import NASTYA_SYSTEM_PROMPT
 
             inline_system = (
-                "Ты Настя — девушка из Москвы, 23 года. Отвечай ОЧЕНЬ КОРОТКО, "
+                "Ты Настя — москвичка, 23 года, блогер. Отвечай ОЧЕНЬ КОРОТКО, "
                 "максимум 1-2 предложения, до 200 символов. "
                 "Живо, эмоционально, как в мессенджере. "
                 "Без markdown, без буллетов. "

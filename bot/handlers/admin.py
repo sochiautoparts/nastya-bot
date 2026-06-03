@@ -117,7 +117,7 @@ async def cmd_fetch_news(message: Message, db=None, ai_router=None) -> None:
 
     try:
         from news import run_news_cycle
-        commented = await run_news_cycle(db)  # v35: ai_router not needed, templates only!
+        commented = await run_news_cycle(db, ai_router)
         await message.answer(f"📰 Готово! Новых с комментариями: {commented}")
     except Exception as e:
         logger.error(f"Fetch news error: {e}")
@@ -150,7 +150,7 @@ async def cmd_post_channel(message: Message, db=None, ai_router=None) -> None:
 
 @router.message(Command("testnews"))
 async def cmd_test_news(message: Message, db=None, ai_router=None) -> None:
-    """Test news commentary generation — template-based, no AI!"""
+    """Test news commentary generation — AI-powered!"""
     if message.from_user.id not in ADMIN_IDS:
         return
 
@@ -159,9 +159,9 @@ async def cmd_test_news(message: Message, db=None, ai_router=None) -> None:
     await message.answer(f"🧪 Генерю реакцию на: {test_title}")
 
     try:
-        from news import generate_template_commentary
-        comment = generate_template_commentary(test_title, test_category)
-        await message.answer(f"💬 Реакция Насти (template): {comment}")
+        from news import generate_ai_commentary
+        comment = await generate_ai_commentary(test_title, category=test_category, ai_router=ai_router)
+        await message.answer(f"💬 Реакция Насти (AI): {comment}")
     except Exception as e:
         logger.error(f"Test news error: {e}")
         await message.answer("❌ Настя пока не может реагировать на новости...")

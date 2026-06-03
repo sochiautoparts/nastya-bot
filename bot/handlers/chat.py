@@ -760,7 +760,7 @@ async def cmd_horoscope(message: Message, db=None, ai_router=None) -> None:
         result = await ai_router.chat(
             prompt=f"Напиши гороскоп на сегодня для знака {sign_name}. Что ждёт в любви, работе, здоровье. Дай конкретные советы.",
             system_prompt=(
-                "Ты Настя — девушка из Сочи, 23 года, увлекаешься астрологией. "
+                "Ты Настя — москвичка, 23 года, блогер, увлекаешься астрологией. "
                 "Пиши гороскоп живо и эмоционально, как подружка-астролог. "
                 "4-6 предложений. Без markdown, без буллетов. "
                 "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
@@ -809,7 +809,7 @@ async def cmd_recipe(message: Message, db=None, ai_router=None) -> None:
             result = await ai_router.chat(
                 prompt=f"Найден рецепт: {snippet}\n\nНапиши подробный рецепт с ингредиентами и пошаговым приготовлением.",
                 system_prompt=(
-                    "Ты Настя — девушка из Сочи, 23 года, любишь готовить. "
+                    "Ты Настя — москвичка, 23 года, блогер, любишь готовить. "
                     "Пиши рецепт подробно: ингредиенты, пошаговое приготовление, советы. "
                     "6-10 предложений. Без markdown, без буллетов — сплошной текст. "
                     "Говори живо: 'прикинь', 'капец', 'круто'."
@@ -863,7 +863,7 @@ async def cmd_numerology(message: Message, db=None, ai_router=None) -> None:
             ai_result = await ai_router.chat(
                 prompt=f"Число судьбы: {number}. Значение: {meaning}. Распиши подробнее что значит число {number} в нумерологии.",
                 system_prompt=(
-                    "Ты Настя — девушка из Сочи, 23 года, увлекаешься нумерологией. "
+                    "Ты Настя — москвичка, 23 года, блогер, увлекаешься нумерологией. "
                     "Расскажи подробно и интересно. 4-6 предложений. Без markdown. "
                     "Говори живо: 'прикинь', 'офигеть', 'круто'."
                 ),
@@ -1555,10 +1555,13 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                             f"\n\n🔍 НАСТЯ НАШЛА В ИНТЕРНЕТЕ (ОБЯЗАТЕЛЬНО используй ТОЛЬКО эти данные и URL!):\n"
                             + "\n".join(search_parts)
                             + "\n\n⛔ КРИТИЧЕСКИ ВАЖНО:"
-                            + "\n1. Используй ТОЛЬКО ссылки из результатов поиска выше!"
+                            + "\n1. Используй ТОЛЬКО ссылки из результатов поиска выше! Буквально копируй URL!"
                             + "\n2. НЕ придумывай ссылки — если ссылки нет в результатах, НЕ пиши её!"
-                            + "\n3. Если результатов недостаточно — скажи что нашла не всё и предложи поискать ещё"
-                            + "\n4. НЕ заменяй реальные ссылки на @chasnastya!"
+                            + "\n3. НЕ меняй путь URL — копируй ССЫЛКУ ТОЧНО как в результатах!"
+                            + "\n4. Если результатов недостаточно — скажи что нашла не всё и предложи поискать ещё"
+                            + "\n5. НЕ заменяй реальные ссылки на @chasnastya!"
+                            + "\n6. НЕ добавляй выдуманные пути типа /catalog/product/12345 — это ВСЕГДА выдумка!"
+                            + "\n7. Каждый товар/услугу сопровождай ТОЧНОЙ ссылкой из результатов поиска"
                         )
                     else:
                         system_prompt += f"\n\n🔍 НАСТЯ НАШЛА В ИНТЕРНЕТЕ (ОБЯЗАТЕЛЬНО используй эти данные и URL в ответе!):\n" + "\n".join(search_parts) + "\n\n⚠️ ВАЖНО: Включи ВСЕ найденные URL в свой ответ! НЕ заменяй их на @chasnastya!"
@@ -1650,13 +1653,22 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                 pass
 
     if search_results:
-        response_text = _remove_hallucinated_urls(response_text, search_result_urls)
+        response_text = _remove_hallucinated_urls(response_text, search_result_urls, is_product_search=is_product_search)
 
     # Add search result link if no URLs remain after cleanup
     if search_results and not re.search(r'https?://\S+', response_text):
-        search_link = get_search_link_for_response(search_results)
-        if search_link:
-            response_text += f"\n\n🔗 {search_link}"
+        # Append ALL search result URLs when AI didn't include any
+        search_links = []
+        for r in search_results[:3]:
+            url = r.get('url', '')
+            title = r.get('title', '')
+            if url:
+                link_text = f"🔗 {url}"
+                if title:
+                    link_text = f"• {title}\n  🔗 {url}"
+                search_links.append(link_text)
+        if search_links:
+            response_text += "\n\n" + "\n".join(search_links)
 
     # ── GROUP CHAT: Limit response length ──
     if is_group and len(response_text) > 600:
@@ -1825,40 +1837,52 @@ def _smart_split_message(text: str, max_len: int = 4096) -> list:
     return parts
 
 
-def _remove_hallucinated_urls(text: str, search_result_urls: set) -> str:
-    """v51: Remove AI-hallucinated commercial URLs from response.
+def _remove_hallucinated_urls(text: str, search_result_urls: set, is_product_search: bool = False) -> str:
+    """v52: Remove AI-hallucinated URLs from response.
 
     When a user asks for products/services/links, the AI often generates
-    plausible-looking but FAKE URLs from real commercial sites (wildberries.ru,
-    ozon.ru, market.yandex.ru, etc.). These URLs don't actually work!
+    plausible-looking but FAKE URLs. These URLs don't actually work!
 
-    This function:
-    1. Finds all URLs in the response from known commercial domains
-    2. Checks if they were in the actual search results
-    3. Removes URLs that weren't in search results (they're hallucinations!)
-    4. If all product URLs are removed, appends real search result URLs
+    v52 ENHANCED:
+    - For product searches: remove ALL URLs not in search results (not just commercial domains)
+    - For regular searches: only remove URLs from known commercial domains not in results
+    - Clean up leftover text artifacts after URL removal
     """
     if not text or not search_result_urls:
         return text
 
-    url_pattern = r'https?://([^\s<>)\]"\']+)'  # Capture just the domain+path part
+    url_pattern = r'https?://([^\s<>)\]"\']+)'
     found_urls = re.findall(url_pattern, text)
 
-    # Build set of domains that were in search results
+    # Build set of full search result URLs (normalized) and domains
+    search_urls_normalized = set()
     search_domains = set()
     for url_or_domain in search_result_urls:
-        # url_or_domain could be a full URL or just a domain
-        if '/' in url_or_domain:
-            try:
-                from urllib.parse import urlparse
+        normalized = url_or_domain.lower().rstrip('/')
+        search_urls_normalized.add(normalized)
+        try:
+            from urllib.parse import urlparse
+            if '/' in url_or_domain:
                 parsed = urlparse(url_or_domain if url_or_domain.startswith('http') else f'https://{url_or_domain}')
                 search_domains.add(parsed.netloc.lower())
-            except Exception:
-                search_domains.add(url_or_domain.split('/')[0].lower())
-        else:
-            search_domains.add(url_or_domain.lower())
+            else:
+                search_domains.add(url_or_domain.lower())
+        except Exception:
+            search_domains.add(url_or_domain.split('/')[0].lower())
 
-    # Find and remove hallucinated commercial URLs
+    # For product searches: also build partial URL matches for more flexible matching
+    search_url_paths = set()
+    for url_or_domain in search_result_urls:
+        try:
+            from urllib.parse import urlparse
+            if url_or_domain.startswith('http'):
+                parsed = urlparse(url_or_domain)
+                # Store domain + path (without query params) for partial matching
+                search_url_paths.add(f"{parsed.netloc.lower()}{parsed.path.lower().rstrip('/')}")
+        except Exception:
+            pass
+
+    # Find and remove hallucinated URLs
     hallucinated_count = 0
     for full_url in found_urls:
         try:
@@ -1869,43 +1893,54 @@ def _remove_hallucinated_urls(text: str, search_result_urls: set) -> str:
                 full_url_for_parse = full_url
             parsed = urlparse(full_url_for_parse)
             domain = parsed.netloc.lower()
+            url_path = f"{domain}{parsed.path.lower().rstrip('/')}"
+            normalized_url = full_url.lower().rstrip('/')
 
-            # Check if this is a commercial domain
-            is_commercial = any(comm_domain in domain for comm_domain in _COMMERCIAL_DOMAINS)
+            # Check if URL was in search results (exact or partial match)
+            url_in_results = (
+                normalized_url in search_urls_normalized
+                or any(normalized_url in sr for sr in search_urls_normalized)
+                or any(sr in normalized_url for sr in search_urls_normalized)
+                or url_path in search_url_paths
+                or domain in search_domains  # Domain was in search results
+            )
 
-            if is_commercial:
-                # Check if this domain OR full URL was in search results
-                domain_in_results = domain in search_domains
-                url_in_results = any(
-                    full_url.lower().rstrip('/') in sr.lower().rstrip('/')
-                    for sr in search_result_urls
-                )
+            should_remove = False
+            if is_product_search:
+                # For product searches: remove ALL URLs not from search results
+                # This is aggressive because AI-hallucinated product URLs are never real
+                if not url_in_results:
+                    should_remove = True
+            else:
+                # For regular searches: only remove URLs from commercial domains not in results
+                is_commercial = any(comm_domain in domain for comm_domain in _COMMERCIAL_DOMAINS)
+                if is_commercial and not url_in_results:
+                    should_remove = True
 
-                if not domain_in_results and not url_in_results:
-                    # This is a HALLUCINATED commercial URL — remove it!
-                    # Find and remove the full URL from text
-                    url_variants = [
-                        f'https://{full_url}',
-                        f'http://{full_url}',
-                        full_url,
-                    ]
-                    for variant in url_variants:
-                        if variant in text:
-                            text = text.replace(variant, '')
-                            hallucinated_count += 1
-                            break
+            if should_remove:
+                # Remove the URL from text
+                url_variants = [
+                    f'https://{full_url}',
+                    f'http://{full_url}',
+                    full_url,
+                ]
+                for variant in url_variants:
+                    if variant in text:
+                        text = text.replace(variant, '')
+                        hallucinated_count += 1
+                        break
         except Exception:
             pass
 
     if hallucinated_count > 0:
-        logger.info(f"Removed {hallucinated_count} hallucinated commercial URLs from response")
+        logger.info(f"Removed {hallucinated_count} hallucinated URLs from response (product_search={is_product_search})")
 
         # Clean up leftover artifacts after URL removal
-        # Remove patterns like "Ссылка: ", "🔗 ", empty brackets, etc.
         text = re.sub(r'\s*(?:Ссылк[аиу]:?\s*)?\[?\s*\]?\s*$', '', text, flags=re.IGNORECASE | re.MULTILINE)
         text = re.sub(r'\s*(?:Ссылк[аиу]:?\s*)$', '', text, flags=re.IGNORECASE | re.MULTILINE)
         text = re.sub(r'\s*🔗\s*$', '', text, flags=re.MULTILINE)
         text = re.sub(r'\[\s*\]', '', text)  # Empty brackets
+        text = re.sub(r'—\s*$', '', text, flags=re.MULTILINE)  # Trailing dashes
         text = re.sub(r'\n{3,}', '\n\n', text)
 
     return text.strip()

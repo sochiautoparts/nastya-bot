@@ -215,7 +215,7 @@ async def discover_content(ai_router) -> Optional[Dict]:
             result = await ai_router.chat(
                 prompt=f"Найдена информация: {title}. {snippet}.{extra_info}\n\n{category_prompt}",
                 system_prompt=(
-                    "Ты Настя — девушка из Сочи, 23 года. Пишешь пост для своего Telegram канала ОТ СЕБЯ. "
+                    "Ты Настя — москвичка, 23 года, блогер. Пишешь пост для своего Telegram канала ОТ СЕБЯ. "
                     "Говоришь от первого лица — 'я думаю', 'мне кажется', 'я нашла'. "
                     "Живо, эмоционально, как живой человек. "
                     "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто', 'точняк'. "
@@ -276,7 +276,7 @@ async def post_discovery_to_channel(bot: Bot, db, ai_router, discovery: Dict) ->
     post_text = template.format(content=content)
 
     # Channel link in EVERY post (instead of source link — Nastya writes from herself)
-    post_text += f"\n\n👉 t.me/chasnastya"
+    post_text += f"\n\n@chasnastya"
 
     # Add category hashtag
     category_hashtags = {
@@ -372,7 +372,7 @@ async def get_discovery_for_chat(ai_router) -> Optional[str]:
             result = await ai_router.chat(
                 prompt=f"Настя нашла интересное: {title}. {snippet}. Расскажи коротко и живо, 2-3 предложения. Источник: {url}",
                 system_prompt=(
-                    "Ты Настя — девушка из Сочи, 23 года. Делишься находкой с собеседником. "
+                    "Ты Настя — москвичка, 23 года, блогер. Делишься находкой с собеседником. "
                     "Коротко, живо, эмоционально. Обязательно добавь ссылку. "
                     "Без markdown, без буллетов."
                 ),

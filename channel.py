@@ -1,12 +1,14 @@
-"""Nastya Channel Manager 11.0 — AI-POWERED NEWS + ACTIVE GROUP COMMENTS!
+"""Nastya Channel Manager 12.0 — AI-POWERED NEWS + ACTIVE GROUP COMMENTS!
 
-v11.0 KEY CHANGES:
+v12.0 KEY CHANGES:
+  - Persona updated: Настя — москвичка, блогер, ведёт Telegram канал @chasnastya
+  - Channel link format: @chasnastya in every post
   - AI-POWERED news commentary — ALWAYS AI, NO templates!
   - AI generates ALL comments — templates removed completely
   - If AI fails, a generic comment is used (no more template-based comments!)
   - Nastya comments ACTIVELY in groups she's a member of
-  - Automotive news focus — СочиАвтоЗапчасти primary source
-  - More substantive automotive news posts
+  - EXPANDED categories: food, events, lifestyle, sports
+  - More diverse content — not just auto parts!
 """
 import logging
 import random
@@ -353,20 +355,24 @@ def format_news_post(title: str, comment: str, link: str = "", category: str = "
         "entertainment": "🎬",
         "world": "🌍",
         "science": "🔬",
+        "food": "🍳",
+        "events": "🎉",
+        "lifestyle": "💅",
+        "sports": "⚽",
     }
     cat_emoji = cat_emojis.get(category, "📰")
     post += f"\n{cat_emoji} #{category.capitalize()}"
 
     # Channel link in EVERY post
-    post += f"\n\n👉 t.me/chasnastya"
+    post += f"\n\n@chasnastya"
 
     return post
 
 
 def format_personality_post(text: str) -> str:
     """Format a personality post for the channel — adds channel link."""
-    if "t.me/chasnastya" not in text and "chasnastya" not in text:
-        text += f"\n\n👉 t.me/chasnastya"
+    if "@chasnastya" not in text and "chasnastya" not in text:
+        text += f"\n\n@chasnastya"
     return text
 
 
@@ -375,7 +381,7 @@ def format_knowledge_post(fact: str) -> str:
     template = random.choice(KNOWLEDGE_POST_TEMPLATES)
     post = template.format(fact=fact)
     # Channel link in every post
-    post += f"\n\n👉 t.me/chasnastya"
+    post += f"\n\n@chasnastya"
     return post
 
 
@@ -714,14 +720,14 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
 
             category_context = ""
             if category == "auto":
-                category_context = "Это автомобильная новость от sochiautoparts.ru — расскажи подробно, со знанием дела, как девушка которая работает в автозапчастях."
+                category_context = "Это автомобильная новость — расскажи подробно, как человек который интересуется автомобилями."
 
             prompt = "\n".join(prompt_parts)
 
             result = await ai_router.chat(
                 prompt=prompt,
                 system_prompt=(
-                    "Ты Настя — девушка из Сочи, 23 года, работаешь в автозапчастях. "
+                    "Ты Настя — москвичка, 23 года, блогер, ведёшь Telegram канал @chasnastya. "
                     "Ты пишешь пост для своего Telegram канала ОТ СЕБЯ — от первого лица, "
                     "как живой человек, а не как бот или ИИ-помощник. "
                     "Пиши 'я думаю', 'мне кажется', 'я прочитала', 'я нашла'. "
@@ -777,12 +783,13 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
     cat_emojis = {
         "auto": "🚗", "general": "📰", "tech": "💻", "gaming": "🎮",
         "internet": "🌐", "entertainment": "🎬", "world": "🌍", "science": "🔬",
+        "food": "🍳", "events": "🎉", "lifestyle": "💅", "sports": "⚽",
     }
     cat_emoji = cat_emojis.get(category, "📰")
     post_text += f"\n{cat_emoji} #{category.capitalize()}"
 
     # Channel link in EVERY post
-    post_text += f"\n\n👉 t.me/chasnastya"
+    post_text += f"\n\n@chasnastya"
 
     # Validate before posting
     if not _validate_post_text(post_text):
