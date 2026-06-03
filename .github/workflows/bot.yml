@@ -1,30 +1,20 @@
-name: Nastya Bot — CLOUD-ONLY v49
+name: Nastya Bot — CLOUD-ONLY v50
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v49.0 — FIX LINKS + GROUP COMMENTS + MORE MODELS!
+# Nastya Bot v50.0 — AI COMMENTS + LINK FIX + GROUP ACTIVE + NO LIMITS!
 #
 # Architecture:
 #   - Pollinations.ai EXPANDED MULTI-MODEL (25 chat models!)
-#     - openai (GPT-5.4 Nano) PRIMARY — fast, vision-capable
-#     - + 24 backup models with automatic failover
-#     - NEW: kimi-k2.6, nova-fast, glm, minimax, grok-4.3, qwen-large, gemini-3.5-flash
-#     - REMOVED: gemini-fast (402 Payment Required)
-#     - Automatic failover on 429/timeout
+#   - AI-GENERATED news commentary — no more templates!
+#   - FIX: Real product/service links in chat, NEVER replaced with channel link
+#   - Group commenting: 70% response, active participation
+#   - max_tokens=2000 — full detailed responses, no limits!
 #   - INLINE MODE — Настя работает в любом чате через @asnastya_bot!
 #   - WEB SEARCH — поиск товаров, услуг, лучших цен!
 #   - PHOTO SEARCH — фото → распознавание → поиск!
 #   - DISCOVERY ENGINE — рецепты, нумерология, астрология, мероприятия!
-#   - /find — поиск товаров и лучших цен с ссылками
-#   - /horoscope, /recipe, /numerology — команды!
-#   - AI-POWERED CHANNEL POSTS — Настя пишет от себя!
 #   - REAL PHOTO UNDERSTANDING via Pollinations vision API (14 models!)
 #   - URL UNDERSTANDING — Настя читает ссылки!
-#   - FIX: Links — real product/service links stay real, channel link only when asked
-#   - FIX: Channel posts — channel link in every post, no source links
-#   - FIX: AIRouter.provider bug — health watchdog works correctly
-#   - FIX: Nastya comments in groups — mentions, keywords, random chance
-#   - FIX: Stars invoice only on /donates, not auto on /start
-#   - FIX: Removed broken vesti.ru RSS feed (404)
 #
 # LOCAL MODEL (Qwen3-4B):
 #   - DISABLED by default for faster startup
@@ -170,7 +160,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v49
+          key: nastya-db-v50
           restore-keys: |
             nastya-db-
 
@@ -199,17 +189,16 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v49.0 (FIX LINKS + GROUP COMMENTS + MORE MODELS!) ==="
+          echo "=== Starting Nastya Bot v50.0 (AI COMMENTS + LINK FIX + GROUP ACTIVE!) ==="
           echo "PRIMARY: Pollinations.ai EXPANDED 25-MODEL (openai + 24 backups)"
-          echo "NEW: kimi-k2.6, nova-fast, glm, minimax, grok-4.3, qwen-large, gemini-3.5-flash"
-          echo "REMOVED: gemini-fast (402 Payment Required)"
+          echo "AI: News commentary AI-generated (no more templates!)"
+          echo "FIX: Real product links in chat, channel link only when asked"
+          echo "GROUP: 70% response, active commenting!"
           echo "INLINE: @asnastya_bot works in any chat!"
           echo "SEARCH: /find — товары и лучшие цены! /search — поиск информации!"
           echo "DISCOVERY: рецепты, нумерология, астрология, мероприятия, скидки!"
           echo "REASONING: Pollinations.ai (openai-large / GPT-5.4)"
-          echo "FIX: Links — real links stay real, channel link only when asked"
-          echo "FIX: Channel posts — channel link in every post, no source links"
-          echo "FIX: Nastya comments in groups!"
+          echo "NO LIMITS: max_tokens=2000, full detailed responses!"
 
           if [ "${ENABLE_LOCAL_MODEL}" = "true" ]; then
             echo "LOCAL FALLBACK: ENABLED — but model steps are commented out in workflow!"
@@ -219,7 +208,7 @@ jobs:
             echo "To enable: set ENABLE_LOCAL_MODEL=true in GitHub Secrets AND uncomment model steps in bot.yml"
           fi
 
-          echo "Config: inline=yes, vision=yes(14), search=yes, discovery=yes, ai_news=yes, group_comments=yes, max_tokens=1000(cloud), history=10"
+          echo "Config: inline=yes, vision=yes(14), search=yes, discovery=yes, ai_news=yes, ai_comments=yes, group_comments=70%, max_tokens=2000(cloud), history=10"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -260,7 +249,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v49-${{ github.run_id }}
+          key: nastya-db-v50-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation
