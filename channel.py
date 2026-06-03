@@ -1,9 +1,11 @@
-"""Nastya Channel Manager 8.0 — RSS-first, NO AI for posts!
+"""Nastya Channel Manager 9.0 — RSS-first, NO AI for posts!
 
-v8.0 KEY CHANGES:
+v9.0 KEY CHANGES:
   - RSS + template-based commentary — NO AI for news posts!
   - Personality posts — template only, NO AI generation
   - AI is ONLY used for user chat, not for channel posts
+  - Automotive news focus — СочиАвтоЗапчасти primary source
+  - More substantive automotive news post templates
   - This frees model from background load, improves chat quality
 """
 import logging
@@ -131,6 +133,11 @@ NEWS_POST_TEMPLATES = [
     "Кайф! {comment}\n\n{title}\n{summary}",
     "Реально?! {comment}\n\n{title}\n{summary}",
     "Капец! {comment}\n\n{title}\n{summary}",
+    # v44: More substantive automotive templates
+    "🚗 {comment}\n\n{title}\n{summary}",
+    "Авто-апдейт! {comment}\n\n{title}\n{summary}",
+    "🔧 {comment}\n\n{title}\n{summary}",
+    "Запчасти в деле! {comment}\n\n{title}\n{summary}",
 ]
 
 # ── EXPANDED personality posts — DIVERSE, SUBSTANTIVE, not just shoes! ──

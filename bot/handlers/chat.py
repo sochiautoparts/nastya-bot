@@ -1,4 +1,4 @@
-"""Nastya Chat Handler v11.0 — MULTI-MODEL + VISION + HUMAN-LIKE!
+"""Nastya Chat Handler v12.0 — MULTI-MODEL + VISION + HUMAN-LIKE + URL + INLINE!
 
 STABILITY RULES:
   - Bot ALWAYS responds, even if ALL AI providers fail (fallback responses)
@@ -7,11 +7,14 @@ STABILITY RULES:
   - 30-day context memory + news context injection
   - Short, effective system prompt
 
-INTELLIGENCE FEATURES v11.0 (MULTI-MODEL POLLINATIONS + HUMAN-LIKE):
-  - Pollinations.ai MULTI-MODEL — 7 models with load balancing!
+INTELLIGENCE FEATURES v12.0 (MULTI-MODEL POLLINATIONS + HUMAN-LIKE + URL):
+  - Pollinations.ai MULTI-MODEL — 8 VERIFIED models with load balancing!
   - Automatic failover: if one model fails, next one picks up
   - Qwen3-4B local GGUF as LAST FALLBACK
   - REAL PHOTO UNDERSTANDING — Настя ВИДИТ что на фото!
+  - PHOTO SEARCH — определение объектов на фото по запросу
+  - URL UNDERSTANDING — Настя читает ссылки и понимает контекст!
+  - INLINE MODE — Настя в любом чате через @bot_username
   - Typing delay indicators — Настя "живой" собеседник
   - Web search integration — Nastya can find and verify information!
   - News discussion with emotions — Настя рассказывает подробно!
@@ -26,6 +29,7 @@ import re
 import time
 import datetime
 import io
+import httpx
 from zoneinfo import ZoneInfo
 from aiogram import Router, F
 from aiogram.types import (
@@ -57,6 +61,13 @@ _proactive_tracker: dict = {}
 _last_tracker_cleanup: float = 0.0
 _TRACKER_CLEANUP_INTERVAL = 3600
 
+# v44: URL detection regex
+_URL_PATTERN = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+')
+
+# v44: Photo search keywords — определение объектов на фото
+_PHOTO_SEARCH_KEYWORDS = ["что это", "найди", "поиск", "что за", "определи", "узнай что это",
+                          "что на фото", "что изображено", "распознай", "опознай"]
+
 # v42: Per-user message dedup — track ACTIVE AI tasks per user
 _user_processing: dict = {}  # user_id -> asyncio.Task (active AI task) or None
 
@@ -79,6 +90,38 @@ def _cleanup_trackers():
              if data.get("last_proactive", 0) < cutoff]
     for uid in stale:
         del _proactive_tracker[uid]
+
+
+# ════════════════════════════════════════════════════════════
+#  URL UNDERSTANDING — Настя читает ссылки!
+# ════════════════════════════════════════════════════════════
+
+async def _fetch_url_content(url: str) -> str:
+    """Fetch and extract text content from a URL.
+
+    Uses httpx (no extra dependencies) with a short timeout.
+    Strips HTML tags to get plain text content.
+    """
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(10.0, connect=5.0),
+            follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
+        ) as client:
+            response = await client.get(url)
+            if response.status_code == 200:
+                text = response.text
+                # Remove script and style tags with content
+                text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL)
+                text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL)
+                # Remove all HTML tags
+                text = re.sub(r'<[^>]+>', ' ', text)
+                # Normalize whitespace
+                text = re.sub(r'\s+', ' ', text).strip()
+                return text[:2000]
+    except Exception:
+        pass
+    return ""
 
 
 # ── Moscow timezone helper ──────────────────────────────────
@@ -770,18 +813,41 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
             image_bytes = buf.getvalue()
 
             # Build vision prompt
-            vision_prompt = "Опиши что ты видишь на этом фото. Отреагируй живо и эмоционально, как девушка из Москвы (Настя, 23 года)."
-            if caption:
-                vision_prompt += f" Подпись к фото: {caption}. Отреагируй и на подпись тоже."
+            caption_lower = (caption or "").lower()
+            is_search_photo = any(kw in caption_lower for kw in _PHOTO_SEARCH_KEYWORDS)
 
-            # System prompt for vision
-            vision_system = (
-                "Ты Настя — девушка из Москвы, 23 года. Ты не бот, ты живой человек. "
-                "Ты видишь фото и реагируешь на него живо и эмоционально. "
-                "2-4 предложения, разговорный стиль. "
-                "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
-                "Без markdown, без буллетов."
-            )
+            if is_search_photo:
+                # PHOTO SEARCH MODE — определение и поиск по фото
+                vision_prompt = (
+                    "Определи что изображено на этом фото подробно. "
+                    "Если это товар — назови бренд и модель. "
+                    "Если место — назови его. "
+                    "Если растение/животное — определи вид. "
+                    "Дай максимум полезной информации."
+                )
+                if caption:
+                    vision_prompt += f" Контекст: {caption}."
+
+                vision_system = (
+                    "Ты Настя — девушка из Москвы, 23 года. Ты не бот, ты живой человек. "
+                    "Ты видишь фото и определяешь что на нём изображено. "
+                    "Отвечай подробно но живо, 3-5 предложений. "
+                    "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
+                    "Без markdown, без буллетов."
+                )
+            else:
+                vision_prompt = "Опиши что ты видишь на этом фото. Отреагируй живо и эмоционально, как девушка из Москвы (Настя, 23 года)."
+                if caption:
+                    vision_prompt += f" Подпись к фото: {caption}. Отреагируй и на подпись тоже."
+
+                # System prompt for vision
+                vision_system = (
+                    "Ты Настя — девушка из Москвы, 23 года. Ты не бот, ты живой человек. "
+                    "Ты видишь фото и реагируешь на него живо и эмоционально. "
+                    "2-4 предложения, разговорный стиль. "
+                    "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
+                    "Без markdown, без буллетов."
+                )
 
             # Call vision API
             result = await ai_router.vision(
@@ -1049,13 +1115,25 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
             await _save_simple_exchange(message, text, answer, db)
         return
 
+    # ── v44: URL UNDERSTANDING — Настя читает ссылки! ──
+    url_context = ""
+    urls = _URL_PATTERN.findall(text)
+    if urls:
+        await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        for url in urls[:2]:  # Max 2 URLs per message
+            content = await _fetch_url_content(url)
+            if content:
+                url_context += f"Настя прочитала эту ссылку: {url}. Содержание: {content[:1000]} "
+            else:
+                url_context += f"Пользователь скинул ссылку: {url}. Отреагируй и спроси что там интересного. "
+
     # ── Normal AI chat — MOST conversations go here ──
     # Detect if we're in a group chat (limit message length)
     chat_type = message.chat.type if message.chat else "private"
     is_group = chat_type in ("group", "supergroup")
 
     task = asyncio.create_task(
-        _process_text_message(message, text, db, ai_router, is_group=is_group)
+        _process_text_message(message, text, db, ai_router, is_group=is_group, url_context=url_context)
     )
     _user_processing[user_id] = task
 
@@ -1075,7 +1153,8 @@ async def _save_simple_exchange(message: Message, user_text: str, bot_text: str,
 
 async def _process_text_message(message: Message, text: str, db, ai_router,
                                  is_voice: bool = False, extra_suffix: str = "",
-                                 extra_context: str = "", is_group: bool = False) -> None:
+                                 extra_context: str = "", is_group: bool = False,
+                                 url_context: str = "") -> None:
     """Process text with AI. ALWAYS responds — even if all providers fail.
 
     Enhanced with:
@@ -1157,6 +1236,9 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     system_prompt += f" {user_context}"
     if extra_context:
         system_prompt += f" {extra_context}"
+    # v44: URL context
+    if url_context:
+        system_prompt += f" {url_context}"
 
     # Group chat: shorter responses
     if is_group:
