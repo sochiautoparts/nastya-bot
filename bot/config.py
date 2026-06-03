@@ -1,13 +1,15 @@
-"""Nastya Bot 48.0 — FIX ALL BUGS + EXPANDED MODELS + LINK PROTECTION!
+"""Nastya Bot 50.0 — AI COMMENTS + LINK FIX + GROUP ACTIVE + NO LIMITS!
 
-v48.0: FIX ALL BUGS + EXPANDED MODELS + LINK PROTECTION!
-- Pollinations.ai — 19 chat models + reasoning + vision (load balanced!)
+v50.0: AI COMMENTS + LINK FIX + GROUP ACTIVE + NO LIMITS!
+- Pollinations.ai — 25+ chat models + reasoning + vision (load balanced!)
 - REMOVED: gemini-fast (402 Payment Required)
-- NEW: mistral-large, grok-large, llama-maverick, qwen-vision-pro, kimi
-- FIX: Nastya no longer replaces real links with channel links!
-- FIX: Channel links only for products, services, news, events, recipes
-- Chat: Any links allowed by user request
+- FIX: Nastya provides REAL product/service links from search results!
+- FIX: Channel link ONLY in channel posts and when asked about channel
+- Chat: ANY links by user request — products, services, news, events, recipes
 - Nastya writes ОТ СЕБЯ (from herself) — first person, personal voice
+- AI-GENERATED news comments (no more template-based!)
+- Group commenting: Nastya is ACTIVE in groups she's a member of!
+- NO arbitrary model restrictions — max_tokens=2000 for full responses!
 - WEB SEARCH — Настя ищет информацию, товары, услуги, лучшие цены!
 - PHOTO SEARCH — фото → распознавание → поиск товаров/цен!
 - DISCOVERY ENGINE — авто-посты: рецепты, нумерология, астрология, мероприятия!
@@ -16,15 +18,13 @@ v48.0: FIX ALL BUGS + EXPANDED MODELS + LINK PROTECTION!
 - /recipe — рецепт от Насти!
 - /numerology — число судьбы!
 - INLINE MODE — Настя работает в любом чате через @asnastya_bot!
-- AI-POWERED CHANNEL POSTS — развёрнутые посты с ссылками на источник!
+- AI-POWERED CHANNEL POSTS — развёрнутые посты от Насти!
 - News: только русскоязычные источники, авто-новости ТОЛЬКО sochiautoparts.ru
 - REMOVED: vesti.ru RSS (404 error)
 - FIX: Health watchdog uses correct AIRouter attributes
-- FIX: Stars invoice only on /donates, not auto-sent on /start
-- FIX: 402 Payment Required models permanently disabled
-- Group response chance: 50%
+- Group response: ACTIVE commenting in groups!
 - Qwen3-4B — DISABLED by default (ENABLE_LOCAL_MODEL=true to enable)
-- max_tokens=1000 for Pollinations (cloud can handle it!)
+- max_tokens=2000 for Pollinations (full detailed responses!)
 - REAL PHOTO UNDERSTANDING via Pollinations vision API!
 - URL UNDERSTANDING — Настя читает ссылки!
 - PROACTIVE DISCOVERY SHARING — Настя делится находками с пользователями!
@@ -55,7 +55,7 @@ BOT_TOKEN: str = _env("BOT_TOKEN")
 POLLINATIONS_API_KEY: str = _env("POLLINATIONS_API_KEY", "")
 # Models pool (configured in pollinations_provider.py)
 POLLINATIONS_TIMEOUT: float = 45.0
-POLLINATIONS_MAX_TOKENS: int = 1000  # Cloud can handle longer responses!
+POLLINATIONS_MAX_TOKENS: int = 2000  # Full detailed responses — no limits!
 POLLINATIONS_MAX_RETRIES: int = 3  # Try up to 3 models on failure
 
 # ── Local Model Toggle ──────────────────────────────────────
@@ -135,8 +135,8 @@ PROACTIVE_COOLDOWN = 1800
 INLINE_CACHE_TIME: int = 10  # seconds to cache inline results
 
 # ── Group Chat Settings ────────────────────────────────────
-GROUP_MAX_MESSAGE_LENGTH = 200  # Shorter messages in group chats
-GROUP_RESPONSE_CHANCE = 0.5  # 50% chance to respond in groups (was 30%)
+GROUP_MAX_MESSAGE_LENGTH = 600  # Longer messages in groups — Nastya is active!
+GROUP_RESPONSE_CHANCE = 0.7  # 70% chance to respond in groups — Nastya is chatty!
 
 # ── Typing Delay Settings ──────────────────────────────────
 TYPING_DELAY_THRESHOLD = 3.0  # Show delay message if processing > 3s
@@ -291,9 +291,10 @@ NASTYA_SYSTEM_PROMPT = """Ты Настя — девушка из Сочи, 23 �
 Говори живо и естественно, как в мессенджере с другом.
 
 Правила длины ответов:
-- Обычный ответ: 3-5 предложений (40-100 слов)
-- Развёрнутый ответ (когда просят подробно, рецепт, совет, новость): 6-10 предложений (100-200 слов)
+- Обычный ответ: 3-8 предложений (40-150 слов)
+- Развёрнутый ответ (когда просят подробно, рецепт, совет, новость, товар): пиши СКОЛЬКО НУЖНО, без искусственных ограничений
 - НЕ пиши коротко одним словом, но и НЕ пиши простыни без причины
+- Если просят товары с ссылками — давай ПОЛНЫЙ и ПОДРОБНЫЙ ответ со всеми вариантами
 
 Стиль общения:
 - Пиши ОТ СЕБЯ — "я думаю", "мне кажется", "я прочитала", "я нашла"
@@ -306,14 +307,16 @@ NASTYA_SYSTEM_PROMPT = """Ты Настя — девушка из Сочи, 23 �
 - Можешь шутить, иронизировать, капризничать — ты живая!
 
 ⚠️ КРИТИЧЕСКИ ВАЖНО — ПРАВИЛА ССЫЛОК В ЧАТЕ:
-1. Если пользователь просит ссылку на товар/услугу/сайт — давай РЕАЛЬНУЮ ссылку, которую нашла в интернете
-2. НИКОГДА не подменяй реальную ссылку ссылкой на свой канал t.me/chasnastya
-3. Если нашла товар — давай ссылку на магазин (ozon, wildberries, яндекс.маркет и т.д.)
-4. Если нашла статью — давай ссылку на статью
-5. Если нашла новость — давай ссылку на новость
-6. Ссылку на канал t.me/chasnastya можешь дать ТОЛЬКО если тебя прямо спросили про канал
-7. Не добавляй ссылку на источник если ты пишешь от себя и не ссылаешься на конкретную статью
-8. Если у тебя есть РЕАЛЬНАЯ ссылка — давай ЕЁ. Если нет реальной ссылки — НЕ придумывай, лучше предложи поискать"""
+1. Если тебе передали результаты поиска с URL — ОБЯЗАТЕЛЬНО включи эти URL в ответ!
+2. Если пользователь просит ссылку на товар/услугу/сайт — давай РЕАЛЬНУЮ ссылку из результатов поиска
+3. НИКОГДА не подменяй реальную ссылку ссылкой на свой канал @chasnastya или t.me/chasnastya
+4. Если нашла товар — давай ссылку на магазин (ozon, wildberries, яндекс.маркет, amazon и т.д.)
+5. Если нашла статью — давай ссылку на статью
+6. Если нашла новость — давай ссылку на новость
+7. Ссылку на канал t.me/chasnastya давай ТОЛЬКО если тебя прямо спросили про канал
+8. Если тебе передали URL в контексте "Нашла в интернете" — ОБЯЗАТЕЛЬНО добавь этот URL в ответ
+9. Если у тебя есть РЕАЛЬНАЯ ссылка — давай ЕЁ. Если нет реальной ссылки — НЕ придумывай, лучше предложи поискать
+10. НЕ ПИШИ "Ссылка: @chasnastya" — это НЕ ссылка на товар! Это ссылка на канал!"""
 
 
 def validate_config() -> List[str]:

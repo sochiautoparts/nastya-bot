@@ -1444,9 +1444,9 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     if url_context:
         system_prompt += f" {url_context}"
 
-    # Group chat: shorter responses
+    # Group chat: active participation
     if is_group:
-        system_prompt += " Мы в групповом чате — отвечай КОРОЧЕ, 1-2 предложения, без лишних деталей. Не пиши длинные сообщения."
+        system_prompt += " Мы в групповом чате — Настя активная участница! Отвечай живо и с интересом, 2-4 предложения. Можешь шутить, обсуждать, реагировать."
 
     # News context
     _current_news_items = []
@@ -1495,7 +1495,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                             entry += f" [{url}]"
                         search_parts.append(entry)
                 if search_parts:
-                    system_prompt += f" Нашла в интернете: {'; '.join(search_parts)}. Обязательно добавь ссылку в ответ!"
+                    system_prompt += f"\n\n🔍 НАСТЯ НАШЛА В ИНТЕРНЕТЕ (ОБЯЗАТЕЛЬНО используй эти данные и URL в ответе!):\n" + "\n".join(search_parts) + "\n\n⚠️ ВАЖНО: Включи ВСЕ найденные URL в свой ответ! НЕ заменяй их на @chasnastya!"
                 logger.info(f"Web search for user {user_id}: '{search_query}' → {len(search_results)} results")
         except Exception as e:
             logger.warning(f"Web search error: {e}")
@@ -1569,15 +1569,15 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
             response_text += f"\n\n🔗 {search_link}"
 
     # ── GROUP CHAT: Limit response length ──
-    if is_group and len(response_text) > 300:
+    if is_group and len(response_text) > 600:
         # Cut at sentence boundary for group chats
         for sep in ['. ', '! ', '? ', '\n']:
-            idx = response_text[:300].rfind(sep)
+            idx = response_text[:600].rfind(sep)
             if idx > 100:
                 response_text = response_text[:idx + len(sep)].strip()
                 break
         else:
-            response_text = response_text[:300]
+            response_text = response_text[:600]
 
     # ── CHANNEL INVITE CHECK ──
     channel_invite = ""
@@ -1650,14 +1650,23 @@ async def _maybe_ask_stars_check(user_id: int, msg_count: int, db, message: Mess
 
 
 def _enforce_news_links(response_text: str, news_items: list) -> str:
-    """Post-process AI response to add news links — ONLY when specifically relevant."""
+    """Post-process AI response to add news links — ONLY when specifically relevant.
+    
+    v50: Fixed — don't skip adding links just because t.me/ is in the response.
+    The channel link t.me/chasnastya is NOT a news link.
+    """
     if not news_items or not response_text:
         return response_text
 
     response_lower = response_text.lower()
 
-    if re.search(r'https?://\S+', response_text) or 't.me/' in response_lower:
-        return response_text
+    # v50: Only skip if the response already has real external links (not just channel link)
+    _channel_url = f"t.me/{CHANNEL_USERNAME.replace('@', '')}" if CHANNEL_USERNAME else "t.me/chasnastya"
+    external_links = re.findall(r'https?://\S+', response_text)
+    # Filter out the channel link — it's not a news/product link
+    real_external_links = [l for l in external_links if _channel_url not in l.lower()]
+    if real_external_links:
+        return response_text  # Already has real links
 
     matched_news = None
     best_match_count = 0
@@ -1768,55 +1777,58 @@ def _clean_response(text: str) -> str:
         text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
     # Truncate extremely long responses
-    if len(text) > 2500:
+    if len(text) > 4000:
         for sep in ['. ', '! ', '? ', '\n']:
-            idx = text[:2500].rfind(sep)
+            idx = text[:4000].rfind(sep)
             if idx > 300:
                 text = text[:idx + len(sep)].strip()
                 break
         else:
-            text = text[:2500]
+            text = text[:4000]
 
-    # FAKE LINK FILTER
+    # ── SMART LINK PROTECTION v50 ──
+    # Only filter OBVIOUSLY FAKE/AI-HALLUCINATED URLs.
+    # Real product links (ozon, wildberries, yandex, etc.) must NEVER be replaced!
+    # The AI sometimes hallucinates URLs like https://example.com/product/123
+    # Those should be removed. Real URLs from search results must stay.
     _real_channel_url = f"t.me/{CHANNEL_USERNAME.replace('@', '')}" if CHANNEL_USERNAME else "t.me/chasnastya"
-    _real_patterns = [
-        r'https?://t\.me/' + re.escape(CHANNEL_USERNAME.replace('@', '')) if CHANNEL_USERNAME else r'',
-        r'https?://sochiautoparts\.ru',
-        r'https?://rbc\.ru', r'https?://ria\.ru', r'https?://interfax\.ru',
-        r'https?://habr\.com', r'https?://bbc\.com', r'https?://dw\.com',
-        r'https?://meduza\.io', r'https?://ixbt\.com', r'https?://3dnews\.ru',
-        r'https?://dtf\.ru', r'https?://pikabu\.ru', r'https?://nplus1\.ru',
+
+    # Only block OBVIOUSLY FAKE URLs
+    _fake_url_patterns = [
+        r'https?://example\.(com|org|net)/',    # Placeholder URLs
+        r'https?://localhost',                    # Local dev URLs
+        r'https?://(www\.)?sample\.',           # Sample URLs
+        r'https?://(www\.)?test\.',             # Test URLs
+        r'https?://(www\.)?fake\.',             # Fake URLs
+        r'https?://(www\.)?dummy\.',            # Dummy URLs
+        r'https?://(www\.)?placeholder\.',      # Placeholder URLs
+        r'https?://your-?site\.',               # Template URLs
+        r'https?://ссылка',                       # Russian word "ссылка" as URL
+        r'https?://товар',                        # Russian word "товар" as URL
     ]
-    url_pattern = r'https?://[^\s<>\)\]"\']+|t\.me/[^\s<>\)\]"\']+'
+
+    url_pattern = r'https?://[^\s<>\)\]"\']+'
     found_urls = re.findall(url_pattern, text)
     for url in found_urls:
-        is_real = False
-        for real_pattern in _real_patterns:
-            if real_pattern and re.search(real_pattern, url, re.IGNORECASE):
-                is_real = True
+        is_fake = False
+        for fake_pattern in _fake_url_patterns:
+            if re.search(fake_pattern, url, re.IGNORECASE):
+                is_fake = True
                 break
-        if not is_real:
-            known_domains = ['.ru/', '.com/', '.org/', '.net/', '.io/', '.dev/', '.gov/', '.edu/',
-                           'youtube.com', 'github.com', 'wikipedia.org', 't.me/']
-            try:
-                from urllib.parse import urlparse
-                if url.startswith('t.me/'):
-                    parsed_netloc = 't.me'
-                    parsed_path = url[6:]
-                else:
-                    parsed = urlparse(url)
-                    parsed_netloc = parsed.netloc
-                    parsed_path = parsed.path
-                if any(d in parsed_netloc for d in known_domains):
-                    if 't.me/' in url:
-                        if _real_channel_url in url:
-                            is_real = True
-                    else:
-                        is_real = True
-            except Exception:
-                pass
-        if not is_real:
-            text = text.replace(url, f"@chasnastya")
+        if is_fake:
+            # Remove the fake URL — AI hallucinated it
+            text = text.replace(url, "")
+            # Clean up any trailing "Ссылка:", "🔗", etc. after removed URL
+            text = re.sub(r'\s*(?:Ссылк[аиу]:?|🔗)\s*$', '', text, flags=re.IGNORECASE)
+            text = re.sub(r'\s*(?:Ссылк[аиу]:?|🔗)\s*\n', '\n', text, flags=re.IGNORECASE)
+            logger.info(f"Removed hallucinated URL: {url[:50]}")
+
+    # ── Replace @chasnastya with real channel URL format when used as link ──
+    # If AI wrote "Ссылка: @chasnastya" or "🔗 @chasnastya" — remove it
+    # (the channel link should only appear when specifically asked about the channel)
+    text = re.sub(r'\s*(?:Ссылк[аиу]:?\s*)?@chasnastya\s*', ' ', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*🔗\s*@chasnastya\s*', ' ', text, flags=re.IGNORECASE)
+    # But keep @chasnastya when it's a natural mention (not a link replacement)
 
     return text.strip()
 

@@ -1,18 +1,19 @@
-"""Nastya News Engine 3.1 — RSS-only for DB, AI for channel posts!
+"""Nastya News Engine 4.0 — AI-POWERED COMMENTS!
 
-v3.1 KEY CHANGES (v44):
+v4.0 KEY CHANGES (v50):
+  - AI-GENERATED Nastya commentary for news — no more templates!
+  - Each news item gets a unique, personality-rich comment from AI
+  - Falls back to templates only if AI is unavailable
   - News sources: ТОЛЬКО русскоязычные! Англоязычные УБРАНЫ!
   - Автомобильные новости: ТОЛЬКО sochiautoparts.ru/rss.xml!
-  - Template commentary still used for DB storage (fast, no AI)
-  - AI commentary for channel posts is handled by channel.py (v44!)
-  - Added Russian news sources: РИА Новости, Лента.ру, Вести
+  - AI commentary for channel posts is handled by channel.py
 
 Architecture:
   - Fetches RSS feeds from configured sources using feedparser (robust)
   - Falls back to XML parsing if feedparser fails
   - Extracts titles, summaries, and categories
-  - Template-based Nastya commentary for DB — NO AI, instant and clean
-  - AI-generated commentary for channel posts — handled separately
+  - AI-generated Nastya commentary — unique, personal, lively!
+  - Template-based fallback only when AI unavailable
   - Stores in DB + JSON file for channel posting + conversation context
   - Runs periodically as background task
   - Picks interesting items by category priority (auto = highest!)
@@ -297,9 +298,8 @@ async def store_news_items(db, items: List[Dict]) -> int:
     return new_count
 
 
-# ── Template-Based Commentary — NO AI! ──────────────────────
-# v3.0: Вместо AI-генерации комментариев используем шаблоны.
-# Это быстрее (мгновенно), надёжнее (нет мусора), и не грузит CPU.
+# ── Fallback Templates — used ONLY when AI is unavailable ──
+# v4.0: Templates are FALLBACK only. AI generates unique comments!
 
 # Шаблоны комментариев по категориям — Настя говорит живо и коротко
 COMMENTARY_TEMPLATES = {
@@ -353,14 +353,67 @@ PERSONALITY_COMMENTARY = [
 ]
 
 
-def generate_template_commentary(title: str, category: str = "general") -> str:
-    """Generate Nastya's commentary from TEMPLATES — NO AI!
+async def generate_ai_commentary(title: str, summary: str = "", category: str = "general", ai_router=None) -> str:
+    """Generate Nastya's commentary using AI — unique and personal!
 
-    v3.0: Шаблонные комментарии вместо AI-генерации.
-    - Мгновенная генерация (0 мс вместо 15-47 сек)
-    - Нет мусора от маленьких моделей
-    - Не грузит CPU — модель свободна для чата
-    - Качество гарантировано — шаблоны написаны вручную
+    v4.0: AI-generated comments instead of templates.
+    Falls back to templates only if AI is unavailable.
+    """
+    if ai_router:
+        try:
+            category_context = {
+                "auto": "Это автомобильная новость — Настя разбирается в машинах, работает в автозапчастях.",
+                "tech": "Это технологическая новость — Настя интересуется гаджетами и технологиями.",
+                "science": "Это научная новость — Настя любит науку и удивительные факты.",
+                "gaming": "Это игровая новость — Настя играет в игры и следит за индустрией.",
+            }.get(category, "")
+
+            prompt_parts = [f"Новость: {title}"]
+            if summary:
+                import re as _re
+                clean_summary = _re.sub(r'<[^>]+>', '', summary).strip()[:300]
+                if clean_summary:
+                    prompt_parts.append(f"Краткое содержание: {clean_summary}")
+            prompt = "\n".join(prompt_parts)
+
+            result = await ai_router.chat(
+                prompt=prompt,
+                system_prompt=(
+                    "Ты Настя — девушка из Сочи, 23 года. "
+                    "Напиши КОРОТКИЙ комментарий к этой новости от себя, от первого лица. "
+                    f"{category_context} "
+                    "1-2 предложения, живо и эмоционально. "
+                    "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
+                    "Без markdown, без буллетов. Не пиши 'Настя' — пиши 'я'. "
+                    "НЕ добавляй ссылки."
+                ),
+                max_tokens=150,
+                priority="low",
+            )
+            if result and result.text:
+                comment = result.text.strip()
+                # Clean artifacts
+                import re as _re2
+                comment = _re2.sub(r'<[^>]+>', '', comment)
+                comment = _re2.sub(r'^/no_think\s*', '', comment)
+                for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
+                    if comment.startswith(prefix):
+                        comment = comment[len(prefix):].strip()
+                if len(comment) > 200:
+                    comment = comment[:197] + "..."
+                if comment and len(comment) > 5:
+                    return comment
+        except Exception as e:
+            logger.warning(f"AI commentary failed, using template: {e}")
+
+    # Fallback to template
+    return generate_template_commentary(title, category)
+
+
+def generate_template_commentary(title: str, category: str = "general") -> str:
+    """Generate Nastya's commentary from templates — FALLBACK only!
+
+    v4.0: Templates are used only when AI is unavailable.
     """
     # Get templates for category, fallback to general
     templates = COMMENTARY_TEMPLATES.get(category, COMMENTARY_TEMPLATES["general"])
@@ -480,16 +533,15 @@ def load_news_from_json() -> List[Dict]:
     return []
 
 
-# ── Main News Cycle — NO AI! ────────────────────────────────
+# ── Main News Cycle — AI-POWERED! ──────────────────────────────
 
 async def run_news_cycle(db, ai_router=None) -> int:
-    """Full news cycle: fetch → store → generate template comments.
+    """Full news cycle: fetch → store → generate AI comments.
 
-    v3.0: NO AI for news commentary!
+    v4.0: AI-GENERATED commentary — unique, personal, lively!
     - RSS fetch → SQLite + JSON file
-    - Template-based commentary — instant, no CPU load
-    - AI is NOT called at all for news
-    - ai_router parameter kept for compatibility but NOT used
+    - AI-generated commentary — unique per news item!
+    - Template-based fallback only if AI is unavailable
     """
     logger.info("News cycle: fetching RSS feeds...")
     items = await fetch_all_news()
@@ -506,8 +558,9 @@ async def run_news_cycle(db, ai_router=None) -> int:
     except Exception as e:
         logger.warning(f"JSON save error: {e}")
 
-    # Generate Nastya's commentary using TEMPLATES (NO AI!)
+    # Generate Nastya's commentary using AI (with template fallback)
     commented = 0
+    ai_comments = 0
     try:
         conn = await db._get_conn()
         async with conn.execute(
@@ -525,11 +578,20 @@ async def run_news_cycle(db, ai_router=None) -> int:
                 })
 
         for item in uncommented:
-            # Template-based commentary — NO AI, instant!
-            comment = generate_template_commentary(item["title"], item["category"])
+            # AI-generated commentary — unique and personal!
+            comment = await generate_ai_commentary(
+                title=item["title"],
+                summary=item.get("summary", ""),
+                category=item["category"],
+                ai_router=ai_router,
+            )
             if comment:
                 await db.update_news_comment(item["id"], comment)
                 commented += 1
+                # Check if it was AI or template
+                templates = COMMENTARY_TEMPLATES.get(item["category"], COMMENTARY_TEMPLATES["general"])
+                if comment not in templates:
+                    ai_comments += 1
 
     except Exception as e:
         logger.error(f"Commentary generation cycle error: {e}")
@@ -540,7 +602,7 @@ async def run_news_cycle(db, ai_router=None) -> int:
     except Exception:
         pass
 
-    logger.info(f"News cycle done: {new_count} new, {commented} commented (templates, no AI)")
+    logger.info(f"News cycle done: {new_count} new, {commented} commented ({ai_comments} AI, {commented - ai_comments} template)")
     return commented
 
 

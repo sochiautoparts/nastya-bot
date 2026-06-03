@@ -1,12 +1,12 @@
-"""Nastya Channel Manager 9.0 — RSS-first, NO AI for posts!
+"""Nastya Channel Manager 10.0 — AI-POWERED NEWS + ACTIVE GROUP COMMENTS!
 
-v9.0 KEY CHANGES:
-  - RSS + template-based commentary — NO AI for news posts!
-  - Personality posts — template only, NO AI generation
-  - AI is ONLY used for user chat, not for channel posts
+v10.0 KEY CHANGES:
+  - AI-POWERED news commentary for both DB and channel posts!
+  - No more template-based comments — AI generates unique, personal commentary
+  - Personality posts — template only for quick posts, AI for everything else
+  - Nastya comments ACTIVELY in groups she's a member of
   - Automotive news focus — СочиАвтоЗапчасти primary source
-  - More substantive automotive news post templates
-  - This frees model from background load, improves chat quality
+  - More substantive automotive news posts
 """
 import logging
 import random

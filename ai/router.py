@@ -1,4 +1,4 @@
-"""AI Router v48.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE + LINK PROTECTION!
+"""AI Router v50.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE + LINK FIX!
 
 АРХИТЕКТУРА v45:
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
@@ -71,11 +71,11 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """AI Router v45.0 — CLOUD-ONLY Pollinations + Local FALLBACK (optional) + VISION + INLINE.
+    """AI Router v50.0 — CLOUD-ONLY Pollinations + Local FALLBACK (optional) + VISION + INLINE.
 
-    Chat: Pollinations (10 models, load balanced) → LlamaCpp (if enabled) → static fallback.
+    Chat: Pollinations (25+ models, load balanced) → LlamaCpp (if enabled) → static fallback.
     Inline: Pollinations (fast response for @asnastya_bot).
-    Vision: Pollinations vision API (6 vision-capable models).
+    Vision: Pollinations vision API (14 vision-capable models).
     Background: AI-powered news posts for channel (low priority).
     """
 
@@ -149,10 +149,10 @@ class AIRouter:
         model_name = self._local._model_name if self._local and self._local._loaded else "none"
 
         logger.info(
-            f"AI Router v45.0 initialized: "
+            f"AI Router v50.0 initialized: "
             f"pollinations={pollinations_status} (PRIMARY, {len(CHAT_MODELS)} models, vision=yes, inline=yes), "
             f"local={local_status} (FALLBACK, model={model_name}, ENABLE_LOCAL_MODEL={ENABLE_LOCAL_MODEL}), "
-            f"news=AI+RSS+templates, "
+            f"news=AI+RSS, "
             f"max_tokens={POLLINATIONS_MAX_TOKENS}(cloud)/256(local), history={MODEL_HISTORY_LIMIT}"
         )
 
@@ -415,24 +415,10 @@ class AIRouter:
         text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
         text = re.sub(r'^\s*[-•]\s+', '', text, flags=re.MULTILINE)
 
-        # ── LINK PROTECTION: Detect and fix when AI replaced a real link with channel link ──
-        # The AI sometimes replaces actual product/service URLs with the channel link.
-        # We detect this by checking if the context suggests a product/service/search link
-        # but only the channel link is present.
-        channel_link = r'(?:https?://)?t\.me/chasnastya\b'
-        # If the message contains a channel link AND context words that suggest
-        # a different link was expected, remove the channel link
-        product_context = re.search(
-            r'(?:ссылк[аиу]\s*(?:на\s*)?(?:товар|магазин|сайт|стать[юя]|новость|услуг|купить|найти)|'
-            r'купить|найти\s*(?:товар|цен[уы]|магазин)|'
-            r'🔗\s*(?:товар|магазин|сайт|купить|найти|источник)|'
-            r'по\s*ссылке\s*(?:на\s*)?(?:товар|магазин|сайт))',
-            text, re.IGNORECASE
-        )
-        if product_context and re.search(channel_link, text, re.IGNORECASE):
-            # The AI replaced a real link with channel link — remove the channel link
-            text = re.sub(r'\s*(?:🔗\s*)?' + channel_link, '', text, flags=re.IGNORECASE)
-            text = re.sub(r'\s*(?:ссылк[аиу]:?\s*)$', '', text, flags=re.IGNORECASE)
+        # v50: Link protection moved to chat.py _clean_response()
+        # The old code here was replacing all non-whitelisted URLs with the channel link,
+        # which broke product/service links. Now only obviously fake/hallucinated URLs
+        # are filtered in _clean_response().
 
         # Clean up whitespace
         text = re.sub(r'\n{3,}', '\n\n', text)

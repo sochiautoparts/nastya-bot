@@ -1,6 +1,6 @@
-"""Pollinations.ai Provider v12.0 — EXPANDED MULTI-MODEL LOAD BALANCING!
+"""Pollinations.ai Provider v13.0 — EXPANDED MULTI-MODEL LOAD BALANCING!
 
-v12.0 UPDATE — Expanded model pool with latest Pollinations catalog (June 2026):
+v13.0 UPDATE — 25 models, no restrictions, full responses:
   - PRIMARY: 'openai' (GPT-5.4 Nano) — fast, vision-capable
   - BACKUP 1: 'mistral' (Mistral Small 3.2) — fast, good Russian
   - BACKUP 2: 'gpt-5.4-mini' (GPT-5.4 Mini) — balanced, fast
@@ -15,20 +15,19 @@ v12.0 UPDATE — Expanded model pool with latest Pollinations catalog (June 2026
   - REASONING: 'deepseek-pro' — DeepSeek Pro, better reasoning
   - QUALITY: 'gemini' — Google Gemini, high quality, vision, 1M ctx
   - QUALITY: 'claude-fast' — Claude fast mode, good Russian, vision
-  - NEW: 'mistral-large' — powerful, vision, reasoning, 256k ctx
-  - NEW: 'grok-large' — powerful, vision, reasoning
-  - NEW: 'llama-maverick' — vision, 1M ctx
-  - NEW: 'qwen-vision-pro' — better vision + reasoning
-  - NEW: 'kimi' — vision, reasoning, 262k ctx
-  - NEW: 'kimi-k2.6' — latest Kimi, better multilingual
-  - NEW: 'nova-fast' — Amazon Nova fast, good Russian
-  - NEW: 'glm' — ChatGLM, good multilingual + Chinese/Russian
-  - NEW: 'minimax' — MiniMax, good for chat
-  - NEW: 'grok-4.3' — latest Grok, better reasoning
-  - NEW: 'qwen-large' — Qwen Large, powerful reasoning
-  - NEW: 'gemini-3.5-flash' — Gemini 3.5 Flash, fast + vision
+  - POWER: 'mistral-large' — powerful, vision, reasoning, 256k ctx
+  - POWER: 'grok-large' — powerful, vision, reasoning
+  - POWER: 'llama-maverick' — vision, 1M ctx
+  - POWER: 'qwen-vision-pro' — better vision + reasoning
+  - POWER: 'kimi' — vision, reasoning, 262k ctx
+  - POWER: 'kimi-k2.6' — latest Kimi, better multilingual
+  - POWER: 'nova-fast' — Amazon Nova fast, good Russian
+  - POWER: 'glm' — ChatGLM, good multilingual + Chinese/Russian
+  - POWER: 'minimax' — MiniMax, good for chat
+  - POWER: 'grok-4.3' — latest Grok, better reasoning
+  - POWER: 'qwen-large' — Qwen Large, powerful reasoning
+  - POWER: 'gemini-3.5-flash' — Gemini 3.5 Flash, fast + vision
   - REMOVED: 'gemini-fast' — returns 402 Payment Required
-  - REMOVED: 'openai-large' (moved to reasoning only)
   - REASONING: 'openai-large' (GPT-5.4) — for complex questions
   - VISION: 'openai' — supports image input!
     Vision backups: mistral, mistral-4, gemma, qwen-vision, qwen-vision-pro, kimi
@@ -37,6 +36,7 @@ v12.0 UPDATE — Expanded model pool with latest Pollinations catalog (June 2026
   Automatic failover on 429/rate-limit/timeout — next model picks up.
   Per-model health tracking with cooldown on failures.
   402 errors now permanently disable expensive models.
+  max_tokens=2000 — full detailed responses, no artificial limits!
 """
 import base64
 import json

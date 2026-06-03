@@ -1,25 +1,26 @@
-"""Nastya Bot 49.0 — FIX LINKS + GROUP COMMENTS + MORE MODELS! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 50.0 — AI COMMENTS + LINK FIX + GROUP ACTIVE + NO LIMITS! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v49.0:
+Architecture v50.0:
   - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (25 моделей, балансировка нагрузки!)
     - openai (GPT-5.4 Nano) PRIMARY — fast, vision-capable
     - + 24 backup models with automatic failover
-    - NEW: kimi-k2.6, nova-fast, glm, minimax, grok-4.3, qwen-large, gemini-3.5-flash
   - INLINE MODE: Настя работает в любом чате через @asnastya_bot!
   - VISION: Pollinations vision API — Настя ВИДИТ фото! 14 vision-моделей
   - SEARCH: /find — поиск товаров, услуг, лучших цен с ссылками!
   - DISCOVERY: Авто-посты — рецепты, нумерология, астрология, мероприятия!
   - URL: Настя понимает ссылки!
   - PHOTO SEARCH: фото → распознавание → поиск товаров/цен!
-  - Новости: RSS-парсер + AI-комментарии для канала!
+  - Новости: RSS-парсер + AI-комментарии (NO MORE TEMPLATES!)
   - Канал: AI-посты на основе новостей, опросы, факты, рецепты
   - /horoscope, /recipe, /numerology — команды!
   - Typing delay indicators — human-like behavior
-  - Group chat: Nastya COMMENTS in groups — mentions, keywords, random chance!
+  - Group chat: Nastya COMMENTS ACTIVELY in groups — 70% response, longer messages!
   - Proactive messaging + discovery sharing — Настя активный собеседник
-  - FIX: Links — real product/service links stay real, channel link only when asked
+  - FIX: Links — real product/service links stay real, NEVER replaced with channel link
   - FIX: Channel posts — channel link in every post, no source links
   - FIX: AIRouter.provider bug — health watchdog works correctly
+  - NO MODEL RESTRICTIONS — max_tokens=2000, full detailed responses!
+  - AI-GENERATED news commentary — no more template-based comments!
   - Qwen3-4B GGUF как LAST FALLBACK — отключено по умолчанию!
   - Dedup: tracks active asyncio.Task per user
   - HEALTH WATCHDOG: monitors Telegram API + model health
@@ -507,7 +508,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 49.0 Starting (FIX LINKS + GROUP COMMENTS + MORE MODELS!) ===")
+    logger.info("=== Nastya Bot 50.0 Starting (AI COMMENTS + LINK FIX + GROUP ACTIVE!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -555,7 +556,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 49.0 Ready (FIX LINKS + GROUP COMMENTS + MORE MODELS!) ===")
+    logger.info("=== Nastya Bot 50.0 Ready (AI COMMENTS + LINK FIX + GROUP ACTIVE!) ===")
 
 
 async def on_shutdown(**kwargs) -> None:
