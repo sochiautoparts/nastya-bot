@@ -1,20 +1,22 @@
-name: Nastya Bot — CLOUD-ONLY v50
+name: Nastya Bot — CLOUD-ONLY v51
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v50.0 — AI COMMENTS + LINK FIX + GROUP ACTIVE + NO LIMITS!
+# Nastya Bot v51.0 — FIX HALLUCINATED LINKS + AI-ONLY COMMENTS!
 #
 # Architecture:
-#   - Pollinations.ai EXPANDED MULTI-MODEL (25 chat models!)
-#   - AI-GENERATED news commentary — no more templates!
-#   - FIX: Real product/service links in chat, NEVER replaced with channel link
+#   - Pollinations.ai EXPANDED MULTI-MODEL (23 chat models!)
+#   - CRITICAL FIX: Nastya gives ONLY real links from web search!
+#   - AI-hallucinated commercial URLs are detected and REMOVED
+#   - AI-GENERATED news commentary — ALWAYS AI, NO templates!
 #   - Group commenting: 70% response, active participation
 #   - max_tokens=2000 — full detailed responses, no limits!
 #   - INLINE MODE — Настя работает в любом чате через @asnastya_bot!
 #   - WEB SEARCH — поиск товаров, услуг, лучших цен!
 #   - PHOTO SEARCH — фото → распознавание → поиск!
 #   - DISCOVERY ENGINE — рецепты, нумерология, астрология, мероприятия!
-#   - REAL PHOTO UNDERSTANDING via Pollinations vision API (14 models!)
+#   - REAL PHOTO UNDERSTANDING via Pollinations vision API (13 models!)
 #   - URL UNDERSTANDING — Настя читает ссылки!
+#   - REMOVED: grok (500), grok-large (500), qwen-vision (error)
 #
 # LOCAL MODEL (Qwen3-4B):
 #   - DISABLED by default for faster startup
@@ -160,7 +162,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v50
+          key: nastya-db-v51
           restore-keys: |
             nastya-db-
 
@@ -189,14 +191,16 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v50.0 (AI COMMENTS + LINK FIX + GROUP ACTIVE!) ==="
-          echo "PRIMARY: Pollinations.ai EXPANDED 25-MODEL (openai + 24 backups)"
-          echo "AI: News commentary AI-generated (no more templates!)"
-          echo "FIX: Real product links in chat, channel link only when asked"
+          echo "=== Starting Nastya Bot v51.0 (FIX HALLUCINATED LINKS + AI-ONLY COMMENTS!) ==="
+          echo "PRIMARY: Pollinations.ai EXPANDED 23-MODEL (openai + 22 backups)"
+          echo "FIX: FORCE web search for product queries, hallucinated URLs REMOVED!"
+          echo "AI: News commentary AI-generated ONLY (no more templates!)"
+          echo "FIX: Real product links from search, fake URLs detected and removed"
           echo "GROUP: 70% response, active commenting!"
           echo "INLINE: @asnastya_bot works in any chat!"
           echo "SEARCH: /find — товары и лучшие цены! /search — поиск информации!"
           echo "DISCOVERY: рецепты, нумерология, астрология, мероприятия, скидки!"
+          echo "REMOVED: grok (500), grok-large (500), qwen-vision (error)"
           echo "REASONING: Pollinations.ai (openai-large / GPT-5.4)"
           echo "NO LIMITS: max_tokens=2000, full detailed responses!"
 
@@ -208,7 +212,7 @@ jobs:
             echo "To enable: set ENABLE_LOCAL_MODEL=true in GitHub Secrets AND uncomment model steps in bot.yml"
           fi
 
-          echo "Config: inline=yes, vision=yes(14), search=yes, discovery=yes, ai_news=yes, ai_comments=yes, group_comments=70%, max_tokens=2000(cloud), history=10"
+          echo "Config: inline=yes, vision=yes(13), search=yes, discovery=yes, ai_news=yes, ai_comments=AI_ONLY, group_comments=70%, max_tokens=2000(cloud), history=10, hallucination_fix=yes"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -249,7 +253,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v50-${{ github.run_id }}
+          key: nastya-db-v51-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation
