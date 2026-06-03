@@ -1,22 +1,22 @@
-"""Nastya Bot 44.0 — EXPANDED MULTI-MODEL + INLINE + AI NEWS! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 45.0 — CLOUD-ONLY + INLINE + AI NEWS! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v44.0:
+Architecture v45.0:
   - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (10 моделей, балансировка нагрузки!)
     - openai (GPT-5.4 Nano) PRIMARY — fast, vision-capable
-    - NEW: grok (1.6s), gpt-5.4-mini (1.9s), llama-scout, qwen-vision
+    - grok (1.6s), gpt-5.4-mini (1.9s), llama-scout, qwen-vision
     - mistral, deepseek, mistral-4, gemma, openai-fast — BACKUP models
     - Automatic failover on 429/timeout
   - INLINE MODE: Настя работает в любом чате через @asnastya_bot!
   - VISION: Pollinations vision API — Настя ВИДИТ фото! 6 vision-моделей
+  - URL: Настя понимает ссылки!
   - Новости: RSS-парсер + AI-комментарии для канала!
-  - Канал: AI-посты на основе новостей (v44!), опросы, факты
+  - Канал: AI-посты на основе новостей, опросы, факты
   - Фото: REAL VISION — base64 → multimodal → AI понимает!
   - Typing delay indicators — human-like behavior
   - Group chat response chance: 50%
   - Proactive messaging — Настя активный собеседник
-  - Qwen3-4B GGUF как LAST FALLBACK — загружается ПРЯМО в процесс
-  - AVX2 ускорение — в 2-3x быстрее на CPU
-  - /no_think + stop=["<think"] для Qwen3 — блокирует thinking mode
+  - Qwen3-4B GGUF как LAST FALLBACK — отключено по умолчанию!
+    - Включить: ENABLE_LOCAL_MODEL=true в GitHub Secrets
   - Dedup: tracks active asyncio.Task per user
   - HEALTH WATCHDOG: monitors Telegram API + model health
 """
@@ -55,8 +55,8 @@ logger = logging.getLogger("nastya-bot")
 from bot.config import (
     BOT_TOKEN, ADMIN_IDS, DB_PATH, SESSION_DURATION_SECONDS, OWNER_ID,
     NEWS_FETCH_INTERVAL, CHANNEL_POST_INTERVAL, CHANNEL_ID, CHANNEL_USERNAME,
-    MODEL_PATH, POLLINATIONS_API_KEY,
-    MODEL_N_CTX, MODEL_MAX_TOKENS, MODEL_HISTORY_LIMIT,
+    POLLINATIONS_API_KEY, ENABLE_LOCAL_MODEL,
+    MODEL_PATH, MODEL_N_CTX, MODEL_MAX_TOKENS, MODEL_HISTORY_LIMIT,
     POLLINATIONS_MAX_TOKENS,
 )
 
@@ -471,7 +471,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 44.0 Starting (EXPANDED MULTI-MODEL + INLINE + AI NEWS!) ===")
+    logger.info("=== Nastya Bot 45.0 Starting (CLOUD-ONLY + INLINE + AI NEWS!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -518,7 +518,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 44.0 Ready (EXPANDED MULTI-MODEL + INLINE + AI NEWS!) ===")
+    logger.info("=== Nastya Bot 45.0 Ready (CLOUD-ONLY + INLINE + AI NEWS!) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

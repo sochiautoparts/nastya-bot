@@ -1,22 +1,28 @@
-name: Nastya Bot — EXPANDED MULTI-MODEL v44
+name: Nastya Bot — CLOUD-ONLY v45
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v44.0 — EXPANDED MULTI-MODEL + INLINE + AI NEWS!
+# Nastya Bot v45.0 — CLOUD-ONLY + INLINE + AI NEWS!
 #
 # Architecture:
 #   - Pollinations.ai EXPANDED MULTI-MODEL (10 chat models!)
 #     - openai (GPT-5.4 Nano) PRIMARY — fast, vision-capable
-#     - NEW v44: grok (1.6s), gpt-5.4-mini (1.9s), llama-scout, qwen-vision
+#     - grok (1.6s), gpt-5.4-mini (1.9s), llama-scout, qwen-vision
 #     - mistral, deepseek, mistral-4, gemma, openai-fast — BACKUP
 #     - Automatic failover on 429/timeout
 #   - INLINE MODE — Настя работает в любом чате через @asnastya_bot!
 #   - AI-POWERED CHANNEL POSTS — осмысленные посты на основе новостей!
-#   - Qwen3-4B-Instruct GGUF as LOCAL FALLBACK — offline reserve
 #   - REAL PHOTO UNDERSTANDING via Pollinations vision API (6 models!)
+#   - URL UNDERSTANDING — Настя читает ссылки!
 #   - Group response chance: 50%
 #   - News: только русскоязычные источники, авто-новости ТОЛЬКО sochiautoparts.ru
-#   - AVX2 acceleration for local model
-#   - Single concurrency group — ONE bot instance only!
+#
+# LOCAL MODEL (Qwen3-4B):
+#   - DISABLED by default (ENABLE_LOCAL_MODEL != "true")
+#   - To enable: set ENABLE_LOCAL_MODEL=true in GitHub Secrets
+#   - When enabled: downloads Qwen3-4B-Instruct GGUF (~2.4GB)
+#   - When disabled: CLOUD-ONLY mode — faster startup, less RAM
+#
+# NO TESTS — bot starts immediately without API connectivity checks
 #
 # Schedule (UTC, Moscow = UTC+3):
 #   Every 5 hours: 00:00, 05:00, 10:00, 15:00, 20:00
@@ -97,8 +103,9 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ── Install llama-cpp-python with AVX2 acceleration ──
-      - name: Install llama-cpp-python with AVX2
+      # ── LOCAL MODEL: Only if ENABLE_LOCAL_MODEL=true ──
+      - name: Install llama-cpp-python and huggingface_hub
+        if: ${{ secrets.ENABLE_LOCAL_MODEL == 'true' }}
         run: |
           echo "=== Installing llama-cpp-python with AVX2 support ==="
           CMAKE_ARGS="-DGGML_AVX2=on" pip install llama-cpp-python --force-reinstall --no-cache-dir 2>&1 || {
@@ -106,9 +113,10 @@ jobs:
             pip install llama-cpp-python --force-reinstall --no-cache-dir
           }
           python3 -c "from llama_cpp import Llama; print('llama-cpp-python OK!')"
+          pip install huggingface_hub
 
-      # ── Download LOCAL FALLBACK model: Qwen3-4B-Instruct ──
       - name: Cache LOCAL FALLBACK model (Qwen3-4B)
+        if: ${{ secrets.ENABLE_LOCAL_MODEL == 'true' }}
         id: cache-model
         uses: actions/cache@v4
         with:
@@ -116,7 +124,7 @@ jobs:
           key: qwen3-4b-instruct-q4km-v3
 
       - name: Download Qwen3-4B-Instruct GGUF model
-        if: steps.cache-model.outputs.cache-hit != 'true'
+        if: ${{ secrets.ENABLE_LOCAL_MODEL == 'true' && steps.cache-model.outputs.cache-hit != 'true' }}
         run: |
           echo "=== Downloading Qwen3-4B-Instruct Q4_K_M model (~2.4GB) — LOCAL FALLBACK ==="
           mkdir -p models
@@ -131,6 +139,7 @@ jobs:
           "
 
       - name: Verify model
+        if: ${{ secrets.ENABLE_LOCAL_MODEL == 'true' }}
         run: |
           echo "=== Verifying GGUF model ==="
           MODEL_FILE=models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
@@ -141,78 +150,6 @@ jobs:
             echo "OK: Qwen3-4B-Instruct-Q4_K_M (${MODEL_SIZE}) — LOCAL FALLBACK"
           fi
 
-      # ── Test Pollinations API (v44: expanded 10 models!) ──
-      - name: Test Pollinations API connectivity
-        run: |
-          echo "=== Testing Pollinations.ai API (EXPANDED 10-MODEL) ==="
-          # Test PRIMARY model
-          echo "Testing PRIMARY model (openai)..."
-          RESPONSE=$(curl -s --max-time 30 https://gen.pollinations.ai/v1/chat/completions \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.POLLINATIONS_API_KEY }}" \
-            -d '{"model": "openai", "messages": [{"role": "user", "content": "Скажи ОК"}], "max_tokens": 5, "reasoning_effort": "none", "stream": false}' 2>&1)
-          echo "Primary Response: $(echo "$RESPONSE" | head -3)"
-          if echo "$RESPONSE" | grep -q '"content"'; then
-            echo "PRIMARY model (openai) OK!"
-          else
-            echo "WARNING: PRIMARY model failed"
-          fi
-
-          # Test BACKUP model
-          echo "Testing BACKUP model (mistral)..."
-          RESPONSE2=$(curl -s --max-time 30 https://gen.pollinations.ai/v1/chat/completions \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.POLLINATIONS_API_KEY }}" \
-            -d '{"model": "mistral", "messages": [{"role": "user", "content": "Say OK"}], "max_tokens": 5, "stream": false}' 2>&1)
-          echo "Backup Response: $(echo "$RESPONSE2" | head -3)"
-          if echo "$RESPONSE2" | grep -q '"content"'; then
-            echo "BACKUP model (mistral) OK!"
-          else
-            echo "WARNING: BACKUP model failed"
-          fi
-
-          # Test NEW v44 model (grok)
-          echo "Testing NEW v44 model (grok)..."
-          RESPONSE3=$(curl -s --max-time 30 https://gen.pollinations.ai/v1/chat/completions \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.POLLINATIONS_API_KEY }}" \
-            -d '{"model": "grok", "messages": [{"role": "user", "content": "Say OK"}], "max_tokens": 5, "stream": false}' 2>&1)
-          echo "Grok Response: $(echo "$RESPONSE3" | head -3)"
-          if echo "$RESPONSE3" | grep -q '"content"'; then
-            echo "NEW v44 model (grok) OK!"
-          else
-            echo "WARNING: grok model failed"
-          fi
-
-          # Test NEW v44 model (gpt-5.4-mini)
-          echo "Testing NEW v44 model (gpt-5.4-mini)..."
-          RESPONSE4=$(curl -s --max-time 30 https://gen.pollinations.ai/v1/chat/completions \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.POLLINATIONS_API_KEY }}" \
-            -d '{"model": "gpt-5.4-mini", "messages": [{"role": "user", "content": "Say OK"}], "max_tokens": 5, "stream": false}' 2>&1)
-          echo "Mini Response: $(echo "$RESPONSE4" | head -3)"
-          if echo "$RESPONSE4" | grep -q '"content"'; then
-            echo "NEW v44 model (gpt-5.4-mini) OK!"
-          else
-            echo "WARNING: gpt-5.4-mini model failed"
-          fi
-
-      # ── Test Pollinations Vision API ──
-      - name: Test Pollinations Vision API
-        run: |
-          echo "=== Testing Pollinations.ai Vision API ==="
-          TEST_IMAGE="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
-          RESPONSE=$(curl -s --max-time 30 https://gen.pollinations.ai/v1/chat/completions \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.POLLINATIONS_API_KEY }}" \
-            -d "{\"model\": \"openai\", \"messages\": [{\"role\": \"user\", \"content\": [{\"type\": \"text\", \"text\": \"What color is this image?\"}, {\"type\": \"image_url\", \"image_url\": {\"url\": \"data:image/png;base64,${TEST_IMAGE}\"}}]}], \"max_tokens\": 10, \"stream\": false}" 2>&1)
-          echo "Vision Response: $(echo "$RESPONSE" | head -3)"
-          if echo "$RESPONSE" | grep -q '"content"'; then
-            echo "Pollinations Vision API OK!"
-          else
-            echo "WARNING: Pollinations Vision API test failed — photo understanding may not work"
-          fi
-
       - name: Create data directory
         run: mkdir -p data
 
@@ -220,7 +157,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v44
+          key: nastya-db-v45
           restore-keys: |
             nastya-db-
 
@@ -233,7 +170,8 @@ jobs:
           BOT_USERNAME: asnastya_bot
           # Pollinations.ai — MULTI-MODEL PRIMARY + VISION
           POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
-          # Qwen3-4B — LOCAL FALLBACK
+          # Local model — disabled by default, enable via ENABLE_LOCAL_MODEL secret
+          ENABLE_LOCAL_MODEL: ${{ secrets.ENABLE_LOCAL_MODEL }}
           MODEL_PATH: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
           MODEL_N_CTX: 2048
           MODEL_N_THREADS: 4
@@ -247,13 +185,20 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v44.0 (EXPANDED 10-MODEL + INLINE + AI NEWS!) ==="
+          echo "=== Starting Nastya Bot v45.0 (CLOUD-ONLY + INLINE + AI NEWS!) ==="
           echo "PRIMARY: Pollinations.ai EXPANDED 10-MODEL (openai, mistral, gpt-5.4-mini, grok, deepseek, mistral-4, gemma, llama-scout, qwen-vision, openai-fast)"
           echo "INLINE: @asnastya_bot works in any chat!"
           echo "REASONING: Pollinations.ai (openai-large / GPT-5.4)"
-          echo "FALLBACK: Qwen3-4B-Instruct-Q4_K_M (local GGUF)"
+
+          if [ "${ENABLE_LOCAL_MODEL}" = "true" ]; then
+            echo "LOCAL FALLBACK: ENABLED (Qwen3-4B-Instruct-Q4_K_M)"
+            ls -lh models/*.gguf 2>/dev/null || echo "WARNING: No GGUF models found!"
+          else
+            echo "LOCAL FALLBACK: DISABLED (cloud-only mode — faster startup)"
+            echo "To enable: set ENABLE_LOCAL_MODEL=true in GitHub Secrets"
+          fi
+
           echo "Config: inline=yes, vision=yes(6), ai_news=yes, group_chance=50%, max_tokens=1000(cloud)/256(local), history=10"
-          ls -lh models/*.gguf 2>/dev/null || echo "WARNING: No GGUF models — CLOUD-ONLY mode!"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -294,7 +239,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v44-${{ github.run_id }}
+          key: nastya-db-v45-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation

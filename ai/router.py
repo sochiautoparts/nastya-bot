@@ -1,41 +1,36 @@
-"""AI Router v44.0 — EXPANDED MULTI-MODEL POLLINATIONS + LOCAL FALLBACK + VISION + INLINE!
+"""AI Router v45.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE!
 
-АРХИТЕКТУРА v44:
+АРХИТЕКТУРА v45:
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
     1. PollinationsProvider v9 (EXPANDED 10-MODEL LOAD BALANCING!)
        - gen.pollinations.ai/v1/chat/completions — OpenAI-compatible
        - 10 chat models: openai, mistral, gpt-5.4-mini, grok, deepseek,
          mistral-4, gemma, llama-scout, qwen-vision, openai-fast
-       - NEW v44: grok (1.6s), gpt-5.4-mini (1.9s), llama-scout, qwen-vision
        - Automatic failover: if one model fails (429/timeout), next one picks up
        - Weighted round-robin for fair load distribution across models
        - Reasoning: openai-large (GPT-5.4) for complex questions
        - Vision: openai + 5 vision-capable backups (tested!)
        - Per-model health tracking with cooldown on failures
-    2. LlamaCppProvider (Qwen3-4B) — LOCAL FALLBACK
+    2. LlamaCppProvider (Qwen3-4B) — LOCAL FALLBACK (OPTIONAL!)
+       - Only loaded when ENABLE_LOCAL_MODEL=true
        - Только когда ВСЕ модели Pollinations недоступны
        - stop=["<think"] — блокирует thinking mode Qwen3
     3. Static fallback — бот ВСЕГДА отвечает
 
-  INLINE MODE (v44 NEW!):
+  INLINE MODE:
     - Настя отвечает в любом чате через @asnastya_bot!
     - AI-generated responses in inline mode
 
   ФОН (новости, канал — LOW PRIORITY AI!):
     - Новости: RSS-парсер + AI-комментарии для канала!
-    - Канал: AI-посты на основе новостей (v44!), опросы, факты
-    - AI используется для НОВОСТНЫХ ПОСТОВ с low priority
+    - Канал: AI-посты на основе новостей, опросы, факты
 
-  VISION (фото-понимание):
+  VISION (фото-понимание + поиск по фото):
     - Pollinations vision API — Настя ВИДИТ фото!
     - 6 vision-capable моделей (протестированы!)
 
-  Ключевые преимущества v44:
-    - 10 моделей вместо 7 — ещё больше резервов!
-    - INLINE MODE — Настя доступна в любом чате!
-    - AI-ПОСТЫ В КАНАЛ — осмысленные и развёрнутые!
-    - НАДЁЖНО: автоматический failover между моделями
-    - БЫСТРО: grok 1.6s, gpt-5.4-mini 1.9s, mistral-4 1.5s
+  URL UNDERSTANDING:
+    - Настя читает ссылки и понимает контекст!
 """
 
 import logging
@@ -50,12 +45,18 @@ from ai.providers.pollinations_provider import (
     PollinationsProvider, REASONING_CHAT, REASONING_COMPLEX,
     MODEL_REASONING, MODEL_VISION, CHAT_MODELS,
 )
-from ai.providers.llama_cpp_provider import LlamaCppProvider
+try:
+    from ai.providers.llama_cpp_provider import LlamaCppProvider
+    _LLAMA_CPP_AVAILABLE = True
+except ImportError:
+    LlamaCppProvider = None
+    _LLAMA_CPP_AVAILABLE = False
 from ai.voice import transcribe_voice_ogg
 from bot.config import (
     MODEL_PATH, MODEL_N_CTX, MODEL_N_THREADS,
     MODEL_MAX_TOKENS, MODEL_HISTORY_LIMIT,
     POLLINATIONS_API_KEY, POLLINATIONS_MAX_TOKENS,
+    ENABLE_LOCAL_MODEL,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,9 +71,9 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """AI Router v44.0 — EXPANDED MULTI-MODEL Pollinations + Local FALLBACK + VISION + INLINE.
+    """AI Router v45.0 — CLOUD-ONLY Pollinations + Local FALLBACK (optional) + VISION + INLINE.
 
-    Chat: Pollinations (10 models, load balanced) → LlamaCpp → static fallback.
+    Chat: Pollinations (10 models, load balanced) → LlamaCpp (if enabled) → static fallback.
     Inline: Pollinations (fast response for @asnastya_bot).
     Vision: Pollinations vision API (6 vision-capable models).
     Background: AI-powered news posts for channel (low priority).
@@ -107,8 +108,8 @@ class AIRouter:
             logger.warning(f"PollinationsProvider init failed: {e}")
             self._pollinations = None
 
-        # ── 2. LlamaCpp — LOCAL FALLBACK ──
-        if MODEL_PATH:
+        # ── 2. LlamaCpp — LOCAL FALLBACK (only if enabled AND available!) ──
+        if ENABLE_LOCAL_MODEL and MODEL_PATH and _LLAMA_CPP_AVAILABLE and LlamaCppProvider is not None:
             try:
                 self._local = LlamaCppProvider(
                     model_path=MODEL_PATH,
@@ -135,17 +136,22 @@ class AIRouter:
                 logger.warning(f"LlamaCppProvider init failed: {e}")
                 self._local = None
         else:
-            logger.info("No MODEL_PATH set — running without local model (cloud only)")
+            if not _LLAMA_CPP_AVAILABLE:
+                logger.info("llama-cpp-python not installed — running cloud-only (install with: pip install llama-cpp-python)")
+            elif ENABLE_LOCAL_MODEL:
+                logger.info("ENABLE_LOCAL_MODEL=true but no MODEL_PATH — running cloud-only")
+            else:
+                logger.info("Local model DISABLED (ENABLE_LOCAL_MODEL not set) — running cloud-only")
 
         # Log status
         pollinations_status = "active" if self._pollinations and self._pollinations.is_available() else "unavailable"
-        local_status = "active" if self._local and self._local.is_available() else "unavailable"
+        local_status = "not_installed" if not _LLAMA_CPP_AVAILABLE else ("disabled" if not ENABLE_LOCAL_MODEL else ("active" if self._local and self._local.is_available() else "unavailable"))
         model_name = self._local._model_name if self._local and self._local._loaded else "none"
 
         logger.info(
-            f"AI Router v44.0 initialized: "
+            f"AI Router v45.0 initialized: "
             f"pollinations={pollinations_status} (PRIMARY, {len(CHAT_MODELS)} models, vision=yes, inline=yes), "
-            f"local={local_status} (FALLBACK, model={model_name}), "
+            f"local={local_status} (FALLBACK, model={model_name}, ENABLE_LOCAL_MODEL={ENABLE_LOCAL_MODEL}), "
             f"news=AI+RSS+templates, "
             f"max_tokens={POLLINATIONS_MAX_TOKENS}(cloud)/256(local), history={MODEL_HISTORY_LIMIT}"
         )

@@ -34,8 +34,7 @@ from zoneinfo import ZoneInfo
 from aiogram import Router, F
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
-    LabeledPrice, PollAnswer, InlineQuery, InlineQueryResultArticle,
-    InputTextMessageContent,
+    LabeledPrice, PollAnswer,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import CommandStart, Command
@@ -418,74 +417,7 @@ async def _maybe_news_opener(db, ai_router, user_id: int) -> str:
 #  HANDLERS
 # ════════════════════════════════════════════════════════════
 
-# IMPORTANT: Inline mode must be enabled via BotFather for this to work!
-# Send /setinline to @BotFather and enable inline mode for @asnastya_bot
-
-@router.inline_query()
-async def inline_query_handler(inline_query: InlineQuery, db=None, ai_router=None) -> None:
-    """Inline mode — Настя отвечает в любом чате через @asnastya_bot!
-    
-    Users can type @asnastya_bot <question> in any chat to get a response.
-    """
-    query = inline_query.query.strip()
-    
-    if not query:
-        # Show hint when no query
-        results = [
-            InlineQueryResultArticle(
-                id="hint",
-                title="Напиши вопрос для Насти!",
-                description="Например: @asnastya_bot Привет! Как дела?",
-                input_message_content=InputTextMessageContent(
-                    message_text="Привет! Напиши мне вопрос через @asnastya_bot 😊💅"
-                ),
-            )
-        ]
-        await inline_query.answer(results, cache_time=5)
-        return
-    
-    # Generate response via AI
-    response_text = ""
-    if ai_router and ai_router._pollinations and ai_router._pollinations.is_available():
-        try:
-            from bot.config import NASTYA_SYSTEM_PROMPT
-            result = await ai_router.chat(
-                prompt=query,
-                system_prompt=NASTYA_SYSTEM_PROMPT + "\n\nОТВЕЧАЙ ОЧЕНЬ КОРОТКО — максимум 2-3 предложения для inline режима!",
-                max_tokens=200,
-            )
-            if result and result.text:
-                response_text = result.text[:300]  # Inline results should be short
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Inline query AI error: {e}")
-    
-    if not response_text:
-        # Fallback responses
-        import random
-        response_text = random.choice([
-            "Ой, Настя задумалась... Попробуй ещё раз! 💅",
-            "Блин, не успела! Ещё раз? 💭",
-            "Настя пока не может ответить... ⏳",
-        ])
-    
-    # Clean response
-    import re
-    response_text = re.sub(r'<[^>]+>', '', response_text).strip()
-    response_text = response_text[:300]
-    
-    results = [
-        InlineQueryResultArticle(
-            id="nastya_response",
-            title=f"Настя: {response_text[:50]}...",
-            description=response_text[:100],
-            input_message_content=InputTextMessageContent(
-                message_text=response_text
-            ),
-        )
-    ]
-    
-    await inline_query.answer(results, cache_time=10)
+# NOTE: Inline mode is handled in bot/handlers/inline.py — dedicated handler with caching!
 
 
 @router.message(CommandStart())

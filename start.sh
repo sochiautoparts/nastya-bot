@@ -1,42 +1,46 @@
 #!/bin/bash
-# Nastya Bot v44 — EXPANDED MULTI-MODEL + INLINE + AI NEWS!
+# Nastya Bot v45 — CLOUD-ONLY + INLINE + AI NEWS!
 # Pollinations.ai = EXPANDED 10-MODEL (load balanced!)
-# NEW v44: grok (1.6s), gpt-5.4-mini (1.9s), llama-scout, qwen-vision
 # Models: openai, mistral, gpt-5.4-mini, grok, deepseek, mistral-4, gemma, llama-scout, qwen-vision, openai-fast
 # Automatic failover: if one model fails, next one picks up
 # INLINE MODE — Настя работает в любом чате через @asnastya_bot!
 # AI-POWERED NEWS POSTS — Настя пишет осмысленные посты на основе новостей!
-# Qwen3-4B-Instruct = LOCAL FALLBACK (offline reserve)
-# AVX2 acceleration — faster inference on CPU
+# LOCAL MODEL: Disabled by default (ENABLE_LOCAL_MODEL=true to enable)
 
 set -e
 
-echo "=== Nastya Bot v44 (EXPANDED MULTI-MODEL + INLINE + AI NEWS!) ==="
+echo "=== Nastya Bot v45 (CLOUD-ONLY + INLINE + AI NEWS!) ==="
 
-# ── Install llama-cpp-python with AVX2 acceleration ──
-if ! python3 -c "import llama_cpp" 2>/dev/null; then
-    echo "Installing llama-cpp-python with AVX2 support..."
-    CMAKE_ARGS="-DGGML_AVX2=on" pip install llama-cpp-python 2>&1 || {
-        echo "WARNING: AVX2 build failed, trying without..."
-        pip install llama-cpp-python 2>&1 || {
-            echo "ERROR: Failed to install llama-cpp-python!"
-            exit 1
+# ── Check if local model is enabled ──
+ENABLE_LOCAL="${ENABLE_LOCAL_MODEL:-false}"
+
+if [ "$ENABLE_LOCAL" = "true" ] || [ "$ENABLE_LOCAL" = "1" ] || [ "$ENABLE_LOCAL" = "yes" ]; then
+    echo "LOCAL MODEL: ENABLED — will load Qwen3-4B as fallback"
+
+    # ── Install llama-cpp-python with AVX2 acceleration ──
+    if ! python3 -c "import llama_cpp" 2>/dev/null; then
+        echo "Installing llama-cpp-python with AVX2 support..."
+        CMAKE_ARGS="-DGGML_AVX2=on" pip install llama-cpp-python 2>&1 || {
+            echo "WARNING: AVX2 build failed, trying without..."
+            pip install llama-cpp-python 2>&1 || {
+                echo "ERROR: Failed to install llama-cpp-python!"
+                echo "Continuing in CLOUD-ONLY mode..."
+            }
         }
-    }
-fi
+    fi
 
-echo "llama-cpp-python: $(python3 -c 'import llama_cpp; print(llama_cpp.__version__)' 2>/dev/null || echo 'not installed')"
+    echo "llama-cpp-python: $(python3 -c 'import llama_cpp; print(llama_cpp.__version__)' 2>/dev/null || echo 'not installed')"
 
-# ── Download LOCAL FALLBACK model: Qwen3-4B-Instruct ──
-MODEL_DIR="models"
-MODEL_FILE="Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
-MODEL_PATH="${MODEL_DIR}/${MODEL_FILE}"
+    # ── Download LOCAL FALLBACK model: Qwen3-4B-Instruct ──
+    MODEL_DIR="models"
+    MODEL_FILE="Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+    MODEL_PATH="${MODEL_DIR}/${MODEL_FILE}"
 
-if [ ! -f "$MODEL_PATH" ] || [ ! -s "$MODEL_PATH" ]; then
-    echo "Downloading Qwen3-4B-Instruct Q4_K_M model (~2.4GB) — LOCAL FALLBACK..."
-    mkdir -p "$MODEL_DIR"
+    if [ ! -f "$MODEL_PATH" ] || [ ! -s "$MODEL_PATH" ]; then
+        echo "Downloading Qwen3-4B-Instruct Q4_K_M model (~2.4GB) — LOCAL FALLBACK..."
+        mkdir -p "$MODEL_DIR"
 
-    python3 -c "
+        python3 -c "
 from huggingface_hub import hf_hub_download
 path = hf_hub_download(
     repo_id='unsloth/Qwen3-4B-Instruct-2507-GGUF',
@@ -45,27 +49,31 @@ path = hf_hub_download(
 )
 print('Downloaded to:', path)
 " 2>&1 || {
-        echo "WARNING: huggingface_hub download failed, trying wget..."
-        wget -q --show-progress \
-            "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/${MODEL_FILE}" \
-            -O "$MODEL_PATH" 2>&1 || {
-            echo "ERROR: Failed to download local model!"
-            echo "Bot will run in CLOUD-ONLY mode (Pollinations only, no local fallback)"
-            rm -f "$MODEL_PATH"
+            echo "WARNING: huggingface_hub download failed, trying wget..."
+            wget -q --show-progress \
+                "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/${MODEL_FILE}" \
+                -O "$MODEL_PATH" 2>&1 || {
+                echo "WARNING: Failed to download local model!"
+                echo "Bot will run in CLOUD-ONLY mode (Pollinations only, no local fallback)"
+                rm -f "$MODEL_PATH"
+            }
         }
-    }
 
-    if [ -f "$MODEL_PATH" ] && [ ! -s "$MODEL_PATH" ]; then
-        echo "WARNING: Model file is empty — running in CLOUD-ONLY mode"
-        rm -f "$MODEL_PATH"
+        if [ -f "$MODEL_PATH" ] && [ ! -s "$MODEL_PATH" ]; then
+            echo "WARNING: Model file is empty — running in CLOUD-ONLY mode"
+            rm -f "$MODEL_PATH"
+        fi
     fi
-fi
 
-if [ -f "$MODEL_PATH" ] && [ -s "$MODEL_PATH" ]; then
-    MODEL_SIZE=$(du -h "$MODEL_PATH" | cut -f1)
-    echo "LOCAL FALLBACK: ${MODEL_FILE} (${MODEL_SIZE})"
+    if [ -f "$MODEL_PATH" ] && [ -s "$MODEL_PATH" ]; then
+        MODEL_SIZE=$(du -h "$MODEL_PATH" | cut -f1)
+        echo "LOCAL FALLBACK: ${MODEL_FILE} (${MODEL_SIZE})"
+    else
+        echo "LOCAL FALLBACK: not available — running in CLOUD-ONLY mode (Pollinations)"
+    fi
 else
-    echo "LOCAL FALLBACK: not available — running in CLOUD-ONLY mode (Pollinations)"
+    echo "LOCAL MODEL: DISABLED (cloud-only mode — faster startup)"
+    echo "To enable: set ENABLE_LOCAL_MODEL=true"
 fi
 
 # ── Check Pollinations API key ──
@@ -85,7 +93,8 @@ pip install -r requirements.txt 2>&1 || {
 mkdir -p data
 
 # ── Start bot ──
-echo "=== Starting Nastya Bot v44 (EXPANDED 10-MODEL Pollinations + INLINE + AI NEWS + Qwen3 FALLBACK) ==="
+echo "=== Starting Nastya Bot v45 (CLOUD-ONLY + 10-MODEL Pollinations + INLINE + AI NEWS) ==="
 echo "Config: Pollinations=EXPANDED 10-MODEL (openai, mistral, gpt-5.4-mini, grok, deepseek, mistral-4, gemma, llama-scout, qwen-vision, openai-fast)"
 echo "Features: inline=yes, vision=yes(6 models), reasoning=openai-large, max_tokens=1000, ai_news=yes, group_chance=50%, load_balancing=yes"
+echo "Local model: $([ "$ENABLE_LOCAL" = "true" ] && echo 'ENABLED' || echo 'DISABLED (cloud-only)')"
 python3 -m bot.main

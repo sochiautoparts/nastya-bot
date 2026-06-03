@@ -1,17 +1,18 @@
-"""Nastya Bot 44.0 — Configuration (EXPANDED MULTI-MODEL + INLINE + AI NEWS!)
+"""Nastya Bot 45.0 — Configuration (CLOUD-ONLY + INLINE + AI NEWS!)
 
-v44.0: EXPANDED RESERVES + INLINE MODE + AI-POWERED NEWS!
+v45.0: CLOUD-ONLY + LOCAL MODEL DISABLED BY DEFAULT!
 - Pollinations.ai — 10 chat models + reasoning + vision (load balanced!)
-- NEW MODELS: grok, gpt-5.4-mini, llama-scout, qwen-vision (tested & verified!)
+- Models: grok, gpt-5.4-mini, llama-scout, qwen-vision (tested & verified!)
 - Automatic failover on 429/rate-limit/timeout
 - INLINE MODE — Настя работает в любом чате через @asnastya_bot!
 - AI-POWERED CHANNEL POSTS — Настя пишет осмысленные посты на основе новостей!
 - News: только русскоязычные источники, авто-новости ТОЛЬКО sochiautoparts.ru
 - Group response chance: 50% (было 30%)
-- Qwen3-4B-Instruct — local GGUF fallback when ALL cloud models down
+- Qwen3-4B-Instruct — DISABLED by default (ENABLE_LOCAL_MODEL=true to enable)
 - max_tokens=1000 for Pollinations (cloud can handle it!)
 - max_tokens=256 for local model (speed optimization)
 - REAL PHOTO UNDERSTANDING via Pollinations vision API!
+- URL UNDERSTANDING — Настя читает ссылки!
 """
 import os
 from typing import Dict, List
@@ -42,9 +43,15 @@ POLLINATIONS_TIMEOUT: float = 45.0
 POLLINATIONS_MAX_TOKENS: int = 1000  # Cloud can handle longer responses!
 POLLINATIONS_MAX_RETRIES: int = 3  # Try up to 3 models on failure
 
-# ── LlamaCpp Model — LOCAL FALLBACK ─────────────────────────
+# ── Local Model Toggle ──────────────────────────────────────
+# Set ENABLE_LOCAL_MODEL=true to load Qwen3-4B as local fallback
+# Default: disabled (cloud-only mode — faster startup, less RAM)
+ENABLE_LOCAL_MODEL: bool = _env("ENABLE_LOCAL_MODEL", "false").lower() in ("true", "1", "yes")
+
+# ── LlamaCpp Model — LOCAL FALLBACK (disabled by default!) ────
 # Qwen3-4B-Instruct — only when ALL Pollinations models are unavailable
-MODEL_PATH: str = _env("MODEL_PATH", "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
+# Only loaded when ENABLE_LOCAL_MODEL=true
+MODEL_PATH: str = _env("MODEL_PATH", "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf") if ENABLE_LOCAL_MODEL else ""
 
 MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 2048)
 MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 4)
@@ -109,6 +116,9 @@ DONATION_LABELS = {
 }
 
 PROACTIVE_COOLDOWN = 1800
+
+# ── Inline Mode Settings ────────────────────────────────────
+INLINE_CACHE_TIME: int = 10  # seconds to cache inline results
 
 # ── Group Chat Settings ────────────────────────────────────
 GROUP_MAX_MESSAGE_LENGTH = 200  # Shorter messages in group chats
@@ -288,4 +298,6 @@ def validate_config() -> List[str]:
     missing = []
     if not BOT_TOKEN:
         missing.append("BOT_TOKEN")
+    if ENABLE_LOCAL_MODEL and not MODEL_PATH:
+        missing.append("MODEL_PATH (required when ENABLE_LOCAL_MODEL=true)")
     return missing
