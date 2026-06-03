@@ -1,16 +1,18 @@
-"""Nastya Bot 43.0 — MULTI-MODEL POLLINATIONS + VISION + LOCAL FALLBACK! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 44.0 — EXPANDED MULTI-MODEL + INLINE + AI NEWS! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v43.0:
-  - ЧАТ: Pollinations.ai MULTI-MODEL (7 моделей, балансировка нагрузки!)
+Architecture v44.0:
+  - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (10 моделей, балансировка нагрузки!)
     - openai (GPT-5.4 Nano) PRIMARY — fast, vision-capable
-    - mistral, deepseek, llama, gemma — BACKUP models
+    - NEW: grok (1.6s), gpt-5.4-mini (1.9s), llama-scout, qwen-vision
+    - mistral, deepseek, mistral-4, gemma, openai-fast — BACKUP models
     - Automatic failover on 429/timeout
-  - VISION: Pollinations vision API — Настя ВИДИТ фото!
-  - Новости: RSS-парсер + шаблонные комментарии (БЕЗ AI!)
-  - Канал: шаблонные посты, опросы, факты (БЕЗ AI!)
+  - INLINE MODE: Настя работает в любом чате через @asnastya_bot!
+  - VISION: Pollinations vision API — Настя ВИДИТ фото! 6 vision-моделей
+  - Новости: RSS-парсер + AI-комментарии для канала!
+  - Канал: AI-посты на основе новостей (v44!), опросы, факты
   - Фото: REAL VISION — base64 → multimodal → AI понимает!
   - Typing delay indicators — human-like behavior
-  - Group chat message length limiting
+  - Group chat response chance: 50%
   - Proactive messaging — Настя активный собеседник
   - Qwen3-4B GGUF как LAST FALLBACK — загружается ПРЯМО в процесс
   - AVX2 ускорение — в 2-3x быстрее на CPU
@@ -469,7 +471,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 43.0 Starting (MULTI-MODEL POLLINATIONS + VISION + LOCAL FALLBACK) ===")
+    logger.info("=== Nastya Bot 44.0 Starting (EXPANDED MULTI-MODEL + INLINE + AI NEWS!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -516,7 +518,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 43.0 Ready (MULTI-MODEL POLLINATIONS + VISION + LOCAL FALLBACK) ===")
+    logger.info("=== Nastya Bot 44.0 Ready (EXPANDED MULTI-MODEL + INLINE + AI NEWS!) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

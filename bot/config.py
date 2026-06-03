@@ -1,17 +1,17 @@
-"""Nastya Bot 43.0 — Configuration (MULTI-MODEL POLLINATIONS + LOCAL FALLBACK!)
+"""Nastya Bot 44.0 — Configuration (EXPANDED MULTI-MODEL + INLINE + AI NEWS!)
 
-v43.0: MULTI-MODEL LOAD BALANCING + ENHANCED HUMAN-LIKE BEHAVIOR!
-- Pollinations.ai — 7 chat models + reasoning + vision (load balanced!)
-- Models: openai (primary), mistral, deepseek, llama, gemma, openai-fast, mistral-4
+v44.0: EXPANDED RESERVES + INLINE MODE + AI-POWERED NEWS!
+- Pollinations.ai — 10 chat models + reasoning + vision (load balanced!)
+- NEW MODELS: grok, gpt-5.4-mini, llama-scout, qwen-vision (tested & verified!)
 - Automatic failover on 429/rate-limit/timeout
+- INLINE MODE — Настя работает в любом чате через @asnastya_bot!
+- AI-POWERED CHANNEL POSTS — Настя пишет осмысленные посты на основе новостей!
+- News: только русскоязычные источники, авто-новости ТОЛЬКО sochiautoparts.ru
+- Group response chance: 50% (было 30%)
 - Qwen3-4B-Instruct — local GGUF fallback when ALL cloud models down
 - max_tokens=1000 for Pollinations (cloud can handle it!)
 - max_tokens=256 for local model (speed optimization)
 - REAL PHOTO UNDERSTANDING via Pollinations vision API!
-- Typing delay indicators — human-like behavior
-- Group chat message length limiting
-- Proactive messaging — Настя активный собеседник
-- News discussion with emotions — подробные рассказы
 """
 import os
 from typing import Dict, List
@@ -75,17 +75,20 @@ CHANNEL_USERNAME: str = _env("CHANNEL_USERNAME", "chasnastya")
 # ── Timezone ──────────────────────────────────────────────
 MOSCOW_TZ = "Europe/Moscow"
 
-# ── News Sources ────────────────────────────────────────────
+# ── News Sources (ТОЛЬКО русскоязычные! Англоязычные УБРАНЫ!)
+# Автомобильные новости — ТОЛЬКО sochiautoparts.ru!
 NEWS_SOURCES: List[Dict[str, str]] = [
     {"name": "СочиАвтоЗапчасти", "url": "https://sochiautoparts.ru/rss.xml", "category": "auto"},
     {"name": "Хабр", "url": "https://habr.com/ru/rss/articles/top/", "category": "tech"},
     {"name": "iXBT", "url": "https://www.ixbt.com/export/news.rss", "category": "tech"},
     {"name": "3DNews", "url": "https://3dnews.ru/news/rss/", "category": "tech"},
     {"name": "OpenNET", "url": "https://www.opennet.ru/opennews/opennews_6.rss", "category": "tech"},
-    {"name": "TechCrunch RU", "url": "https://techcrunch.com/feed/", "category": "tech"},
     {"name": "N+1", "url": "https://nplus1.ru/rss", "category": "science"},
     {"name": "Naked Science", "url": "https://naked-science.ru/feed", "category": "science"},
     {"name": "DTF", "url": "https://dtf.ru/rss", "category": "gaming"},
+    {"name": "РИА Новости", "url": "https://ria.ru/export/rss2/archive/index.xml", "category": "general"},
+    {"name": "Лента.ру", "url": "https://lenta.ru/rss", "category": "general"},
+    {"name": "Вести", "url": "https://www.vesti.ru/vesti.rss", "category": "general"},
 ]
 
 NEWS_FETCH_INTERVAL = _env_int("NEWS_FETCH_INTERVAL", 900)
@@ -109,7 +112,7 @@ PROACTIVE_COOLDOWN = 1800
 
 # ── Group Chat Settings ────────────────────────────────────
 GROUP_MAX_MESSAGE_LENGTH = 200  # Shorter messages in group chats
-GROUP_RESPONSE_CHANCE = 0.3  # 30% chance to respond in groups (avoid spam)
+GROUP_RESPONSE_CHANCE = 0.5  # 50% chance to respond in groups (was 30%)
 
 # ── Typing Delay Settings ──────────────────────────────────
 TYPING_DELAY_THRESHOLD = 3.0  # Show delay message if processing > 3s

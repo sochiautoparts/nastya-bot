@@ -1,20 +1,21 @@
-"""Nastya News Engine 3.0 — RSS-only, NO AI for news!
+"""Nastya News Engine 3.1 — RSS-only for DB, AI for channel posts!
 
-КЛЮЧЕВОЕ ИЗМЕНЕНИЕ v3.0:
-  - УБРАНА генерация AI-комментариев к новостям
-  - Комментарии генерируются из ШАБЛОНОВ (быстро, качественно, без мусора)
-  - RSS-парсер сохраняет события в JSON-файл + SQLite
-  - Бот читает JSON/SQLite и применяет новости в контекст
-  - AI НЕ используется для новостей — только для ЧАТА
+v3.1 KEY CHANGES (v44):
+  - News sources: ТОЛЬКО русскоязычные! Англоязычные УБРАНЫ!
+  - Автомобильные новости: ТОЛЬКО sochiautoparts.ru/rss.xml!
+  - Template commentary still used for DB storage (fast, no AI)
+  - AI commentary for channel posts is handled by channel.py (v44!)
+  - Added Russian news sources: РИА Новости, Лента.ру, Вести
 
 Architecture:
   - Fetches RSS feeds from configured sources using feedparser (robust)
   - Falls back to XML parsing if feedparser fails
   - Extracts titles, summaries, and categories
-  - Template-based Nastya commentary — NO AI, instant and clean
+  - Template-based Nastya commentary for DB — NO AI, instant and clean
+  - AI-generated commentary for channel posts — handled separately
   - Stores in DB + JSON file for channel posting + conversation context
   - Runs periodically as background task
-  - Picks interesting items by category priority
+  - Picks interesting items by category priority (auto = highest!)
 """
 
 import asyncio
@@ -120,12 +121,14 @@ def _parse_rss(xml_text: str, source_name: str, category: str = "general") -> Li
 # ── News Fetcher ────────────────────────────────────────────
 
 # Category priority for picking interesting news (higher = more interesting for Nastya)
+# v44: auto = HIGHEST priority (sochiautoparts.ru — the bot's niche!)
 CATEGORY_PRIORITY = {
-    "auto": 6,           # Приоритет — автомобильные новости от sochiautoparts.ru
+    "auto": 8,           # ПРИОРИТЕТ — автомобильные новости от sochiautoparts.ru!
     "entertainment": 5,
     "gaming": 4,
     "internet": 4,
     "tech": 3,
+    "science": 3,
     "world": 2,
     "general": 1,
 }

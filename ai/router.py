@@ -1,35 +1,41 @@
-"""AI Router v43.0 — MULTI-MODEL POLLINATIONS + LOCAL FALLBACK + VISION!
+"""AI Router v44.0 — EXPANDED MULTI-MODEL POLLINATIONS + LOCAL FALLBACK + VISION + INLINE!
 
-АРХИТЕКТУРА v43:
+АРХИТЕКТУРА v44:
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
-    1. PollinationsProvider v8 (MULTI-MODEL LOAD BALANCING!)
+    1. PollinationsProvider v9 (EXPANDED 10-MODEL LOAD BALANCING!)
        - gen.pollinations.ai/v1/chat/completions — OpenAI-compatible
-       - 7 chat models: openai, mistral, deepseek, llama, gemma, openai-fast, mistral-4
+       - 10 chat models: openai, mistral, gpt-5.4-mini, grok, deepseek,
+         mistral-4, gemma, llama-scout, qwen-vision, openai-fast
+       - NEW v44: grok (1.6s), gpt-5.4-mini (1.9s), llama-scout, qwen-vision
        - Automatic failover: if one model fails (429/timeout), next one picks up
        - Weighted round-robin for fair load distribution across models
        - Reasoning: openai-large (GPT-5.4) for complex questions
-       - Vision: openai + other vision-capable models
+       - Vision: openai + 5 vision-capable backups (tested!)
        - Per-model health tracking with cooldown on failures
     2. LlamaCppProvider (Qwen3-4B) — LOCAL FALLBACK
        - Только когда ВСЕ модели Pollinations недоступны
        - stop=["<think"] — блокирует thinking mode Qwen3
     3. Static fallback — бот ВСЕГДА отвечает
 
-  ФОН (новости, канал — БЕЗ AI!):
-    - Новости: RSS-парсер + шаблонные комментарии (news.py)
-    - Канал: шаблонные посты, опросы, факты (channel.py)
-    - AI НЕ вызывается для фоновых задач!
+  INLINE MODE (v44 NEW!):
+    - Настя отвечает в любом чате через @asnastya_bot!
+    - AI-generated responses in inline mode
+
+  ФОН (новости, канал — LOW PRIORITY AI!):
+    - Новости: RSS-парсер + AI-комментарии для канала!
+    - Канал: AI-посты на основе новостей (v44!), опросы, факты
+    - AI используется для НОВОСТНЫХ ПОСТОВ с low priority
 
   VISION (фото-понимание):
     - Pollinations vision API — Настя ВИДИТ фото!
-    - Multi-model: пробует несколько vision-моделей если одна не работает
+    - 6 vision-capable моделей (протестированы!)
 
-  Ключевые преимущества v43:
-    - НАДЁЖНО: 7 моделей вместо 1 — если одна падает, другие работают!
-    - МАСШТАБИРУЕМО: round-robin распределяет нагрузку между моделями
-    - УМНО: GPT-5.4 Nano с vision — лучше понимает контекст
-    - БЫСТРО: 5-15 сек вместо 20-89 на локальной модели
-    - НЕ ОБРЕЗАНО: max_tokens=1000 для Pollinations
+  Ключевые преимущества v44:
+    - 10 моделей вместо 7 — ещё больше резервов!
+    - INLINE MODE — Настя доступна в любом чате!
+    - AI-ПОСТЫ В КАНАЛ — осмысленные и развёрнутые!
+    - НАДЁЖНО: автоматический failover между моделями
+    - БЫСТРО: grok 1.6s, gpt-5.4-mini 1.9s, mistral-4 1.5s
 """
 
 import logging
@@ -64,11 +70,12 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """AI Router v43.0 — MULTI-MODEL Pollinations + Local FALLBACK + VISION.
+    """AI Router v44.0 — EXPANDED MULTI-MODEL Pollinations + Local FALLBACK + VISION + INLINE.
 
-    Chat: Pollinations (7 models, load balanced) → LlamaCpp → static fallback.
-    Vision: Pollinations vision API (multi-model).
-    Background: NO AI — RSS + templates!
+    Chat: Pollinations (10 models, load balanced) → LlamaCpp → static fallback.
+    Inline: Pollinations (fast response for @asnastya_bot).
+    Vision: Pollinations vision API (6 vision-capable models).
+    Background: AI-powered news posts for channel (low priority).
     """
 
     def __init__(self, db=None):
@@ -136,10 +143,10 @@ class AIRouter:
         model_name = self._local._model_name if self._local and self._local._loaded else "none"
 
         logger.info(
-            f"AI Router v43.0 initialized: "
-            f"pollinations={pollinations_status} (PRIMARY, {len(CHAT_MODELS)} models, vision=yes), "
+            f"AI Router v44.0 initialized: "
+            f"pollinations={pollinations_status} (PRIMARY, {len(CHAT_MODELS)} models, vision=yes, inline=yes), "
             f"local={local_status} (FALLBACK, model={model_name}), "
-            f"news=RSS+templates (no AI), "
+            f"news=AI+RSS+templates, "
             f"max_tokens={POLLINATIONS_MAX_TOKENS}(cloud)/256(local), history={MODEL_HISTORY_LIMIT}"
         )
 

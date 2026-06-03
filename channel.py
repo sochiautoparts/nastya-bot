@@ -673,13 +673,163 @@ async def post_real_poll_to_channel(bot: Bot, db) -> bool:
         return False
 
 
+async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> bool:
+    """Post an AI-generated substantive news commentary to channel.
+
+    v44: Instead of template-based comments, uses AI to write
+    a detailed, thoughtful post about the news — especially for
+    auto news from sochiautoparts.ru!
+
+    Falls back to template-based posting if AI fails.
+    """
+    if not CHANNEL_ID:
+        return False
+
+    title = news_item.get("title", "")
+    summary = news_item.get("summary", "")
+    link = news_item.get("link", "")
+    category = news_item.get("category", "general")
+    template_comment = news_item.get("nastya_comment", "")
+
+    if not title:
+        return False
+
+    # Check dedup
+    if _is_recent_post(title):
+        return False
+
+    # Try AI-generated commentary first
+    ai_comment = ""
+    if ai_router:
+        try:
+            # Build a prompt for substantive news commentary
+            prompt_parts = [f"Новость: {title}"]
+            if summary:
+                # Clean HTML from summary
+                import re as _re
+                clean_summary = _re.sub(r'<[^>]+>', '', summary).strip()[:500]
+                prompt_parts.append(f"Краткое содержание: {clean_summary}")
+            if link:
+                prompt_parts.append(f"Источник: {link}")
+
+            category_context = ""
+            if category == "auto":
+                category_context = "Это автомобильная новость от sochiautoparts.ru — расскажи подробно, со знанием дела, как девушка которая работает в автозапчастях."
+
+            prompt = "\n".join(prompt_parts)
+
+            result = await ai_router.chat(
+                prompt=prompt,
+                system_prompt=(
+                    "Ты Настя — девушка из Сочи, 23 года, работаешь в автозапчастях. "
+                    "Ты пишешь пост для своего Telegram канала. "
+                    f"{category_context}"
+                    "Напиши осмысленный, развёрнутый пост об этой новости. "
+                    "4-6 предложений, живо и эмоционально, со своим мнением. "
+                    "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
+                    "Без markdown, без буллетов, без заголовков. "
+                    "Не пиши 'Настя' в начале — говори от первого лица."
+                ),
+                max_tokens=300,
+                priority="low",  # Background priority — don't block user chat
+            )
+
+            if result and result.text:
+                ai_comment = result.text.strip()
+                # Clean any remaining artifacts
+                import re as _re2
+                ai_comment = _re2.sub(r'<[^>]+>', '', ai_comment)
+                ai_comment = _re2.sub(r'^/no_think\s*', '', ai_comment)
+                # Remove "Настя:" prefix if present
+                for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
+                    if ai_comment.startswith(prefix):
+                        ai_comment = ai_comment[len(prefix):].strip()
+                # Limit length for channel
+                if len(ai_comment) > 600:
+                    ai_comment = ai_comment[:597] + "..."
+        except Exception as e:
+            logger.error(f"AI news commentary error: {e}")
+
+    # Use AI comment or fall back to template comment
+    comment = ai_comment if ai_comment else template_comment
+    if not comment:
+        comment = "Интересно..."
+
+    # Build the post text
+    post_text = comment
+
+    # Add title reference
+    post_text += f"\n\n📖 {title}"
+
+    # Add short summary if available and not already covered by AI
+    if summary and not ai_comment:
+        import re as _re3
+        short_summary = _re3.sub(r'<[^>]+>', '', summary).strip()[:200]
+        if short_summary:
+            post_text += f"\n💡 {short_summary}"
+
+    # Add clickable link
+    if link:
+        post_text += f"\n\n🔗 <a href=\"{link}\">Читать полностью</a>"
+
+    # Category emoji + hashtag
+    cat_emojis = {
+        "auto": "🚗", "general": "📰", "tech": "💻", "gaming": "🎮",
+        "internet": "🌐", "entertainment": "🎬", "world": "🌍", "science": "🔬",
+    }
+    cat_emoji = cat_emojis.get(category, "📰")
+    post_text += f"\n{cat_emoji} #{category.capitalize()}"
+
+    # Validate before posting
+    if not _validate_post_text(post_text):
+        logger.warning(f"AI news post validation failed: {title[:50]}...")
+        # Fall back to template-based posting
+        return await post_news_to_channel(bot, db, [news_item]) > 0
+
+    if _is_recent_post(post_text):
+        return False
+
+    try:
+        post_id_for_link = news_item.get("id", 0)
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="💬 Обсудить с Настей",
+                url=f"https://t.me/{BOT_USERNAME}?start=discuss_{post_id_for_link}",
+            )],
+        ])
+
+        await bot.send_message(
+            chat_id=CHANNEL_ID,
+            text=post_text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+
+        # Mark as posted
+        await db.mark_news_posted(news_item["id"])
+        await db.add_channel_post(
+            news_id=news_item["id"],
+            post_text=post_text,
+            post_type="ai_news" if ai_comment else "news",
+        )
+        _track_post(post_text)
+
+        logger.info(f"Channel AI news post: {title[:50]}... (AI={'yes' if ai_comment else 'no'})")
+        return True
+
+    except Exception as e:
+        logger.error(f"Channel AI news post error: {e}")
+        return False
+
+
 async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
     """Full channel posting cycle.
 
-    v35: RSS-FIRST — новости через RSS + шаблоны, AI НЕ используется!
-    Strategy v8.0:
-    - 45% news posts (if available) — RSS + template commentary
-    - 20% personality posts (template only, NO AI!)
+    v44: AI-POWERED NEWS POSTS! Настя пишет осмысленные посты на основе новостей!
+    Strategy v9.0:
+    - 50% AI-powered news posts (substantive, thoughtful commentary!)
+    - 15% personality posts (template only)
     - 15% knowledge posts (interesting facts)
     - 10% event reaction posts
     - 10% REAL Telegram polls (interactive buttons!)
@@ -694,14 +844,27 @@ async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
     max_posts = 3
     roll = random.random()
 
-    # Try news posts first (45% chance, max 1 per cycle) — MORE NEWS!
-    if roll < 0.45:
+    # ── AI-powered news posts (50% chance) — v44: SUBSTANTIVE! ──
+    if roll < 0.50:
         try:
             unposted = await db.get_unposted_news(limit=5)
             if unposted:
-                # Pick a random one for variety
-                news_to_post = [random.choice(unposted)]
-                posted += await post_news_to_channel(bot, db, news_to_post)
+                # Prefer auto news from sochiautoparts.ru!
+                auto_news = [n for n in unposted if n.get("category") == "auto"]
+                if auto_news:
+                    news_item = random.choice(auto_news)
+                else:
+                    news_item = random.choice(unposted)
+                
+                if ai_router:
+                    if await post_ai_news_to_channel(bot, db, ai_router, news_item):
+                        posted += 1
+                    else:
+                        # AI failed — fall back to template
+                        posted += await post_news_to_channel(bot, db, [news_item])
+                else:
+                    # No AI router — template-based
+                    posted += await post_news_to_channel(bot, db, [news_item])
         except Exception as e:
             logger.error(f"Channel news cycle error: {e}")
 

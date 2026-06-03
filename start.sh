@@ -1,15 +1,17 @@
 #!/bin/bash
-# Nastya Bot v43 — MULTI-MODEL POLLINATIONS + VISION + LOCAL FALLBACK!
-# Pollinations.ai = MULTI-MODEL (7 chat models, load balanced!)
-# Models: openai (PRIMARY), mistral, deepseek, llama, gemma, openai-fast, mistral-4
+# Nastya Bot v44 — EXPANDED MULTI-MODEL + INLINE + AI NEWS!
+# Pollinations.ai = EXPANDED 10-MODEL (load balanced!)
+# NEW v44: grok (1.6s), gpt-5.4-mini (1.9s), llama-scout, qwen-vision
+# Models: openai, mistral, gpt-5.4-mini, grok, deepseek, mistral-4, gemma, llama-scout, qwen-vision, openai-fast
 # Automatic failover: if one model fails, next one picks up
+# INLINE MODE — Настя работает в любом чате через @asnastya_bot!
+# AI-POWERED NEWS POSTS — Настя пишет осмысленные посты на основе новостей!
 # Qwen3-4B-Instruct = LOCAL FALLBACK (offline reserve)
 # AVX2 acceleration — faster inference on CPU
-# v43: Multi-model load balancing, enhanced human-like behavior
 
 set -e
 
-echo "=== Nastya Bot v43 (MULTI-MODEL POLLINATIONS + VISION + LOCAL FALLBACK) ==="
+echo "=== Nastya Bot v44 (EXPANDED MULTI-MODEL + INLINE + AI NEWS!) ==="
 
 # ── Install llama-cpp-python with AVX2 acceleration ──
 if ! python3 -c "import llama_cpp" 2>/dev/null; then
@@ -68,7 +70,7 @@ fi
 
 # ── Check Pollinations API key ──
 if [ -n "$POLLINATIONS_API_KEY" ]; then
-    echo "POLLINATIONS: API key configured (MULTI-MODEL + VISION)"
+    echo "POLLINATIONS: API key configured (EXPANDED 10-MODEL + VISION + INLINE)"
 else
     echo "POLLINATIONS: no API key — using anonymous mode (rate limited)"
 fi
@@ -83,7 +85,7 @@ pip install -r requirements.txt 2>&1 || {
 mkdir -p data
 
 # ── Start bot ──
-echo "=== Starting Nastya Bot v43 (MULTI-MODEL Pollinations + VISION + Qwen3 FALLBACK) ==="
-echo "Config: Pollinations=MULTI-MODEL (7 models: openai, mistral, deepseek, llama, gemma +2), Local=FALLBACK (Qwen3-4B)"
-echo "Features: vision=yes, reasoning=openai-large, max_tokens=1000, typing_indicators=yes, load_balancing=yes"
+echo "=== Starting Nastya Bot v44 (EXPANDED 10-MODEL Pollinations + INLINE + AI NEWS + Qwen3 FALLBACK) ==="
+echo "Config: Pollinations=EXPANDED 10-MODEL (openai, mistral, gpt-5.4-mini, grok, deepseek, mistral-4, gemma, llama-scout, qwen-vision, openai-fast)"
+echo "Features: inline=yes, vision=yes(6 models), reasoning=openai-large, max_tokens=1000, ai_news=yes, group_chance=50%, load_balancing=yes"
 python3 -m bot.main

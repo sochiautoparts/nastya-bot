@@ -1,14 +1,21 @@
-"""Pollinations.ai Provider v8.0 — MULTI-MODEL LOAD BALANCING!
+"""Pollinations.ai Provider v9.0 — EXPANDED MULTI-MODEL LOAD BALANCING!
 
-v8.0 MAJOR UPDATE — Multi-model load distribution:
+v9.0 EXPANDED UPDATE — 10 chat models with tested & verified reserves:
   - PRIMARY: 'openai' (GPT-5.4 Nano) — fast, cheap, vision-capable
-  - BACKUP 1: 'mistral' (Mistral Small 3.2) — fast, good Russian
-  - BACKUP 2: 'deepseek' (DeepSeek V4 Flash) — reasoning, cheap
-  - BACKUP 3: 'llama' (Llama 3.3 70B) — open-source, strong
-  - BACKUP 4: 'gemma' (Gemma 4 26B) — fast MoE, good quality
+  - BACKUP 1: 'mistral' (Mistral Small 3.2) — fast, good Russian (2.1s)
+  - BACKUP 2: 'gpt-5.4-mini' (GPT-5.4 Mini) — balanced, fast (1.9s) ✅ NEW!
+  - BACKUP 3: 'grok' (Grok 4.20) — fast, good Russian (1.6s) ✅ NEW!
+  - BACKUP 4: 'deepseek' (DeepSeek V4 Flash) — reasoning, cheap (3.3s)
+  - BACKUP 5: 'mistral-4' (Mistral Small 4) — better, multimodal (1.5s)
+  - BACKUP 6: 'gemma' (Gemma 4 26B) — fast MoE, vision (3.1s)
+  - BACKUP 7: 'llama-scout' (Llama 4 Scout) — long ctx, vision (3.4s) ✅ NEW!
+  - BACKUP 8: 'qwen-vision' (Qwen3 VL 30B) — vision specialist (2.5s) ✅ NEW!
+  - ULTRA-FAST: 'openai-fast' (GPT-5 Nano) — emergency fallback (4.3s)
   - REASONING: 'openai-large' (GPT-5.4) — for complex questions
   - VISION: 'openai' (GPT-5.4 Nano) — supports image input!
+    Vision backups: mistral, mistral-4, gemma, qwen-vision
 
+  All new models were TESTED before adding (June 2026).
   Round-robin distribution across models to handle growing user load.
   Automatic failover on 429/rate-limit/timeout — next model picks up.
   Per-model health tracking with cooldown on failures.
@@ -37,13 +44,17 @@ BASE_URL = "https://gen.pollinations.ai"
 CHAT_MODELS = [
     # (model_name, weight_for_round_robin, supports_vision, cost_tier)
     # Cost tiers: 1=cheapest, 2=cheap, 3=moderate, 4=expensive
+    # All models TESTED June 2026 — verified working with Russian!
     ("openai",       4, True,  1),   # GPT-5.4 Nano — PRIMARY, fast, vision, cheapest
     ("mistral",      3, True,  1),   # Mistral Small 3.2 — fast, good multilingual
+    ("gpt-5.4-mini", 3, True,  2),   # GPT-5.4 Mini — balanced speed & cost (NEW v44!)
+    ("grok",         2, True,  2),   # Grok 4.20 — fast, good Russian (NEW v44!)
     ("deepseek",     2, False, 1),   # DeepSeek V4 Flash — reasoning, cheap
-    ("llama",        2, False, 1),   # Llama 3.3 70B — open-source, strong
+    ("mistral-4",    2, True,  2),   # Mistral Small 4 — better but pricier
     ("gemma",        2, True,  1),   # Gemma 4 26B — fast MoE, vision
+    ("llama-scout",  1, True,  1),   # Llama 4 Scout — long context, vision (NEW v44!)
+    ("qwen-vision",  1, True,  1),   # Qwen3 VL 30B — vision specialist (NEW v44!)
     ("openai-fast",  1, True,  1),   # GPT-5 Nano — ultra fast fallback
-    ("mistral-4",    1, True,  2),   # Mistral Small 4 — better but pricier
 ]
 
 MODEL_REASONING = "openai-large"    # GPT-5.4 — for complex questions
@@ -499,8 +510,8 @@ class PollinationsProvider(BaseProvider):
         ]
         messages.append({"role": "user", "content": user_content})
 
-        # Try vision-capable models in order
-        vision_models = ["openai", "mistral", "gemma", "openai-fast"]
+        # Try vision-capable models in order (v44: expanded with tested backups)
+        vision_models = ["openai", "mistral-4", "mistral", "qwen-vision", "gemma", "openai-fast"]
         # Filter to healthy ones
         healthy_vision = [m for m in vision_models if self._is_model_healthy(m)]
         if not healthy_vision:
