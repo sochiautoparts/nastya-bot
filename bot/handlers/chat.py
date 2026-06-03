@@ -254,6 +254,12 @@ PROACTIVE_MESSAGES = [
     "О, только что с подружкой болтала — есть тема! Спроси! 💬👀",
     "Настя не может уснуть... Поболтаем? 🌙😴",
     "Блин, я сегодня ленивая... Кто со мной? 😴💅",
+    # v46: Discovery-aware — sharing found information
+    "Настя тут кое-что интересное нашла в интернете! Спроси про что! 🔍✨",
+    "Прикинь, какой гороскоп сегодня! Точняк совпадает! Спроси свой знак! 🔮💅",
+    "О, я рецепт классный нашла! Настя уже пускает слюнки! 🍳😍",
+    "Котятки, я про одно мероприятие узнала — круть! Спроси! 🎫✨",
+    "Настя нашла скидки! Реально крутые! Спроси на что! 🛍️💰",
 ]
 
 # ── Girl Logic ──────────────────────────────────────────────
@@ -535,6 +541,10 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
 
     extras = []
     extras.append("⭐ /donates — кинуть Насте звёздочки!")
+    extras.append("🔍 /find — найти товар, лучшую цену!")
+    extras.append("🍳 /recipe — рецепт от Насти!")
+    extras.append("🔮 /horoscope — гороскоп на сегодня")
+    extras.append("🔢 /numerology — число судьбы")
     if CHANNEL_USERNAME:
         extras.append(f"📺 Мой канал: t.me/{CHANNEL_USERNAME.replace('@', '')}")
 
@@ -646,6 +656,198 @@ async def cmd_search(message: Message, db=None, ai_router=None) -> None:
 
     if db:
         await _save_simple_exchange(message, f"/search {query}", "\n".join(lines[:5]), db)
+
+
+# ── /find — Product/Service/Price search with links ──
+
+@router.message(Command("find"))
+async def cmd_find(message: Message, db=None, ai_router=None) -> None:
+    """Search for products, services, best prices with links.
+
+    Usage: /find айфон 15 про / /find ремонт авто Москва
+    """
+    from bot.discover import search_products, format_product_results
+
+    query = message.text.replace("/find", "").strip()
+    if not query:
+        await message.answer(
+            "Настя найдёт товар, услугу или лучшую цену! 🔍💰\n\n"
+            "Примеры:\n"
+            "/find айфон 15 про\n"
+            "/find ремонт авто Москва\n"
+            "/find ноутбук для работы\n"
+            "/find доставка суши Сочи"
+        )
+        return
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    await message.answer("Настя ищет лучшие варианты! Секунду... 🔍💰")
+
+    results = await search_products(query, num_results=5)
+
+    if not results:
+        await message.answer(f"Ой, Настя не нашла '{query}'... 😔 Попробуй другой запрос!")
+        return
+
+    response = format_product_results(results, query)
+    await message.answer(response)
+
+    if db:
+        await _save_simple_exchange(message, f"/find {query}", response[:200], db)
+
+
+# ── /horoscope — Daily horoscope ──
+
+@router.message(Command("horoscope"))
+async def cmd_horoscope(message: Message, db=None, ai_router=None) -> None:
+    """Get today's horoscope for a zodiac sign."""
+    from bot.nastya import get_zodiac_info, ZODIAC_SIGNS
+
+    query = message.text.replace("/horoscope", "").strip().lower()
+    if not query:
+        signs_list = ", ".join(ZODIAC_SIGNS.keys())
+        await message.answer(
+            f"Напиши свой знак зодиака! ♊✨\n\n"
+            f"Пример: /horoscope близнецы\n\n"
+            f"Знаки: {signs_list}"
+        )
+        return
+
+    zodiac = get_zodiac_info(query)
+    sign_emoji = zodiac["emoji"] if zodiac else "✨"
+    sign_name = query.capitalize()
+
+    if not ai_router:
+        await message.answer(f"{sign_emoji} Гороскоп для {sign_name}... Настя пока не может заглянуть в звёзды! 🔮")
+        return
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+
+    try:
+        result = await ai_router.chat(
+            prompt=f"Напиши гороскоп на сегодня для знака {sign_name}. Что ждёт в любви, работе, здоровье. Дай конкретные советы.",
+            system_prompt=(
+                "Ты Настя — девушка из Сочи, 23 года, увлекаешься астрологией. "
+                "Пиши гороскоп живо и эмоционально, как подружка-астролог. "
+                "4-6 предложений. Без markdown, без буллетов. "
+                "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
+                "Будь позитивной но честной!"
+            ),
+            max_tokens=400,
+        )
+        if result and result.text:
+            from ai.router import AIRouter
+            cleaned = AIRouter.clean_ai_response(result.text)
+            if cleaned:
+                await message.answer(f"{sign_emoji} Гороскоп для {sign_name}:\n\n{cleaned}")
+                if db:
+                    await _save_simple_exchange(message, f"/horoscope {query}", cleaned, db)
+                return
+    except Exception as e:
+        logger.error(f"Horoscope error: {e}")
+
+    await message.answer(f"{sign_emoji} Настя не смогла прочитать звёзды... Попробуй позже! 🔮💅")
+
+
+# ── /recipe — Find a recipe ──
+
+@router.message(Command("recipe"))
+async def cmd_recipe(message: Message, db=None, ai_router=None) -> None:
+    """Find a recipe by query."""
+    query = message.text.replace("/recipe", "").strip()
+    if not query:
+        query = random.choice(["быстрый ужин", "вкусный десерт", "праздничный салат", "завтрак за 10 минут"])
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    await message.answer(f"Настя ищет рецепт '{query}'! 🍳✨")
+
+    results = await search_web(f"рецепт {query} пошагово", num_results=3)
+    if not results:
+        await message.answer("Ой, рецепт не нашла... Попробуй по-другому! 🍳😔")
+        return
+
+    # Get best result and ask AI to format the recipe
+    best = results[0]
+    snippet = best.get("snippet", "")
+    url = best.get("url", "")
+
+    if ai_router:
+        try:
+            result = await ai_router.chat(
+                prompt=f"Найден рецепт: {snippet}\n\nНапиши подробный рецепт с ингредиентами и пошаговым приготовлением.",
+                system_prompt=(
+                    "Ты Настя — девушка из Сочи, 23 года, любишь готовить. "
+                    "Пиши рецепт подробно: ингредиенты, пошаговое приготовление, советы. "
+                    "6-10 предложений. Без markdown, без буллетов — сплошной текст. "
+                    "Говори живо: 'прикинь', 'капец', 'круто'."
+                ),
+                max_tokens=500,
+            )
+            if result and result.text:
+                from ai.router import AIRouter
+                cleaned = AIRouter.clean_ai_response(result.text)
+                if cleaned:
+                    response = f"🍳 Рецепт: {query}\n\n{cleaned}"
+                    if url:
+                        response += f"\n\n🔗 Источник: {url}"
+                    await message.answer(response)
+                    if db:
+                        await _save_simple_exchange(message, f"/recipe {query}", cleaned[:200], db)
+                    return
+        except Exception as e:
+            logger.error(f"Recipe error: {e}")
+
+    # Fallback: just show search results
+    lines = [f"🍳 Рецепт '{query}':\n"]
+    lines.append(f"{snippet}")
+    if url:
+        lines.append(f"\n🔗 {url}")
+    await message.answer("\n".join(lines))
+
+
+# ── /numerology — Numerology by date ──
+
+@router.message(Command("numerology"))
+async def cmd_numerology(message: Message, db=None, ai_router=None) -> None:
+    """Calculate numerology from a date or number."""
+    from bot.nastya import calculate_numerology
+
+    query = message.text.replace("/numerology", "").strip()
+    if not query:
+        await message.answer(
+            "Напиши дату рождения или число для нумерологии! 🔢✨\n\n"
+            "Пример: /numerology 15.06.2001"
+        )
+        return
+
+    result = calculate_numerology(query)
+    number = result.get("number", 0)
+    meaning = result.get("meaning", "Что-то загадочное...")
+
+    # Enhance with AI
+    if ai_router:
+        try:
+            ai_result = await ai_router.chat(
+                prompt=f"Число судьбы: {number}. Значение: {meaning}. Распиши подробнее что значит число {number} в нумерологии.",
+                system_prompt=(
+                    "Ты Настя — девушка из Сочи, 23 года, увлекаешься нумерологией. "
+                    "Расскажи подробно и интересно. 4-6 предложений. Без markdown. "
+                    "Говори живо: 'прикинь', 'офигеть', 'круто'."
+                ),
+                max_tokens=300,
+            )
+            if ai_result and ai_result.text:
+                from ai.router import AIRouter
+                cleaned = AIRouter.clean_ai_response(ai_result.text)
+                if cleaned:
+                    await message.answer(f"🔢 Число судьбы: {number}\n\n{cleaned}")
+                    if db:
+                        await _save_simple_exchange(message, f"/numerology {query}", cleaned[:200], db)
+                    return
+        except Exception:
+            pass
+
+    await message.answer(f"🔢 Число судьбы: {number}\n\n{meaning}")
 
 
 # ── Voice handler ────────────────────────────────────────────
@@ -799,6 +1001,23 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
                     except Exception:
                         pass
                     await message.answer(cleaned)
+
+                    # v46: After vision, do product/info search if search keywords in caption
+                    if is_search_photo:
+                        try:
+                            # Extract key terms from vision response for web search
+                            search_query = cleaned[:100].replace("\n", " ")
+                            # Clean up for search
+                            search_query = re.sub(r'[^\w\s]', ' ', search_query).strip()
+                            if len(search_query) > 5:
+                                from bot.discover import search_products, format_product_results
+                                product_results = await search_products(search_query, num_results=3)
+                                if product_results:
+                                    product_text = format_product_results(product_results, search_query)
+                                    await message.answer(f"🔍 Настя нашла по фото:\n\n{product_text}")
+                        except Exception as e:
+                            logger.error(f"Photo product search error: {e}")
+
                     return
 
         except Exception as e:

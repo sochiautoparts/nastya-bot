@@ -9,7 +9,7 @@
 
 set -e
 
-echo "=== Nastya Bot v45 (CLOUD-ONLY + INLINE + AI NEWS!) ==="
+echo "=== Nastya Bot v46 (SEARCH & DISCOVERY + INLINE + AI NEWS!) ==="
 
 # ── Check if local model is enabled ──
 ENABLE_LOCAL="${ENABLE_LOCAL_MODEL:-false}"
@@ -93,8 +93,8 @@ pip install -r requirements.txt 2>&1 || {
 mkdir -p data
 
 # ── Start bot ──
-echo "=== Starting Nastya Bot v45 (CLOUD-ONLY + 10-MODEL Pollinations + INLINE + AI NEWS) ==="
-echo "Config: Pollinations=EXPANDED 10-MODEL (openai, mistral, gpt-5.4-mini, grok, deepseek, mistral-4, gemma, llama-scout, qwen-vision, openai-fast)"
-echo "Features: inline=yes, vision=yes(6 models), reasoning=openai-large, max_tokens=1000, ai_news=yes, group_chance=50%, load_balancing=yes"
+echo "=== Starting Nastya Bot v46 (CLOUD-ONLY + 10-MODEL Pollinations + SEARCH + DISCOVERY + INLINE + AI NEWS) ==="
+echo "Config: Pollinations=EXPANDED 10-MODEL + SEARCH + DISCOVERY"
+echo "Features: inline=yes, vision=yes(6 models), search=yes, discovery=yes(recipes,horoscope,numerology,events), reasoning=openai-large, max_tokens=1000, ai_news=yes, group_chance=50%, load_balancing=yes"
 echo "Local model: $([ "$ENABLE_LOCAL" = "true" ] && echo 'ENABLED' || echo 'DISABLED (cloud-only)')"
 python3 -m bot.main

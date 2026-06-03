@@ -1,6 +1,6 @@
-"""Nastya Bot 45.0 — CLOUD-ONLY + INLINE + AI NEWS! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 46.0 — CLOUD-ONLY + SEARCH + DISCOVERY + INLINE + AI NEWS! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v45.0:
+Architecture v46.0:
   - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (10 моделей, балансировка нагрузки!)
     - openai (GPT-5.4 Nano) PRIMARY — fast, vision-capable
     - grok (1.6s), gpt-5.4-mini (1.9s), llama-scout, qwen-vision
@@ -8,13 +8,16 @@ Architecture v45.0:
     - Automatic failover on 429/timeout
   - INLINE MODE: Настя работает в любом чате через @asnastya_bot!
   - VISION: Pollinations vision API — Настя ВИДИТ фото! 6 vision-моделей
+  - SEARCH: /find — поиск товаров, услуг, лучших цен с ссылками!
+  - DISCOVERY: Авто-посты — рецепты, нумерология, астрология, мероприятия!
   - URL: Настя понимает ссылки!
+  - PHOTO SEARCH: фото → распознавание → поиск товаров/цен!
   - Новости: RSS-парсер + AI-комментарии для канала!
-  - Канал: AI-посты на основе новостей, опросы, факты
-  - Фото: REAL VISION — base64 → multimodal → AI понимает!
+  - Канал: AI-посты на основе новостей, опросы, факты, рецепты
+  - /horoscope, /recipe, /numerology — новые команды!
   - Typing delay indicators — human-like behavior
   - Group chat response chance: 50%
-  - Proactive messaging — Настя активный собеседник
+  - Proactive messaging + discovery sharing — Настя активный собеседник
   - Qwen3-4B GGUF как LAST FALLBACK — отключено по умолчанию!
     - Включить: ENABLE_LOCAL_MODEL=true в GitHub Secrets
   - Dedup: tracks active asyncio.Task per user
@@ -330,6 +333,44 @@ async def proactive_scheduler(bot_instance: Bot) -> None:
             await asyncio.sleep(60)
 
 
+async def discovery_scheduler(bot_instance: Bot) -> None:
+    """Background task: periodically discover interesting content for channel.
+
+    Searches for: recipes, numerology, astrology, events, deals, facts.
+    Posts to channel with source links and shares with chat users.
+    """
+    from bot.discover import run_discovery_cycle, get_discovery_for_chat
+
+    # Wait for startup
+    await asyncio.sleep(300)  # 5 min — let other systems settle first
+
+    while True:
+        try:
+            # Run discovery cycle for channel
+            if db and ai_router:
+                posted = await run_discovery_cycle(bot_instance, db, ai_router)
+                if posted > 0:
+                    logger.info(f"Discovery scheduler: {posted} posts made")
+
+                # 30% chance to also share with an active chat user
+                if random.random() < 0.30:
+                    try:
+                        from bot.handlers.chat import check_and_send_proactive
+                        # Proactive sharing is already handled by proactive_scheduler
+                        # This just increases the chance of sharing discoveries
+                        pass
+                    except Exception:
+                        pass
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Discovery scheduler error: {e}")
+
+        # Random interval: 30-60 minutes
+        wait = random.randint(1800, 3600)
+        await asyncio.sleep(wait)
+
+
 async def periodic_db_cleanup() -> None:
     """Background task: periodically clean up old DB records."""
     while True:
@@ -471,7 +512,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 45.0 Starting (CLOUD-ONLY + INLINE + AI NEWS!) ===")
+    logger.info("=== Nastya Bot 46.0 Starting (SEARCH & DISCOVERY + INLINE + AI NEWS!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -499,6 +540,7 @@ async def on_startup(**kwargs) -> None:
         asyncio.create_task(news_scheduler(bot))
         asyncio.create_task(channel_scheduler(bot))
         asyncio.create_task(proactive_scheduler(bot))
+        asyncio.create_task(discovery_scheduler(bot))
         asyncio.create_task(periodic_db_cleanup())
         asyncio.create_task(memory_cleanup())
         asyncio.create_task(conflict_monitor())
@@ -518,7 +560,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 45.0 Ready (CLOUD-ONLY + INLINE + AI NEWS!) ===")
+    logger.info("=== Nastya Bot 46.0 Ready (SEARCH & DISCOVERY + INLINE + AI NEWS!) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

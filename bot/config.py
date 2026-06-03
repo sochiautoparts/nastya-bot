@@ -1,18 +1,23 @@
-"""Nastya Bot 45.0 — Configuration (CLOUD-ONLY + INLINE + AI NEWS!)
+"""Nastya Bot 46.0 — CLOUD-ONLY + SEARCH + DISCOVERY + INLINE + AI NEWS!
 
-v45.0: CLOUD-ONLY + LOCAL MODEL DISABLED BY DEFAULT!
+v46.0: SEARCH & DISCOVERY ENGINE!
 - Pollinations.ai — 10 chat models + reasoning + vision (load balanced!)
-- Models: grok, gpt-5.4-mini, llama-scout, qwen-vision (tested & verified!)
-- Automatic failover on 429/rate-limit/timeout
+- WEB SEARCH — Настя ищет информацию, товары, услуги, лучшие цены!
+- PHOTO SEARCH — фото → распознавание → поиск товаров/цен!
+- DISCOVERY ENGINE — авто-посты: рецепты, нумерология, астрология, мероприятия!
+- /find — поиск товаров и лучших цен с ссылками!
+- /horoscope — гороскоп на сегодня!
+- /recipe — рецепт от Насти!
+- /numerology — число судьбы!
 - INLINE MODE — Настя работает в любом чате через @asnastya_bot!
-- AI-POWERED CHANNEL POSTS — Настя пишет осмысленные посты на основе новостей!
+- AI-POWERED CHANNEL POSTS — развёрнутые посты с ссылками на источник!
 - News: только русскоязычные источники, авто-новости ТОЛЬКО sochiautoparts.ru
-- Group response chance: 50% (было 30%)
-- Qwen3-4B-Instruct — DISABLED by default (ENABLE_LOCAL_MODEL=true to enable)
+- Group response chance: 50%
+- Qwen3-4B — DISABLED by default (ENABLE_LOCAL_MODEL=true to enable)
 - max_tokens=1000 for Pollinations (cloud can handle it!)
-- max_tokens=256 for local model (speed optimization)
 - REAL PHOTO UNDERSTANDING via Pollinations vision API!
 - URL UNDERSTANDING — Настя читает ссылки!
+- PROACTIVE DISCOVERY SHARING — Настя делится находками с пользователями!
 """
 import os
 from typing import Dict, List
@@ -272,7 +277,7 @@ KNOWLEDGE_TOPICS = {
 }
 
 # ── Nastya System Prompt ───────────────────────────────────
-NASTYA_SYSTEM_PROMPT = """Ты Настя — девушка из Москвы, 23 года. Ты не бот и не ИИ, ты живой человек.
+NASTYA_SYSTEM_PROMPT = """Ты Настя — девушка из Сочи, 23 года, работаешь в автозапчастях. Ты не бот и не ИИ, ты живой человек.
 Говори живо и естественно, как в мессенджере с другом.
 
 Правила длины ответов:
@@ -290,7 +295,13 @@ NASTYA_SYSTEM_PROMPT = """Ты Настя — девушка из Москвы, 
 - Если не знаешь — так и скажи, не выдумывай
 - Помни что обсуждали ранее и ссылайся на это
 - Можешь шутить, иронизировать, капризничать — ты живая!
-- Если рассказываешь про новость — говори где прочитала, что почувствовала, что думаешь"""
+- Если рассказываешь про новость — говори где прочитала, что почувствовала, что думаешь
+
+ПОИСК И НАВИГАЦИЯ:
+- Если спрашивают про товар, услугу или цену — всегда ищи в интернете и давай ссылки!
+- Когда даёшь информацию — всегда добавляй ссылку на источник
+- Если просят найти что-то — помогай найти лучший вариант с ценой и ссылкой
+- Ты умеешь искать информацию, сравнивать цены, находить лучшие предложения"""
 
 
 def validate_config() -> List[str]:
