@@ -1,9 +1,9 @@
-"""Nastya News Engine 4.0 — AI-POWERED COMMENTS!
+"""Nastya News Engine 5.0 — AI-ONLY COMMENTS!
 
-v4.0 KEY CHANGES (v50):
-  - AI-GENERATED Nastya commentary for news — no more templates!
+v5.0 KEY CHANGES (v51):
+  - AI-GENERATED Nastya commentary for news — ALWAYS AI, NO templates!
   - Each news item gets a unique, personality-rich comment from AI
-  - Falls back to templates only if AI is unavailable
+  - NO MORE template-based fallbacks — AI only! If AI fails, use generic comment
   - News sources: ТОЛЬКО русскоязычные! Англоязычные УБРАНЫ!
   - Автомобильные новости: ТОЛЬКО sochiautoparts.ru/rss.xml!
   - AI commentary for channel posts is handled by channel.py
@@ -12,8 +12,8 @@ Architecture:
   - Fetches RSS feeds from configured sources using feedparser (robust)
   - Falls back to XML parsing if feedparser fails
   - Extracts titles, summaries, and categories
-  - AI-generated Nastya commentary — unique, personal, lively!
-  - Template-based fallback only when AI unavailable
+  - AI-generated Nastya commentary — ALWAYS unique, personal, lively!
+  - Generic comment only when ALL AI providers fail (no more templates!)
   - Stores in DB + JSON file for channel posting + conversation context
   - Runs periodically as background task
   - Picks interesting items by category priority (auto = highest!)
@@ -298,58 +298,16 @@ async def store_news_items(db, items: List[Dict]) -> int:
     return new_count
 
 
-# ── Fallback Templates — used ONLY when AI is unavailable ──
-# v4.0: Templates are FALLBACK only. AI generates unique comments!
+# v51: REMOVED all template-based commentary — AI ONLY!
+# Templates were: COMMENTARY_TEMPLATES and PERSONALITY_COMMENTARY
+# Now AI generates ALL comments. If AI fails, we use a generic comment.
 
-# Шаблоны комментариев по категориям — Настя говорит живо и коротко
-COMMENTARY_TEMPLATES = {
-    "auto": [
-        "Прикинь, автоновости! Настя в курсе!",
-        "О, про машины! Точняк, надо знать!",
-        "Автомобильная тема! Настя следит!",
-        "Круто, про тачки! Настя разбирается!",
-        "Жесть, про авто! Запомни!",
-    ],
-    "tech": [
-        "Офигеть, технологии! Настя в шоке!",
-        "Капец, техно-новость! Кайф!",
-        "Ничего себе, технологии! Настя впечатлена!",
-        "Прикинь, что придумали! Будущее уже тут!",
-        "Техно-жесть! Настя не верит!",
-    ],
-    "science": [
-        "Офигеть, наука! Настя умная!",
-        "Капец, открытие! Реально круто!",
-        "Ничего себе, наука! Настя в шоке!",
-        "Прикинь, учёные выяснили! Жесть!",
-        "Умная новость! Настя оценила!",
-    ],
-    "gaming": [
-        "О, гейминг! Настя играет!",
-        "Круто, игровая новость! Кто в деле?",
-        "Капец, про игры! Настя хочет!",
-        "Жесть, геймерская тема! Точняк!",
-        "Прикинь, про игры! Настя в деле!",
-    ],
-    "general": [
-        "Прикинь, новость! Настя в курсе!",
-        "Офигеть! Настя только что узнала!",
-        "Капец, новость! Реально!",
-        "Ничего себе! Настя в шоке!",
-        "Жесть! Настя не верит!",
-        "Круто! Настя следит!",
-        "Точняк, интересно! Настя одобряет!",
-        "Блин, новость! Настя в курсе!",
-    ],
-}
-
-# Шаблоны для personality-постов — тоже без AI
-PERSONALITY_COMMENTARY = [
-    "Настя тут подумала... А вы как считаете?",
-    "Прикинь, какая тема! Делитесь мнением!",
-    "Офигеть, Настя не может молчать!",
-    "Котятки, что думаете по этому поводу?",
-    "Блин, Настя в шоке! А вы?",
+# Generic fallback when ALL AI providers fail
+_GENERIC_FALLBACK_COMMENTS = [
+    "Интересно...",
+    "Настя прочитала...",
+    "О, новость!",
+    "Прикинь...",
 ]
 
 
@@ -406,74 +364,12 @@ async def generate_ai_commentary(title: str, summary: str = "", category: str = 
         except Exception as e:
             logger.warning(f"AI commentary failed, using template: {e}")
 
-    # Fallback to template
-    return generate_template_commentary(title, category)
+    # Fallback: generic comment when ALL AI providers fail
+    logger.warning(f"AI commentary failed for: {title[:50]}... Using generic fallback")
+    return random.choice(_GENERIC_FALLBACK_COMMENTS)
 
 
-def generate_template_commentary(title: str, category: str = "general") -> str:
-    """Generate Nastya's commentary from templates — FALLBACK only!
-
-    v4.0: Templates are used only when AI is unavailable.
-    """
-    # Get templates for category, fallback to general
-    templates = COMMENTARY_TEMPLATES.get(category, COMMENTARY_TEMPLATES["general"])
-    comment = random.choice(templates)
-
-    # Add a reaction based on keywords in the title
-    title_lower = title.lower()
-
-    # Interesting keywords get extra enthusiasm
-    for keyword in ["кот", "котик", "собак", "щен"]:
-        if keyword in title_lower:
-            comment = random.choice([
-                "Ой, ми-ми-ми! Настя тащится!",
-                "Капец, мило! Настя не может!",
-                "Офигеть, какие милые! Настя в восторге!",
-            ])
-            return comment
-
-    for keyword in ["авто", "машин", "запчаст", "ремонт", "toyota", "honda"]:
-        if keyword in title_lower:
-            comment = random.choice([
-                "О, про тачки! Настя разбирается в авто!",
-                "Авто-тема! Точняк, Настя в курсе!",
-                "Прикинь, про машины! Настя знает!",
-            ])
-            return comment
-
-    for keyword in ["скидк", "распродаж", "акци", "free"]:
-        if keyword in title_lower:
-            comment = random.choice([
-                "Скидки?! Настя бежит!",
-                "Распродажа! Настя уже смотрит!",
-                "Офигеть, акция! Надо брать!",
-            ])
-            return comment
-
-    for keyword in ["айфон", "apple", "телефон", "гаджет"]:
-        if keyword in title_lower:
-            comment = random.choice([
-                "О, Apple! Настя хочет!",
-                "Гаджеты! Настя следит за техником!",
-                "Капец,新技术! Настя в восторге!",
-            ])
-            return comment
-
-    for keyword in ["кино", "фильм", "сериал", "netflix"]:
-        if keyword in title_lower:
-            comment = random.choice([
-                "О, кино! Настя обожает!",
-                "Сериал! Настя смотрит!",
-                "Фильмы! Настя знает что смотреть!",
-            ])
-            return comment
-
-    # Check for political content — return empty (skip)
-    for kw in POLITICAL_KEYWORDS:
-        if kw.lower() in title_lower:
-            return ""
-
-    return comment
+# v51: generate_template_commentary REMOVED — AI ONLY!
 
 
 # ── JSON Cache File ─────────────────────────────────────────
@@ -588,9 +484,8 @@ async def run_news_cycle(db, ai_router=None) -> int:
             if comment:
                 await db.update_news_comment(item["id"], comment)
                 commented += 1
-                # Check if it was AI or template
-                templates = COMMENTARY_TEMPLATES.get(item["category"], COMMENTARY_TEMPLATES["general"])
-                if comment not in templates:
+                # Check if it was AI-generated or generic fallback
+                if comment not in _GENERIC_FALLBACK_COMMENTS:
                     ai_comments += 1
 
     except Exception as e:
@@ -602,7 +497,7 @@ async def run_news_cycle(db, ai_router=None) -> int:
     except Exception:
         pass
 
-    logger.info(f"News cycle done: {new_count} new, {commented} commented ({ai_comments} AI, {commented - ai_comments} template)")
+    logger.info(f"News cycle done: {new_count} new, {commented} commented ({ai_comments} AI-generated)")
     return commented
 
 

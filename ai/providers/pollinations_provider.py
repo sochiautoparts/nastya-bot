@@ -65,12 +65,10 @@ CHAT_MODELS = [
     ("openai",       4, True,  1),   # GPT-5.4 Nano — PRIMARY, fast, vision, cheapest
     ("mistral",      3, True,  1),   # Mistral Small 3.2 — fast, good multilingual
     ("gpt-5.4-mini", 3, True,  2),   # GPT-5.4 Mini — balanced speed & cost
-    ("grok",         2, True,  2),   # Grok 4.20 — fast, good Russian
     ("deepseek",     2, False, 1),   # DeepSeek V4 Flash — reasoning, cheap
     ("mistral-4",    2, True,  2),   # Mistral Small 4 — better, multimodal
     ("gemma",        2, True,  1),   # Gemma 4 26B — fast MoE, vision + reasoning
     ("llama-scout",  1, True,  1),   # Llama 4 Scout — long context, vision
-    ("qwen-vision",  1, True,  1),   # Qwen3 VL 30B — vision specialist
     ("openai-fast",  1, True,  1),   # GPT-5 Nano — ultra fast fallback
     # v49: Quality models
     ("gpt-5.5",      2, True,  3),   # GPT-5.5 — latest model, reasoning + vision
@@ -79,7 +77,6 @@ CHAT_MODELS = [
     ("claude-fast",  1, True,  3),   # Claude fast mode — good Russian, vision
     # v49: Powerful models
     ("mistral-large", 1, True,  3),   # Mistral Large — powerful, vision + reasoning
-    ("grok-large",    1, True,  3),   # Grok Large — powerful, vision + reasoning
     ("llama-maverick",1, True,  2),   # Llama Maverick — vision, 1M ctx
     ("qwen-vision-pro",1, True,  2),  # Qwen Vision Pro — better vision + reasoning
     ("kimi",          1, True,  3),   # Kimi — vision + reasoning, good multilingual
@@ -91,6 +88,9 @@ CHAT_MODELS = [
     ("grok-4.3",      1, True,  3),   # Grok 4.3 — latest Grok, better reasoning
     ("qwen-large",    1, True,  3),   # Qwen Large — powerful reasoning
     ("gemini-3.5-flash", 1, True, 2), # Gemini 3.5 Flash — fast + vision
+    # REMOVED v51: grok (500 Internal Server Error)
+    # REMOVED v51: grok-large (500 from same provider)
+    # REMOVED v51: qwen-vision (unexpected errors)
 ]
 
 MODEL_REASONING = "openai-large"    # GPT-5.4 — for complex questions
@@ -552,7 +552,7 @@ class PollinationsProvider(BaseProvider):
         messages.append({"role": "user", "content": user_content})
 
         # Try vision-capable models in order (v49: expanded with tested backups)
-        vision_models = ["openai", "mistral-4", "mistral", "qwen-vision", "qwen-vision-pro",
+        vision_models = ["openai", "mistral-4", "mistral", "qwen-vision-pro",
                         "gemma", "claude-fast", "openai-fast", "kimi", "kimi-k2.6",
                         "gemini", "gemini-3.5-flash", "llama-maverick", "nova-fast"]
         # Filter to healthy ones

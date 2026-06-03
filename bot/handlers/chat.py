@@ -1,4 +1,11 @@
-"""Nastya Chat Handler v12.0 — MULTI-MODEL + VISION + HUMAN-LIKE + URL + INLINE!
+"""Nastya Chat Handler v13.0 — MULTI-MODEL + VISION + HUMAN-LIKE + URL + INLINE!
+
+v13.0: FIX HALLUCINATED LINKS — Настя даёт ТОЛЬКО реальные ссылки из поиска!
+  - FORCE web search when user asks for products/services/links
+  - Detect AI-hallucinated commercial URLs and replace with real search results
+  - Commercial site URLs (ozon, wildberries, yandex.market, etc.) in AI response
+    are REMOVED if they were NOT in the search results — they're hallucinations!
+  - Only real URLs from search results are kept in the response
 
 STABILITY RULES:
   - Bot ALWAYS responds, even if ALL AI providers fail (fallback responses)
@@ -66,6 +73,35 @@ _URL_PATTERN = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+')
 # v44: Photo search keywords — определение объектов на фото
 _PHOTO_SEARCH_KEYWORDS = ["что это", "найди", "поиск", "что за", "определи", "узнай что это",
                           "что на фото", "что изображено", "распознай", "опознай"]
+
+# v51: Product/service/link request detection — FORCE web search!
+_PRODUCT_LINK_TRIGGERS = [
+    "дай ссылк", "скинь ссылк", "найди ссылк", "где купить", "где найти",
+    "дай ссылку", "скинь ссылку", "найди ссылку",
+    "ссылку на", "ссылки на", "вариант", "три варианта", "несколько вариантов",
+    "турник", "гантел", "бегов", "велотренажёр", "велотренажер",
+    "купить", "заказать", "цена", "стоимость", "подешевле",
+    "лучший", "топ", "рейтинг", "отзыв",
+    "ozon", "wildberries", "яндекс маркет", "маркет",
+    "aliexpress", "amazon",
+]
+
+# v51: Known Russian commercial/marketplace domains — URLs from these domains
+# in AI responses are likely HALLUCINATED if not in search results!
+_COMMERCIAL_DOMAINS = [
+    "wildberries.ru", "ozon.ru", "market.yandex.ru", "beru.ru",
+    "aliexpress.ru", "lamoda.ru", "wildberries.com",
+    "dns-shop.ru", "citilink.ru", "mvideo.ru", "eldorado.ru",
+    "sportsmaster.ru", "decathlon.ru", "vseinstrumenti.ru",
+    "onlinetrade.ru", "ulmart.ru", "sbermegamarket.ru",
+    "avito.ru", "youla.ru", "yandex.uz",
+]
+
+# v51: Extract search query for product search
+_PRODUCT_SEARCH_PREFIXES = [
+    "найди", "поищи", "ищу", "дай", "скинь", "где ", "какой ",
+    "подскажи", "посоветуй", "рекомендуй", "выбери", "какие ",
+]
 
 # v42: Per-user message dedup — track ACTIVE AI tasks per user
 _user_processing: dict = {}  # user_id -> asyncio.Task (active AI task) or None
@@ -1475,28 +1511,64 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     except Exception:
         pass
 
-    # Web search
+    # ── Web search — ENHANCED v51: Force search for product/link requests! ──
     search_query = should_search(text)
     search_results = []
+    is_product_search = False  # Track if this is a product/service search
+
+    # v51: Detect product/service/link requests → FORCE web search!
+    if not search_query:
+        text_lower = text.lower()
+        for trigger in _PRODUCT_LINK_TRIGGERS:
+            if trigger in text_lower:
+                # Extract a search query from the user's message
+                search_query = text[:150]
+                # Try to clean up the search query
+                for prefix in _PRODUCT_SEARCH_PREFIXES:
+                    if text_lower.startswith(prefix):
+                        search_query = text[len(prefix):].strip()[:100]
+                        break
+                is_product_search = True
+                break
+
     if search_query:
         try:
-            search_results = await search_web(search_query, num_results=3)
+            # v51: More results for product searches (5 instead of 3)
+            num_results = 5 if is_product_search else 3
+            search_results = await search_web(search_query, num_results=num_results)
             if search_results:
                 search_parts = []
-                for r in search_results[:2]:
+                for r in search_results[:4 if is_product_search else 2]:
                     title = r.get('title', '')
                     url = r.get('url', '')
-                    snippet = r.get('snippet', '')[:100]
+                    snippet = r.get('snippet', '')[:150 if is_product_search else 100]
                     if title:
                         entry = f"{title}"
                         if snippet:
                             entry += f": {snippet}"
                         if url:
-                            entry += f" [{url}]"
+                            entry += f" [Ссылка: {url}]"
                         search_parts.append(entry)
                 if search_parts:
-                    system_prompt += f"\n\n🔍 НАСТЯ НАШЛА В ИНТЕРНЕТЕ (ОБЯЗАТЕЛЬНО используй эти данные и URL в ответе!):\n" + "\n".join(search_parts) + "\n\n⚠️ ВАЖНО: Включи ВСЕ найденные URL в свой ответ! НЕ заменяй их на @chasnastya!"
-                logger.info(f"Web search for user {user_id}: '{search_query}' → {len(search_results)} results")
+                    if is_product_search:
+                        system_prompt += (
+                            f"\n\n🔍 НАСТЯ НАШЛА В ИНТЕРНЕТЕ (ОБЯЗАТЕЛЬНО используй ТОЛЬКО эти данные и URL!):\n"
+                            + "\n".join(search_parts)
+                            + "\n\n⛔ КРИТИЧЕСКИ ВАЖНО:"
+                            + "\n1. Используй ТОЛЬКО ссылки из результатов поиска выше!"
+                            + "\n2. НЕ придумывай ссылки — если ссылки нет в результатах, НЕ пиши её!"
+                            + "\n3. Если результатов недостаточно — скажи что нашла не всё и предложи поискать ещё"
+                            + "\n4. НЕ заменяй реальные ссылки на @chasnastya!"
+                        )
+                    else:
+                        system_prompt += f"\n\n🔍 НАСТЯ НАШЛА В ИНТЕРНЕТЕ (ОБЯЗАТЕЛЬНО используй эти данные и URL в ответе!):\n" + "\n".join(search_parts) + "\n\n⚠️ ВАЖНО: Включи ВСЕ найденные URL в свой ответ! НЕ заменяй их на @chasnastya!"
+                logger.info(f"Web search for user {user_id}: '{search_query}' → {len(search_results)} results (product={is_product_search})")
+            elif is_product_search:
+                # v51: If product search found nothing, tell AI to be honest
+                system_prompt += (
+                    "\n\n⚠️ Настя искала товары/услуги в интернете но НЕ НАШЛА результатов."
+                    "\nНЕ придумывай ссылки! Скажи честно что не нашла и предложи поискать через /find"
+                )
         except Exception as e:
             logger.warning(f"Web search error: {e}")
 
@@ -1563,6 +1635,24 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     response_text = _enforce_news_links(response_text, _current_news_items)
 
     # ── POST-PROCESS: Web search links ──
+    # v51: ENHANCED — detect and remove hallucinated commercial URLs!
+    search_result_urls = set()
+    for r in search_results:
+        url = r.get('url', '')
+        if url:
+            search_result_urls.add(url.lower().rstrip('/'))
+            # Also add domain-level match for path variations
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                search_result_urls.add(parsed.netloc.lower())
+            except Exception:
+                pass
+
+    if search_results:
+        response_text = _remove_hallucinated_urls(response_text, search_result_urls)
+
+    # Add search result link if no URLs remain after cleanup
     if search_results and not re.search(r'https?://\S+', response_text):
         search_link = get_search_link_for_response(search_results)
         if search_link:
@@ -1733,6 +1823,92 @@ def _smart_split_message(text: str, max_len: int = 4096) -> list:
         remaining = remaining[split_pos:].strip()
     
     return parts
+
+
+def _remove_hallucinated_urls(text: str, search_result_urls: set) -> str:
+    """v51: Remove AI-hallucinated commercial URLs from response.
+
+    When a user asks for products/services/links, the AI often generates
+    plausible-looking but FAKE URLs from real commercial sites (wildberries.ru,
+    ozon.ru, market.yandex.ru, etc.). These URLs don't actually work!
+
+    This function:
+    1. Finds all URLs in the response from known commercial domains
+    2. Checks if they were in the actual search results
+    3. Removes URLs that weren't in search results (they're hallucinations!)
+    4. If all product URLs are removed, appends real search result URLs
+    """
+    if not text or not search_result_urls:
+        return text
+
+    url_pattern = r'https?://([^\s<>)\]"\']+)'  # Capture just the domain+path part
+    found_urls = re.findall(url_pattern, text)
+
+    # Build set of domains that were in search results
+    search_domains = set()
+    for url_or_domain in search_result_urls:
+        # url_or_domain could be a full URL or just a domain
+        if '/' in url_or_domain:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(url_or_domain if url_or_domain.startswith('http') else f'https://{url_or_domain}')
+                search_domains.add(parsed.netloc.lower())
+            except Exception:
+                search_domains.add(url_or_domain.split('/')[0].lower())
+        else:
+            search_domains.add(url_or_domain.lower())
+
+    # Find and remove hallucinated commercial URLs
+    hallucinated_count = 0
+    for full_url in found_urls:
+        try:
+            from urllib.parse import urlparse
+            if not full_url.startswith('http'):
+                full_url_for_parse = f'https://{full_url}'
+            else:
+                full_url_for_parse = full_url
+            parsed = urlparse(full_url_for_parse)
+            domain = parsed.netloc.lower()
+
+            # Check if this is a commercial domain
+            is_commercial = any(comm_domain in domain for comm_domain in _COMMERCIAL_DOMAINS)
+
+            if is_commercial:
+                # Check if this domain OR full URL was in search results
+                domain_in_results = domain in search_domains
+                url_in_results = any(
+                    full_url.lower().rstrip('/') in sr.lower().rstrip('/')
+                    for sr in search_result_urls
+                )
+
+                if not domain_in_results and not url_in_results:
+                    # This is a HALLUCINATED commercial URL — remove it!
+                    # Find and remove the full URL from text
+                    url_variants = [
+                        f'https://{full_url}',
+                        f'http://{full_url}',
+                        full_url,
+                    ]
+                    for variant in url_variants:
+                        if variant in text:
+                            text = text.replace(variant, '')
+                            hallucinated_count += 1
+                            break
+        except Exception:
+            pass
+
+    if hallucinated_count > 0:
+        logger.info(f"Removed {hallucinated_count} hallucinated commercial URLs from response")
+
+        # Clean up leftover artifacts after URL removal
+        # Remove patterns like "Ссылка: ", "🔗 ", empty brackets, etc.
+        text = re.sub(r'\s*(?:Ссылк[аиу]:?\s*)?\[?\s*\]?\s*$', '', text, flags=re.IGNORECASE | re.MULTILINE)
+        text = re.sub(r'\s*(?:Ссылк[аиу]:?\s*)$', '', text, flags=re.IGNORECASE | re.MULTILINE)
+        text = re.sub(r'\s*🔗\s*$', '', text, flags=re.MULTILINE)
+        text = re.sub(r'\[\s*\]', '', text)  # Empty brackets
+        text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()
 
 
 def _clean_response(text: str) -> str:

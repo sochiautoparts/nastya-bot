@@ -1,9 +1,9 @@
-"""Nastya Channel Manager 10.0 — AI-POWERED NEWS + ACTIVE GROUP COMMENTS!
+"""Nastya Channel Manager 11.0 — AI-POWERED NEWS + ACTIVE GROUP COMMENTS!
 
-v10.0 KEY CHANGES:
-  - AI-POWERED news commentary for both DB and channel posts!
-  - No more template-based comments — AI generates unique, personal commentary
-  - Personality posts — template only for quick posts, AI for everything else
+v11.0 KEY CHANGES:
+  - AI-POWERED news commentary — ALWAYS AI, NO templates!
+  - AI generates ALL comments — templates removed completely
+  - If AI fails, a generic comment is used (no more template-based comments!)
   - Nastya comments ACTIVELY in groups she's a member of
   - Automotive news focus — СочиАвтоЗапчасти primary source
   - More substantive automotive news posts
@@ -679,11 +679,8 @@ async def post_real_poll_to_channel(bot: Bot, db) -> bool:
 async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> bool:
     """Post an AI-generated substantive news commentary to channel.
 
-    v44: Instead of template-based comments, uses AI to write
-    a detailed, thoughtful post about the news — especially for
-    auto news from sochiautoparts.ru!
-
-    Falls back to template-based posting if AI fails.
+    v51: ALWAYS uses AI for comments. If AI fails, uses a generic comment.
+    No more template-based fallbacks!
     """
     if not CHANNEL_ID:
         return False
@@ -790,8 +787,8 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
     # Validate before posting
     if not _validate_post_text(post_text):
         logger.warning(f"AI news post validation failed: {title[:50]}...")
-        # Fall back to template-based posting
-        return await post_news_to_channel(bot, db, [news_item]) > 0
+        # v51: Skip post if validation fails — no template-based fallback
+        return False
 
     if _is_recent_post(post_text):
         return False

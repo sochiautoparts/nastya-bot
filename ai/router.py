@@ -1,15 +1,19 @@
-"""AI Router v50.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE + LINK FIX!
+"""AI Router v51.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE + HALLUCINATED LINK FIX!
 
-АРХИТЕКТУРА v45:
+АРХИТЕКТУРА v51:
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
-    1. PollinationsProvider v9 (EXPANDED 10-MODEL LOAD BALANCING!)
+    1. PollinationsProvider v14 (23-MODEL LOAD BALANCING!)
        - gen.pollinations.ai/v1/chat/completions — OpenAI-compatible
-       - 10 chat models: openai, mistral, gpt-5.4-mini, grok, deepseek,
-         mistral-4, gemma, llama-scout, qwen-vision, openai-fast
+       - 23 chat models: openai, mistral, gpt-5.4-mini, deepseek,
+         mistral-4, gemma, llama-scout, openai-fast, gpt-5.5,
+         deepseek-pro, gemini, claude-fast, mistral-large,
+         llama-maverick, qwen-vision-pro, kimi, kimi-k2.6,
+         nova-fast, glm, minimax, grok-4.3, qwen-large, gemini-3.5-flash
+       - REMOVED: grok (500), grok-large (500), qwen-vision (error)
        - Automatic failover: if one model fails (429/timeout), next one picks up
        - Weighted round-robin for fair load distribution across models
        - Reasoning: openai-large (GPT-5.4) for complex questions
-       - Vision: openai + 5 vision-capable backups (tested!)
+       - Vision: openai + 12 vision-capable backups
        - Per-model health tracking with cooldown on failures
     2. LlamaCppProvider (Qwen3-4B) — LOCAL FALLBACK (OPTIONAL!)
        - Only loaded when ENABLE_LOCAL_MODEL=true
@@ -27,10 +31,15 @@
 
   VISION (фото-понимание + поиск по фото):
     - Pollinations vision API — Настя ВИДИТ фото!
-    - 6 vision-capable моделей (протестированы!)
+    - 13 vision-capable моделей
 
   URL UNDERSTANDING:
     - Настя читает ссылки и понимает контекст!
+
+  HALLUCINATED LINK FIX v51:
+    - FORCE web search when user asks for products/services/links
+    - AI-hallucinated commercial URLs are detected and REMOVED
+    - Only real URLs from actual search results are kept
 """
 
 import logging
@@ -71,12 +80,13 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """AI Router v50.0 — CLOUD-ONLY Pollinations + Local FALLBACK (optional) + VISION + INLINE.
+    """AI Router v51.0 — CLOUD-ONLY Pollinations + Local FALLBACK (optional) + VISION + INLINE.
 
-    Chat: Pollinations (25+ models, load balanced) → LlamaCpp (if enabled) → static fallback.
+    Chat: Pollinations (23 models, load balanced) → LlamaCpp (if enabled) → static fallback.
     Inline: Pollinations (fast response for @asnastya_bot).
-    Vision: Pollinations vision API (14 vision-capable models).
+    Vision: Pollinations vision API (13 vision-capable models).
     Background: AI-powered news posts for channel (low priority).
+    Hallucinated Link Fix: Force web search for product queries, remove fake URLs.
     """
 
     def __init__(self, db=None):
@@ -149,10 +159,10 @@ class AIRouter:
         model_name = self._local._model_name if self._local and self._local._loaded else "none"
 
         logger.info(
-            f"AI Router v50.0 initialized: "
+            f"AI Router v51.0 initialized: "
             f"pollinations={pollinations_status} (PRIMARY, {len(CHAT_MODELS)} models, vision=yes, inline=yes), "
             f"local={local_status} (FALLBACK, model={model_name}, ENABLE_LOCAL_MODEL={ENABLE_LOCAL_MODEL}), "
-            f"news=AI+RSS, "
+            f"news=AI+RSS (no templates!), "
             f"max_tokens={POLLINATIONS_MAX_TOKENS}(cloud)/256(local), history={MODEL_HISTORY_LIMIT}"
         )
 
@@ -415,10 +425,11 @@ class AIRouter:
         text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
         text = re.sub(r'^\s*[-•]\s+', '', text, flags=re.MULTILINE)
 
-        # v50: Link protection moved to chat.py _clean_response()
+        # v51: Link protection moved to chat.py _clean_response()
+        # and _remove_hallucinated_urls()
         # The old code here was replacing all non-whitelisted URLs with the channel link,
-        # which broke product/service links. Now only obviously fake/hallucinated URLs
-        # are filtered in _clean_response().
+        # which broke product/service links. Now hallucinated commercial URLs are
+        # detected and removed in _remove_hallucinated_urls().
 
         # Clean up whitespace
         text = re.sub(r'\n{3,}', '\n\n', text)

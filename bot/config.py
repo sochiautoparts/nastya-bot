@@ -1,13 +1,16 @@
-"""Nastya Bot 50.0 — AI COMMENTS + LINK FIX + GROUP ACTIVE + NO LIMITS!
+"""Nastya Bot 51.0 — FIX HALLUCINATED LINKS + AI-ONLY COMMENTS + GROUP ACTIVE!
 
-v50.0: AI COMMENTS + LINK FIX + GROUP ACTIVE + NO LIMITS!
-- Pollinations.ai — 25+ chat models + reasoning + vision (load balanced!)
-- REMOVED: gemini-fast (402 Payment Required)
-- FIX: Nastya provides REAL product/service links from search results!
+v51.0: FIX HALLUCINATED LINKS + AI-ONLY COMMENTS + GROUP ACTIVE!
+- Pollinations.ai — 23 chat models + reasoning + vision (load balanced!)
+- REMOVED: gemini-fast (402), grok (500), qwen-vision (error)
+- CRITICAL FIX: Nastya provides ONLY real links from web search!
+  - FORCE web search when user asks for products/services/links
+  - AI-hallucinated commercial URLs are detected and REMOVED
+  - Only URLs from actual search results are kept in responses
 - FIX: Channel link ONLY in channel posts and when asked about channel
 - Chat: ANY links by user request — products, services, news, events, recipes
 - Nastya writes ОТ СЕБЯ (from herself) — first person, personal voice
-- AI-GENERATED news comments (no more template-based!)
+- AI-GENERATED comments ONLY — no more template-based fallbacks!
 - Group commenting: Nastya is ACTIVE in groups she's a member of!
 - NO arbitrary model restrictions — max_tokens=2000 for full responses!
 - WEB SEARCH — Настя ищет информацию, товары, услуги, лучшие цены!
@@ -316,7 +319,9 @@ NASTYA_SYSTEM_PROMPT = """Ты Настя — девушка из Сочи, 23 �
 7. Ссылку на канал t.me/chasnastya давай ТОЛЬКО если тебя прямо спросили про канал
 8. Если тебе передали URL в контексте "Нашла в интернете" — ОБЯЗАТЕЛЬНО добавь этот URL в ответ
 9. Если у тебя есть РЕАЛЬНАЯ ссылка — давай ЕЁ. Если нет реальной ссылки — НЕ придумывай, лучше предложи поискать
-10. НЕ ПИШИ "Ссылка: @chasnastya" — это НЕ ссылка на товар! Это ссылка на канал!"""
+10. НЕ ПИШИ "Ссылка: @chasnastya" — это НЕ ссылка на товар! Это ссылка на канал!
+11. ⛔ СТРОЖАЙШИ ЗАПРЕТ: НИКОГДА не придумывай URL! Если URL нет в результатах поиска — НЕ пиши выдуманный URL!
+12. ⛔ Если ты не знаешь реальную ссылку — скажи честно и предложи поискать через /find"""
 
 
 def validate_config() -> List[str]:
