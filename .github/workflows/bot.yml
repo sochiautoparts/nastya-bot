@@ -1,13 +1,14 @@
-name: Nastya Bot — CLOUD-ONLY v46
+name: Nastya Bot — CLOUD-ONLY v47
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v46.0 — SEARCH & DISCOVERY + INLINE + AI NEWS!
+# Nastya Bot v47.0 — FIX LINKS + WRITE FROM SELF + MORE MODELS!
 #
 # Architecture:
-#   - Pollinations.ai EXPANDED MULTI-MODEL (10 chat models!)
+#   - Pollinations.ai EXPANDED MULTI-MODEL (15 chat models!)
 #     - openai (GPT-5.4 Nano) PRIMARY — fast, vision-capable
 #     - grok (1.6s), gpt-5.4-mini (1.9s), llama-scout, qwen-vision
 #     - mistral, deepseek, mistral-4, gemma, openai-fast — BACKUP
+#     - gemini-fast, gpt-5.5, deepseek-pro, gemini, claude-fast — NEW!
 #     - Automatic failover on 429/timeout
 #   - INLINE MODE — Настя работает в любом чате через @asnastya_bot!
 #   - WEB SEARCH — поиск товаров, услуг, лучших цен!
@@ -165,7 +166,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v46
+          key: nastya-db-v47
           restore-keys: |
             nastya-db-
 
@@ -194,8 +195,8 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v46.0 (SEARCH & DISCOVERY + INLINE + AI NEWS!) ==="
-          echo "PRIMARY: Pollinations.ai EXPANDED 10-MODEL (openai, mistral, gpt-5.4-mini, grok, deepseek, mistral-4, gemma, llama-scout, qwen-vision, openai-fast)"
+          echo "=== Starting Nastya Bot v47.0 (FIX LINKS + WRITE FROM SELF + MORE MODELS!) ==="
+          echo "PRIMARY: Pollinations.ai EXPANDED 15-MODEL (openai, mistral, gpt-5.4-mini, grok, deepseek, mistral-4, gemma, llama-scout, qwen-vision, openai-fast, gemini-fast, gpt-5.5, deepseek-pro, gemini, claude-fast)"
           echo "INLINE: @asnastya_bot works in any chat!"
           echo "SEARCH: /find — товары и лучшие цены! /search — поиск информации!"
           echo "DISCOVERY: рецепты, нумерология, астрология, мероприятия, скидки!"
@@ -209,7 +210,7 @@ jobs:
             echo "To enable: set ENABLE_LOCAL_MODEL=true in GitHub Secrets AND uncomment model steps in bot.yml"
           fi
 
-          echo "Config: inline=yes, vision=yes(6), search=yes, discovery=yes, ai_news=yes, group_chance=50%, max_tokens=1000(cloud), history=10"
+          echo "Config: inline=yes, vision=yes(8), search=yes, discovery=yes, ai_news=yes, group_chance=50%, max_tokens=1000(cloud), history=10"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -250,7 +251,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v46-${{ github.run_id }}
+          key: nastya-db-v47-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation

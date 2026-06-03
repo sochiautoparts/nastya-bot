@@ -1,10 +1,11 @@
-"""Nastya Bot 46.0 — CLOUD-ONLY + SEARCH + DISCOVERY + INLINE + AI NEWS! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 47.0 — FIX LINKS + WRITE FROM SELF + MORE MODELS! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v46.0:
-  - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (10 моделей, балансировка нагрузки!)
+Architecture v47.0:
+  - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (15 моделей, балансировка нагрузки!)
     - openai (GPT-5.4 Nano) PRIMARY — fast, vision-capable
-    - grok (1.6s), gpt-5.4-mini (1.9s), llama-scout, qwen-vision
+    - grok, gpt-5.4-mini, llama-scout, qwen-vision
     - mistral, deepseek, mistral-4, gemma, openai-fast — BACKUP models
+    - gemini-fast, gpt-5.5, deepseek-pro, gemini, claude-fast — NEW!
     - Automatic failover on 429/timeout
   - INLINE MODE: Настя работает в любом чате через @asnastya_bot!
   - VISION: Pollinations vision API — Настя ВИДИТ фото! 6 vision-моделей
@@ -512,7 +513,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 46.0 Starting (SEARCH & DISCOVERY + INLINE + AI NEWS!) ===")
+    logger.info("=== Nastya Bot 47.0 Starting (FIX LINKS + WRITE FROM SELF + MORE MODELS!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -560,7 +561,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 46.0 Ready (SEARCH & DISCOVERY + INLINE + AI NEWS!) ===")
+    logger.info("=== Nastya Bot 47.0 Ready (FIX LINKS + WRITE FROM SELF + MORE MODELS!) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

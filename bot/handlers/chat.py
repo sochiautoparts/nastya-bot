@@ -649,9 +649,6 @@ async def cmd_search(message: Message, db=None, ai_router=None) -> None:
             lines.append(f"   🔗 {url}")
         lines.append("")
 
-    if CHANNEL_USERNAME:
-        lines.append(f"Больше у Насти: @chasnastya 💅")
-
     await message.answer("\n".join(lines))
 
     if db:
@@ -1185,8 +1182,6 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
                 news_text = f"Ты слышал про {item['title']}? {comment}"
                 if link:
                     news_text += f"\n🔗 {link}"
-                else:
-                    news_text += f"\n📺 Подробнее в @chasnastya"
                 comments.append(news_text)
             answer = random.choice(comments)
         else:
@@ -1236,9 +1231,10 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         await _save_simple_exchange(message, text, silent, db)
         return
 
-    # ── "Дай ссылку" — always offer channel link as fallback ──
+    # ── "Дай ссылку" — search the web for real links, NOT channel link! ──
     if any(t in text_lower for t in ["дай ссылку", "скинь ссылку", "ссылку дай", "где ссылк", "где прочитать", "где посмотреть", "источник", "почему не можешь"]):
         found_link = False
+        # Step 1: Try to find a relevant link from recent news
         try:
             recent = await db.get_recent_news_with_links(limit=3, max_age_hours=24)
             if recent:
@@ -1249,7 +1245,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
                     if any(w in recent_text for w in title_words):
                         link = item.get("link", "")
                         if link:
-                            answer = f"Вот, держи! 💅\n🔗 {link}\n📺 Ещё в @chasnastya!"
+                            answer = f"Вот, держи! 💅\n🔗 {link}"
                             await message.answer(answer)
                             await _save_simple_exchange(message, text, answer, db)
                             found_link = True
@@ -1257,11 +1253,43 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         except Exception:
             pass
 
+        # Step 2: If no news link found, search the web for relevant links
         if not found_link:
-            if CHANNEL_USERNAME:
+            # Extract search query from recent conversation context
+            search_query = ""
+            try:
+                user_history = await db.get_history(message.from_user.id, limit=5)
+                for m in reversed(user_history[-3:]):
+                    content = m.get("content", "")
+                    if content and not content.startswith("["):
+                        search_query = content[:100]
+                        break
+            except Exception:
+                pass
+
+            if search_query and len(search_query) > 3:
+                results = await search_web(search_query, num_results=2)
+                if results:
+                    best = results[0]
+                    url = best.get("url", "")
+                    title = best.get("title", "")
+                    if url:
+                        answer = f"Настя нашла! 💅\n🔗 {url}"
+                        if title:
+                            answer = f"Настя нашла! 💅\n📖 {title}\n🔗 {url}"
+                        await message.answer(answer)
+                        await _save_simple_exchange(message, text, answer, db)
+                        found_link = True
+
+        # Step 3: Only mention channel as LAST resort if explicitly about channel
+        if not found_link:
+            # Check if the user was specifically asking about the channel
+            channel_specific = any(k in text_lower for k in ["канал", "насти", "настя", "подписк", "chasnastya"])
+            if channel_specific and CHANNEL_USERNAME:
                 answer = f"Мой канал @chasnastya! Там всё самое интересное! 💅✨\n👉 https://t.me/{CHANNEL_USERNAME.replace('@', '')}"
             else:
-                answer = "Настя пока не нашла ссылку... Спроси по-другому! 🔍"
+                # Generic request — tell user we couldn't find, offer to search
+                answer = "Настя не нашла ссылку на это... Попробуй /search и я поищу в интернете! 🔍"
             await message.answer(answer)
             await _save_simple_exchange(message, text, answer, db)
         return
@@ -1490,12 +1518,20 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         ])
         logger.info(f"Filtered political content in response for user {user_id}")
 
-    # ── POST-PROCESS: Channel awareness ──
-    channel_keywords_in_user = ["канал", "подписк", "ссылк", "насти", "твой"]
+    # ── POST-PROCESS: Channel awareness — ONLY when specifically about channel ──
+    channel_keywords_in_user = ["канал", "подписк", "ссылк на канал", "насти канал", "твой канал"]
     if any(k in text.lower() for k in channel_keywords_in_user):
-        if not any(k in response_text.lower() for k in ["chasnastya", "t.me/chasnastya"]):
-            response_text += f"\n\nКстати, мой канал: @chasnastya 👉 https://t.me/chasnastya 💅"
-    if "не могу поделиться" in response_text.lower() or "не могу дать" in response_text.lower() or "у меня нет канала" in response_text.lower():
+        # Only add channel link if the user was explicitly asking about the channel
+        # NOT when they're asking for links to other things
+        is_asking_about_channel = any(phrase in text.lower() for phrase in 
+            ["твой канал", "насти канал", "какой канал", "где канал", "подписаться на канал", "ссылка на канал"])
+        if is_asking_about_channel and not any(k in response_text.lower() for k in ["chasnastya", "t.me/chasnastya"]):
+            response_text += f"\n\nМой канал: @chasnastya 👉 https://t.me/chasnastya 💅"
+    # Fix incorrect responses where Nastya says she can't share links
+    if "не могу поделиться" in response_text.lower() or "не могу дать" in response_text.lower():
+        # Replace with an offer to search instead
+        response_text = response_text.replace("не могу поделиться", "могу поискать").replace("не могу дать", "могу найти")
+    if "у меня нет канала" in response_text.lower():
         response_text = f"Конечно! Мой канал @chasnastya 💅✨\n👉 https://t.me/chasnastya"
 
     # ── POST-PROCESS: News links ──
