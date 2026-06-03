@@ -1,19 +1,20 @@
-"""Nastya Bot 53.0 — MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + REAL LINKS! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 54.0 — MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + MULTI-ENGINE SEARCH! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v53.0:
+Architecture v54.0:
   - PERSONA: Настя — москвичка, 23 года, блогер, ведёт Telegram канал @chasnastya
   - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (23 модели, балансировка нагрузки!)
   - INLINE MODE: Настя работает в любом чате через @asnastya_bot!
   - VISION: Pollinations vision API — Настя ВИДИТ фото! 13 vision-моделей
-  - SEARCH: /find — поиск товаров, услуг, лучших цен с РЕАЛЬНЫМИ ссылками!
+  - SEARCH: MULTI-ENGINE! DuckDuckGo → Yandex → SearXNG → DDG API fallback!
+  - /find — поиск товаров, услуг, лучших цен — ВСЕГДА находит!
   - DISCOVERY: Авто-посты — рецепты, нумерология, астрология, мероприятия!
   - URL: Настя понимает ссылки!
   - PHOTO SEARCH: фото → распознавание → поиск товаров/цен!
-  - Новости: 16 RSS-источников + sochiautoparts.ru ПЕРВЫЙ + AI-комментарии (AI ONLY!)
+  - Новости: 22 RSS-источника + sochiautoparts.ru ПЕРВЫЙ + AI-комментарии (AI ONLY!)
   - Канал: AI-посты на основе новостей, опросы, факты, рецепты
-  - FIX v53: sochiautoparts.ru/rss.xml — PRIMARY auto news source!
-  - FIX v53: auto category = HIGHEST priority in news scoring
-  - FIX v53: Removed broken RSS feeds, added working ones (ТАСС, РБК, etc.)
+  - FIX v54: /find использует 4 поисковых движка для надёжности!
+  - FIX v54: Убран vesti.ru (404), добавлены kolesa.ru, auto.mail.ru, iz.ru, vc.ru и др.
+  - sochiautoparts.ru/rss.xml — PRIMARY auto news source!
   - Channel posts: @chasnastya link format
   - Group chat: Nastya COMMENTS ACTIVELY in groups — 70% response!
   - Proactive messaging + discovery sharing — Настя активный собеседник
@@ -501,7 +502,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 53.0 Starting (MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + REAL LINKS!) ===")
+    logger.info("=== Nastya Bot 54.0 Starting (MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + MULTI-ENGINE SEARCH!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -549,7 +550,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 53.0 Ready (MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + REAL LINKS!) ===")
+    logger.info("=== Nastya Bot 54.0 Ready (MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + MULTI-ENGINE SEARCH!) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

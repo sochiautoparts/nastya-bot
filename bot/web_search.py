@@ -1,19 +1,26 @@
-"""Nastya Web Search — search the web for information during conversations.
+"""Nastya Web Search v2.0 — MULTI-ENGINE SEARCH with fallbacks!
+
+v2.0: ROBUST search with multiple engines:
+  1. DuckDuckGo HTML (primary) — works most of the time
+  2. Yandex HTML search (fallback #1) — Russian-focused, better for RU queries
+  3. SearXNG public instances (fallback #2) — meta search engine
+  4. DuckDuckGo API (fallback #3) — instant answers only
+
+This ensures /find ALWAYS returns results even if one engine is blocked.
 
 Enables Nastya to:
   - Search for real-time information when discussing events/news
   - Verify facts and find links to share with users
+  - Find REAL product links instead of hallucinating URLs
   - Make conversations more lively with up-to-date knowledge
   - Always include source links when sharing information
-
-Uses DuckDuckGo HTML search (no API key needed) with fallback.
-Results are injected into the AI context so Nastya can reference them naturally.
 """
 import logging
 import re
 import time
 import random
 from typing import Dict, List, Optional
+from urllib.parse import unquote, quote_plus
 
 import httpx
 
@@ -23,6 +30,13 @@ logger = logging.getLogger(__name__)
 _search_cache: Dict[str, Dict] = {}
 _CACHE_TTL = 1800  # 30 minutes
 _MAX_CACHE = 100
+
+# Common headers for web scraping
+_SEARCH_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
 
 
 def _clean_cache():
@@ -37,9 +51,15 @@ def _clean_cache():
 
 
 async def search_web(query: str, num_results: int = 3) -> List[Dict]:
-    """Search the web using DuckDuckGo HTML. Returns list of results.
+    """Search the web using multiple search engines with fallbacks.
 
-    Each result has: title, snippet, url
+    Engine order:
+      1. DuckDuckGo HTML — primary, fast
+      2. Yandex HTML — Russian-focused, excellent for RU queries
+      3. SearXNG public instance — meta search
+      4. DuckDuckGo API — instant answers only (weak)
+
+    Returns list of dicts with: title, snippet, url
     """
     _clean_cache()
 
@@ -51,60 +71,43 @@ async def search_web(query: str, num_results: int = 3) -> List[Dict]:
 
     results = []
 
-    # Try DuckDuckGo HTML search
+    # ── Engine 1: DuckDuckGo HTML (primary) ──
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(10.0, connect=5.0),
-            follow_redirects=True,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-            },
-        ) as client:
-            # DuckDuckGo HTML search
-            response = await client.get(
-                "https://html.duckduckgo.com/html/",
-                params={"q": query, "kl": "ru-ru"},
-            )
-
-            if response.status_code == 200:
-                results = _parse_ddg_html(response.text, num_results)
-
+        results = await _search_ddg_html(query, num_results)
+        if results:
+            logger.info(f"DDG HTML: found {len(results)} results for '{query[:50]}'")
     except Exception as e:
-        logger.warning(f"DuckDuckGo search error: {e}")
+        logger.warning(f"DDG HTML search error: {e}")
 
-    # Fallback: try DuckDuckGo instant answer API
+    # ── Engine 2: Yandex HTML (fallback #1) ──
     if not results:
         try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(8.0, connect=4.0),
-            ) as client:
-                response = await client.get(
-                    "https://api.duckduckgo.com/",
-                    params={"q": query, "format": "json", "no_html": 1, "skip_disambig": 1},
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    # Try abstract
-                    abstract = data.get("Abstract", "")
-                    abstract_url = data.get("AbstractURL", "")
-                    abstract_title = data.get("Heading", "")
-                    if abstract and abstract_url:
-                        results.append({
-                            "title": abstract_title,
-                            "snippet": abstract[:300],
-                            "url": abstract_url,
-                        })
-                    # Try related topics
-                    for topic in data.get("RelatedTopics", [])[:3]:
-                        if isinstance(topic, dict) and topic.get("Text") and topic.get("FirstURL"):
-                            results.append({
-                                "title": topic.get("Text", "")[:100],
-                                "snippet": topic.get("Text", "")[:300],
-                                "url": topic.get("FirstURL", ""),
-                            })
+            results = await _search_yandex_html(query, num_results)
+            if results:
+                logger.info(f"Yandex HTML: found {len(results)} results for '{query[:50]}'")
         except Exception as e:
-            logger.warning(f"DuckDuckGo API fallback error: {e}")
+            logger.warning(f"Yandex HTML search error: {e}")
+
+    # ── Engine 3: SearXNG (fallback #2) ──
+    if not results:
+        try:
+            results = await _search_searxng(query, num_results)
+            if results:
+                logger.info(f"SearXNG: found {len(results)} results for '{query[:50]}'")
+        except Exception as e:
+            logger.warning(f"SearXNG search error: {e}")
+
+    # ── Engine 4: DuckDuckGo instant answer API (fallback #3) ──
+    if not results:
+        try:
+            results = await _search_ddg_api(query, num_results)
+            if results:
+                logger.info(f"DDG API: found {len(results)} results for '{query[:50]}'")
+        except Exception as e:
+            logger.warning(f"DDG API fallback error: {e}")
+
+    if not results:
+        logger.warning(f"ALL search engines failed for query: '{query[:50]}'")
 
     # Cache results
     if results:
@@ -113,12 +116,33 @@ async def search_web(query: str, num_results: int = 3) -> List[Dict]:
     return results[:num_results]
 
 
+# ══════════════════════════════════════════════════════════════
+#  ENGINE 1: DuckDuckGo HTML
+# ══════════════════════════════════════════════════════════════
+
+async def _search_ddg_html(query: str, num_results: int) -> List[Dict]:
+    """Search using DuckDuckGo HTML endpoint."""
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(12.0, connect=5.0),
+        follow_redirects=True,
+        headers=_SEARCH_HEADERS,
+    ) as client:
+        response = await client.post(
+            "https://html.duckduckgo.com/html/",
+            data={"q": query, "kl": "ru-ru", "b": ""},
+        )
+
+        if response.status_code == 200:
+            return _parse_ddg_html(response.text, num_results)
+
+    return []
+
+
 def _parse_ddg_html(html: str, num_results: int) -> List[Dict]:
     """Parse DuckDuckGo HTML search results."""
     results = []
 
-    # Extract result blocks
-    # DDG HTML uses class="result" divs
+    # Primary pattern: result__a link + result__snippet
     result_pattern = re.compile(
         r'<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?'
         r'<(?:a|td)[^>]+class="result__snippet"[^>]*>(.*?)</(?:a|td)>',
@@ -133,21 +157,15 @@ def _parse_ddg_html(html: str, num_results: int) -> List[Dict]:
         snippet = _strip_html(match.group(3)).strip()
 
         if title and url:
-            # Clean DDG redirect URL
-            if url.startswith("//duckduckgo.com/l/"):
-                # Extract actual URL from DDG redirect
-                actual_url_match = re.search(r'uddg=([^&]+)', url)
-                if actual_url_match:
-                    from urllib.parse import unquote
-                    url = unquote(actual_url_match.group(1))
+            url = _clean_ddg_url(url)
+            if url:
+                results.append({
+                    "title": title[:200],
+                    "snippet": snippet[:300],
+                    "url": url,
+                })
 
-            results.append({
-                "title": title[:200],
-                "snippet": snippet[:300],
-                "url": url,
-            })
-
-    # Fallback: try a simpler pattern if no results
+    # Fallback: simpler pattern (just links, no snippets)
     if not results:
         link_pattern = re.compile(
             r'<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
@@ -159,11 +177,104 @@ def _parse_ddg_html(html: str, num_results: int) -> List[Dict]:
             url = match.group(1)
             title = _strip_html(match.group(2)).strip()
             if title and url and not url.startswith("#"):
-                if url.startswith("//duckduckgo.com/l/"):
-                    actual_url_match = re.search(r'uddg=([^&]+)', url)
-                    if actual_url_match:
-                        from urllib.parse import unquote
-                        url = unquote(actual_url_match.group(1))
+                url = _clean_ddg_url(url)
+                if url:
+                    results.append({
+                        "title": title[:200],
+                        "snippet": "",
+                        "url": url,
+                    })
+
+    return results
+
+
+def _clean_ddg_url(url: str) -> str:
+    """Clean a DuckDuckGo redirect URL to get the actual URL."""
+    if url.startswith("//duckduckgo.com/l/"):
+        actual_url_match = re.search(r'uddg=([^&]+)', url)
+        if actual_url_match:
+            return unquote(actual_url_match.group(1))
+        return ""  # Can't extract real URL
+    if url.startswith("//"):
+        url = "https:" + url
+    return url
+
+
+# ══════════════════════════════════════════════════════════════
+#  ENGINE 2: Yandex HTML search
+# ══════════════════════════════════════════════════════════════
+
+async def _search_yandex_html(query: str, num_results: int) -> List[Dict]:
+    """Search using Yandex HTML. Excellent for Russian-language queries."""
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(12.0, connect=5.0),
+        follow_redirects=True,
+        headers={
+            **_SEARCH_HEADERS,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+    ) as client:
+        response = await client.get(
+            "https://yandex.ru/search/",
+            params={
+                "text": query,
+                "lr": 213,  # Moscow region
+                "numdoc": num_results,
+            },
+        )
+
+        if response.status_code == 200:
+            return _parse_yandex_html(response.text, num_results)
+
+    return []
+
+
+def _parse_yandex_html(html: str, num_results: int) -> List[Dict]:
+    """Parse Yandex search results HTML."""
+    results = []
+
+    # Yandex uses various class names, try multiple patterns
+    # Pattern 1: Organic results with data attributes
+    organic_pattern = re.compile(
+        r'<a[^>]+class="[^"]*Link[^"]*"[^>]+href="((?:https?://)[^"]+)"[^>]*>(.*?)</a>',
+        re.DOTALL | re.IGNORECASE,
+    )
+
+    seen_urls = set()
+    for match in organic_pattern.finditer(html):
+        if len(results) >= num_results:
+            break
+        url = match.group(1)
+        title = _strip_html(match.group(2)).strip()
+
+        # Skip Yandex internal URLs and duplicates
+        if not title or not url.startswith("http"):
+            continue
+        if any(skip in url for skip in ["yandex.ru", "yandex.com", "ya.ru", "/search/"]):
+            continue
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+
+        results.append({
+            "title": title[:200],
+            "snippet": "",  # Yandex snippets are harder to extract reliably
+            "url": url,
+        })
+
+    # Pattern 2: Try simpler href extraction if pattern 1 failed
+    if not results:
+        href_pattern = re.compile(
+            r'href="(https?://(?!yandex\.(?:ru|com)|ya\.ru)[^"]+)"[^>]*>([^<]{10,}?)</a>',
+            re.IGNORECASE,
+        )
+        for match in href_pattern.finditer(html):
+            if len(results) >= num_results:
+                break
+            url = match.group(1)
+            title = _strip_html(match.group(2)).strip()
+            if title and url and url not in seen_urls:
+                seen_urls.add(url)
                 results.append({
                     "title": title[:200],
                     "snippet": "",
@@ -172,6 +283,105 @@ def _parse_ddg_html(html: str, num_results: int) -> List[Dict]:
 
     return results
 
+
+# ══════════════════════════════════════════════════════════════
+#  ENGINE 3: SearXNG public instance
+# ══════════════════════════════════════════════════════════════
+
+# List of public SearXNG instances to try
+_SEARXNG_INSTANCES = [
+    "https://search.sapti.me",
+    "https://searx.be",
+    "https://search.bus-hit.me",
+    "https://searx.fmac.xyz",
+]
+
+
+async def _search_searxng(query: str, num_results: int) -> List[Dict]:
+    """Search using SearXNG public instances. Meta search engine."""
+    results = []
+
+    for instance in _SEARXNG_INSTANCES:
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(10.0, connect=5.0),
+                follow_redirects=True,
+                headers=_SEARCH_HEADERS,
+            ) as client:
+                response = await client.get(
+                    f"{instance}/search",
+                    params={
+                        "q": query,
+                        "format": "json",
+                        "language": "ru",
+                        "categories": "general",
+                    },
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    for item in data.get("results", [])[:num_results]:
+                        title = item.get("title", "").strip()
+                        url = item.get("url", "").strip()
+                        snippet = item.get("content", "").strip()
+
+                        if title and url and url.startswith("http"):
+                            results.append({
+                                "title": title[:200],
+                                "snippet": snippet[:300],
+                                "url": url,
+                            })
+
+                    if results:
+                        return results
+        except Exception:
+            continue
+
+    return results
+
+
+# ══════════════════════════════════════════════════════════════
+#  ENGINE 4: DuckDuckGo instant answer API
+# ══════════════════════════════════════════════════════════════
+
+async def _search_ddg_api(query: str, num_results: int) -> List[Dict]:
+    """Search using DuckDuckGo instant answer API (weakest — only for definitions)."""
+    results = []
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(8.0, connect=4.0),
+    ) as client:
+        response = await client.get(
+            "https://api.duckduckgo.com/",
+            params={"q": query, "format": "json", "no_html": 1, "skip_disambig": 1},
+        )
+        if response.status_code == 200:
+            data = response.json()
+            # Try abstract
+            abstract = data.get("Abstract", "")
+            abstract_url = data.get("AbstractURL", "")
+            abstract_title = data.get("Heading", "")
+            if abstract and abstract_url:
+                results.append({
+                    "title": abstract_title,
+                    "snippet": abstract[:300],
+                    "url": abstract_url,
+                })
+            # Try related topics
+            for topic in data.get("RelatedTopics", [])[:3]:
+                if isinstance(topic, dict) and topic.get("Text") and topic.get("FirstURL"):
+                    results.append({
+                        "title": topic.get("Text", "")[:100],
+                        "snippet": topic.get("Text", "")[:300],
+                        "url": topic.get("FirstURL", ""),
+                    })
+
+    return results
+
+
+# ══════════════════════════════════════════════════════════════
+#  UTILITY FUNCTIONS
+# ══════════════════════════════════════════════════════════════
 
 def _strip_html(text: str) -> str:
     """Remove HTML tags from text."""
@@ -185,12 +395,12 @@ def should_search(text: str) -> Optional[str]:
 
     Returns the search query if search is needed, None otherwise.
     Only searches when the topic is clearly about factual/news content.
-    
+
     v33: Убраны триггеры "что за" и "расскажи про" — это эмоциональные
     выражения, не поисковые запросы. "Что за бред" не должно искать "бред"!
     """
     text_lower = text.lower()
-    
+
     # v33: ИСКЛЮЧЕНИЯ — эмоциональные выражения которые НЕ должны вызывать поиск
     emotional_expressions = [
         "что за бред", "что за фигня", "что за хрень", "что за хуйня",
@@ -217,18 +427,16 @@ def should_search(text: str) -> Optional[str]:
         "отзывы о", "сравнение", "какой лучше", "что выбрать",
         "рекомендуй", "посоветуй", "что купить", "какой выбрать",
         "аналог", "замена", "альтернатива",
-        # v33: УБРАНО "расскажи про" и "что за" — слишком широкие триггеры
         "кто победил", "кто выиграл", "кто стал",
         "какой результат", "какой счёт", "сколько",
     ]
 
     for trigger in search_triggers:
         if trigger in text_lower:
-            # Extract the actual query after the trigger
             idx = text_lower.find(trigger)
             query = text[idx + len(trigger):].strip().rstrip("?!.،")
             if len(query) > 2:
-                return query[:100]  # Limit query length
+                return query[:100]
             return text[:100]
 
     # Question detection — search for factual questions

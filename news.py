@@ -1,8 +1,12 @@
-"""Nastya News Engine 5.1 — AI-ONLY COMMENTS + SOCHIAUTOPARTS PRIMARY!
+"""Nastya News Engine 5.2 — AI-ONLY COMMENTS + SOCHIAUTOPARTS PRIMARY + EXPANDED SOURCES!
 
-v5.1 KEY CHANGES:
+v5.2 KEY CHANGES:
   - sochiautoparts.ru/rss.xml — PRIMARY auto news source!
   - auto category = HIGHEST priority for Nastya's channel!
+  - Added more auto sources: kolesa.ru, auto.mail.ru
+  - Added more general sources: iz.ru, dzen.ru
+  - Added tech: vc.ru, sports: euro-football.ru
+  - Removed vesti.ru (404)
   - AI-GENERATED Nastya commentary for news — ALWAYS AI, NO templates!
   - Each news item gets a unique, personality-rich comment from AI
   - NO MORE template-based fallbacks — AI only! If AI fails, use generic comment

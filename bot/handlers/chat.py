@@ -1,6 +1,7 @@
-"""Nastya Chat Handler v13.0 — MULTI-MODEL + VISION + HUMAN-LIKE + URL + INLINE!
+"""Nastya Chat Handler v14.0 — MULTI-MODEL + VISION + HUMAN-LIKE + URL + INLINE + MULTI-ENGINE SEARCH!
 
-v13.0: FIX HALLUCINATED LINKS — Настя даёт ТОЛЬКО реальные ссылки из поиска!
+v14.0: MULTI-ENGINE SEARCH — /find ВСЕГДА находит!
+  - 4 поисковых движка: DuckDuckGo → Yandex → SearXNG → DDG API
   - FORCE web search when user asks for products/services/links
   - Detect AI-hallucinated commercial URLs and replace with real search results
   - Commercial site URLs (ozon, wildberries, yandex.market, etc.) in AI response

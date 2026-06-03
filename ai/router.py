@@ -1,6 +1,6 @@
-"""AI Router v53.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE + HALLUCINATED LINK FIX!
+"""AI Router v54.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE + HALLUCINATED LINK FIX!
 
-АРХИТЕКТУРА v53:
+АРХИТЕКТУРА v54:
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
     1. PollinationsProvider v14 (23-MODEL LOAD BALANCING!)
        - gen.pollinations.ai/v1/chat/completions — OpenAI-compatible

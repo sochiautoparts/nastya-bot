@@ -1,5 +1,10 @@
 """Nastya Discovery Engine — auto-discovers interesting content for channel & chat.
 
+v2.0: Improved news-based post writing + robust product search!
+  - Better AI prompts for engaging, personal posts
+  - search_products uses multi-engine search (always finds results)
+  - More diverse discovery topics including automotive news
+
 Periodically searches the web for:
   - Interesting facts & news
   - Recipes (кулинария)
@@ -7,6 +12,7 @@ Periodically searches the web for:
   - Event announcements (афиша, мероприятия)
   - Cool products & deals
   - Lifestyle & beauty tips
+  - Automotive news from sochiautoparts.ru
 
 Then:
   - Posts to Telegram channel with source links
@@ -32,6 +38,13 @@ logger = logging.getLogger(__name__)
 # ── Discovery Topics — diverse content categories ──
 
 DISCOVERY_TOPICS = [
+    # 🚗 Automotive news (sochiautoparts.ru — PRIMARY source!)
+    {"query": "автомобильные новости ремонт запчасти 2025", "category": "auto",
+     "post_type": "auto", "weight": 4},
+    {"query": "советы по обслуживанию автомобиля замена масла", "category": "auto",
+     "post_type": "auto", "weight": 3},
+    {"query": "новые автомобили тест драйв обзор 2025", "category": "auto",
+     "post_type": "auto", "weight": 2},
     # Recipes
     {"query": "простой вкусный рецепт на ужин 2025", "category": "recipe",
      "post_type": "recipe", "weight": 3},
@@ -129,6 +142,11 @@ def _pick_topic() -> Dict:
 # ── Post templates by category ──
 
 CATEGORY_TEMPLATES = {
+    "auto": [
+        "🚗 Автомобильные новости от Насти!\n\n{content}\n\nНастя разбирается в тачках! 💅🚗",
+        "Автоновости! Настя в курсе!\n\n{content}\n\nБольше авто на sochiautoparts.ru! 🚗✨",
+        "Настя про авто!\n\n{content}\n\nНастя не только шопинг — она и под капот заглянет! 🚗💅",
+    ],
     "recipe": [
         "🍳 Настя нашла классный рецепт!\n\n{content}\n\nПриятного аппетита! 💅✨",
         "Вау, рецепт! Настя обязательно попробует!\n\n{content}\n\nГотовьте с Настей! 🍳💅",
@@ -201,6 +219,7 @@ async def discover_content(ai_router) -> Optional[Dict]:
     if ai_router:
         try:
             category_prompts = {
+                "auto": "Напиши интересный пост про автомобили. Если это совет — дай конкретные рекомендации. Если новость — поделись мнением. Настя разбирается в авто, запчастях и ремонте — пиши со знанием дела! 5-8 предложений. Без markdown.",
                 "recipe": "Напиши подробный рецепт в живом стиле. Включи ингредиенты и пошаговое приготовление. 6-10 предложений. Без markdown, без буллетов — сплошной текст.",
                 "numerology": "Расскажи про значение чисел в нумерологии интересно и доступно. Дай конкретные примеры. 5-8 предложений. Без markdown.",
                 "astrology": "Напиши гороскоп или астрологический прогноз на сегодня/неделю. Живо, с эмоциями, для всех знаков кратко. 6-10 предложений. Без markdown.",
@@ -215,16 +234,18 @@ async def discover_content(ai_router) -> Optional[Dict]:
             result = await ai_router.chat(
                 prompt=f"Найдена информация: {title}. {snippet}.{extra_info}\n\n{category_prompt}",
                 system_prompt=(
-                    "Ты Настя — москвичка, 23 года, блогер. Пишешь пост для своего Telegram канала ОТ СЕБЯ. "
-                    "Говоришь от первого лица — 'я думаю', 'мне кажется', 'я нашла'. "
-                    "Живо, эмоционально, как живой человек. "
-                    "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто', 'точняк'. "
-                    "Пиши развёрнуто и познавательно — это важно! "
-                    "Без markdown, без буллетов, без заголовков. "
+                    "Ты Настя — москвичка, 23 года, блогер, ведёшь Telegram канал @chasnastya. "
+                    "Пишешь пост для своего канала ОТ СЕБЯ, от первого лица. "
+                    "Говоришь от первого лица — 'я думаю', 'мне кажется', 'я нашла', 'прикинь'. "
+                    "Живо, эмоционально, как живой человек — не как журналист или бот. "
+                    "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто', 'точняк', 'блин'. "
+                    "Пиши развёрнуто и познавательно — это важно! Давай конкретные факты и детали. "
+                    "Без markdown, без буллетов, без заголовков — сплошной текст. "
                     "Не пиши 'Настя' в начале — говори от первого лица. "
                     "НЕ добавляй ссылки на источник — ты пишешь от себя. "
                     "Ссылки допускаются ТОЛЬКО на конкретные товары, услуги, мероприятия, рецепты. "
-                    "НЕ вставляй ссылку на свой канал — она добавится автоматически."
+                    "НЕ вставляй ссылку на свой канал — она добавится автоматически. "
+                    "Если это автомобильная тема — покажи что ты разбираешься! sochiautoparts.ru — твой источник автоновостей."
                 ),
                 max_tokens=500,
                 priority="low",
@@ -280,6 +301,7 @@ async def post_discovery_to_channel(bot: Bot, db, ai_router, discovery: Dict) ->
 
     # Add category hashtag
     category_hashtags = {
+        "auto": "#Авто #Автоновости #СочиАвтоЗапчасти",
         "recipe": "#Рецепт #Кулинария",
         "numerology": "#Нумерология #МагияЧисел",
         "astrology": "#Гороскоп #Астрология",

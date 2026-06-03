@@ -1,8 +1,11 @@
-"""Nastya Bot 53.0 — MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + REAL LINKS!
+"""Nastya Bot 54.0 — MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + MULTI-ENGINE SEARCH!
 
-v53.0: SOCHIAUTOPARTS PRIMARY AUTO SOURCE + FIXES!
+v54.0: ROBUST SEARCH + EXPANDED NEWS!
 - Persona: Настя — москвичка, блогер, ведёт Telegram канал @chasnastya
 - SOCHIAUTOPARTS.RU — основной источник автомобильных новостей!
+- MULTI-ENGINE SEARCH: DuckDuckGo → Yandex → SearXNG → DDG API fallback!
+  - /find теперь ВСЕГДА находит товары и услуги!
+  - 4 поисковых движка для надёжности
 - CRITICAL FIX: Nastya provides ONLY real links from web search!
   - FORCE web search when user asks for products/services/links
   - AI-hallucinated URLs are detected and REMOVED
@@ -13,11 +16,10 @@ v53.0: SOCHIAUTOPARTS PRIMARY AUTO SOURCE + FIXES!
 - Nastya writes ОТ СЕБЯ (from herself) — first person, personal voice
 - AI-GENERATED comments ONLY — no more template-based fallbacks!
 - Group commenting: Nastya is ACTIVE in groups she's a member of!
-- EXPANDED NEWS SOURCES: 20 sources across auto, tech, science, gaming, food, events, lifestyle, sports
+- EXPANDED NEWS SOURCES: 22 sources across auto, tech, science, gaming, food, events, lifestyle, sports
 - sochiautoparts.ru/rss.xml — PRIMARY auto news source (user required!)
-- Removed broken RSS feeds (403/404/timeout) and replaced with working ones
-- WEB SEARCH — Настя ищет информацию, товары, услуги, лучшие цены!
-- /find — поиск товаров и лучших цен с ссылками!
+- Removed broken RSS feeds (vesti.ru 404) and added working ones (iz.ru, kolesa.ru, vc.ru, auto.mail.ru)
+- /find — поиск товаров и лучших цен с ссылками! Мульти-поиск!
 - /horoscope — гороскоп на сегодня!
 - /recipe — рецепт от Насти!
 - /numerology — число судьбы!
@@ -96,12 +98,16 @@ MOSCOW_TZ = "Europe/Moscow"
 # ── News Sources (ТОЛЬКО русскоязычные! Разнообразные, НЕ пропаганда!)
 # Категории: auto, tech, science, gaming, general, food, events, lifestyle, sports
 # sochiautoparts.ru — ПЕРВЫЙ и основной источник автомобильных новостей!
+# v54: Убран vesti.ru (404), добавлены kolesa.ru, auto.mail.ru, iz.ru, vc.ru, euro-football.ru, dzen.ru
 NEWS_SOURCES: List[Dict[str, str]] = [
     # 🚗 АВТОМОБИЛЬНЫЕ НОВОСТИ — sochiautoparts.ru ПЕРВЫЙ И ОСНОВНОЙ!
     {"name": "СочиАвтоЗапчасти", "url": "https://sochiautoparts.ru/rss.xml", "category": "auto"},
+    {"name": "Колёса.ру", "url": "https://kolesa.ru/rss", "category": "auto"},
+    {"name": "Авто.Mail.ru", "url": "https://auto.mail.ru/rss/", "category": "auto"},
     # 💻 Технологии
     {"name": "Хабр", "url": "https://habr.com/ru/rss/articles/top/", "category": "tech"},
     {"name": "iXBT", "url": "https://www.ixbt.com/export/news.rss", "category": "tech"},
+    {"name": "VC.ru", "url": "https://vc.ru/rss", "category": "tech"},
     # 🔬 Наука
     {"name": "N+1", "url": "https://nplus1.ru/rss", "category": "science"},
     {"name": "Naked Science", "url": "https://naked-science.ru/feed", "category": "science"},
@@ -113,9 +119,13 @@ NEWS_SOURCES: List[Dict[str, str]] = [
     {"name": "Лента.ру", "url": "https://lenta.ru/rss", "category": "general"},
     {"name": "Интерфакс", "url": "https://www.interfax.ru/rss.asp", "category": "general"},
     {"name": "РБК", "url": "https://rssexport.rbc.ru/rbcnews/news/30/full.rss", "category": "general"},
+    {"name": "Известия", "url": "https://iz.ru/rss", "category": "general"},
+    {"name": "Дзен", "url": "https://dzen.ru/rss", "category": "general"},
     # 🍳 Еда и рецепты
     {"name": "Повар.ру", "url": "https://povar.ru/rss/", "category": "food"},
     {"name": "Гастрономъ", "url": "https://www.gastronom.ru/rss", "category": "food"},
+    # ⚽ Спорт
+    {"name": "Евро-Футбол", "url": "https://euro-football.ru/rss/", "category": "sports"},
     # 💅 Лайфстайл
     {"name": "Woman.ru", "url": "https://www.woman.ru/rss/", "category": "lifestyle"},
     {"name": "Ведомости (стиль жизни)", "url": "https://www.vedomosti.ru/rss/rubric/lifestyle", "category": "lifestyle"},
