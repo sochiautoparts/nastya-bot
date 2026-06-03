@@ -1,7 +1,9 @@
-"""Nastya Channel Manager 12.0 — AI-POWERED NEWS + ACTIVE GROUP COMMENTS!
+"""Nastya Channel Manager 12.1 — AI-POWERED NEWS + SOCHIAUTOPARTS AUTO + ACTIVE GROUP COMMENTS!
 
-v12.0 KEY CHANGES:
-  - Persona updated: Настя — москвичка, блогер, ведёт Telegram канал @chasnastya
+v12.1 KEY CHANGES:
+  - sochiautoparts.ru/rss.xml — PRIMARY auto news source!
+  - Auto category = HIGHEST priority for channel posts
+  - Persona: Настя — москвичка, блогер, ведёт Telegram канал @chasnastya
   - Channel link format: @chasnastya in every post
   - AI-POWERED news commentary — ALWAYS AI, NO templates!
   - AI generates ALL comments — templates removed completely
@@ -720,7 +722,7 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
 
             category_context = ""
             if category == "auto":
-                category_context = "Это автомобильная новость — расскажи подробно, как человек который интересуется автомобилями."
+                category_context = "Это автомобильная новость от СочиАвтоЗапчасти — расскажи подробно и экспертно! Настя разбирается в автомобилях, запчастях и ремонте."
 
             prompt = "\n".join(prompt_parts)
 

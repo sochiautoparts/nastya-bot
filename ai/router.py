@@ -1,6 +1,6 @@
-"""AI Router v51.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE + HALLUCINATED LINK FIX!
+"""AI Router v53.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE + HALLUCINATED LINK FIX!
 
-АРХИТЕКТУРА v51:
+АРХИТЕКТУРА v53:
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
     1. PollinationsProvider v14 (23-MODEL LOAD BALANCING!)
        - gen.pollinations.ai/v1/chat/completions — OpenAI-compatible
@@ -27,6 +27,7 @@
 
   ФОН (новости, канал — LOW PRIORITY AI!):
     - Новости: RSS-парсер + AI-комментарии для канала!
+    - sochiautoparts.ru/rss.xml — PRIMARY auto news source!
     - Канал: AI-посты на основе новостей, опросы, факты
 
   VISION (фото-понимание + поиск по фото):
@@ -36,7 +37,7 @@
   URL UNDERSTANDING:
     - Настя читает ссылки и понимает контекст!
 
-  HALLUCINATED LINK FIX v51:
+  HALLUCINATED LINK FIX v53:
     - FORCE web search when user asks for products/services/links
     - AI-hallucinated commercial URLs are detected and REMOVED
     - Only real URLs from actual search results are kept

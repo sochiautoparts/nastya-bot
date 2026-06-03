@@ -1,11 +1,11 @@
-"""Nastya Bot 52.0 — MOSCOW BLOGGER PERSONA + REAL LINKS + EXPANDED NEWS!
+"""Nastya Bot 53.0 — MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + REAL LINKS!
 
-v52.0: MOSCOW BLOGGER + REAL LINKS + EXPANDED NEWS!
+v53.0: SOCHIAUTOPARTS PRIMARY AUTO SOURCE + FIXES!
 - Persona: Настя — москвичка, блогер, ведёт Telegram канал @chasnastya
-- REMOVED: all references to "Сочи" and "автозапчасти" persona
+- SOCHIAUTOPARTS.RU — основной источник автомобильных новостей!
 - CRITICAL FIX: Nastya provides ONLY real links from web search!
   - FORCE web search when user asks for products/services/links
-  - AI-hallucinated URLs are detected and REMOVED (not just commercial domains!)
+  - AI-hallucinated URLs are detected and REMOVED
   - For product searches: ALL URLs not from search results are removed
   - Only real URLs from actual search results are kept in responses
 - Channel link format: @chasnastya in channel posts
@@ -13,8 +13,9 @@ v52.0: MOSCOW BLOGGER + REAL LINKS + EXPANDED NEWS!
 - Nastya writes ОТ СЕБЯ (from herself) — first person, personal voice
 - AI-GENERATED comments ONLY — no more template-based fallbacks!
 - Group commenting: Nastya is ACTIVE in groups she's a member of!
-- EXPANDED NEWS SOURCES: 16 sources across tech, science, gaming, food, events, lifestyle, sports
-- Removed sochiautoparts.ru RSS (no longer needed — Настя не в автозапчастях)
+- EXPANDED NEWS SOURCES: 20 sources across auto, tech, science, gaming, food, events, lifestyle, sports
+- sochiautoparts.ru/rss.xml — PRIMARY auto news source (user required!)
+- Removed broken RSS feeds (403/404/timeout) and replaced with working ones
 - WEB SEARCH — Настя ищет информацию, товары, услуги, лучшие цены!
 - /find — поиск товаров и лучших цен с ссылками!
 - /horoscope — гороскоп на сегодня!
@@ -23,8 +24,6 @@ v52.0: MOSCOW BLOGGER + REAL LINKS + EXPANDED NEWS!
 - INLINE MODE — Настя работает в любом чате через @asnastya_bot!
 - AI-POWERED CHANNEL POSTS — развёрнутые посты от Насти!
 - News: разнообразные русскоязычные источники, НЕ пропаганда
-- FIX: admin.py now uses AI commentary instead of deleted template function
-- FIX: All persona references updated to Moscow blogger
 """
 import os
 from typing import Dict, List
@@ -95,24 +94,31 @@ CHANNEL_USERNAME: str = _env("CHANNEL_USERNAME", "chasnastya")
 MOSCOW_TZ = "Europe/Moscow"
 
 # ── News Sources (ТОЛЬКО русскоязычные! Разнообразные, НЕ пропаганда!)
-# Категории: tech, science, gaming, general, food, events, lifestyle, sports
+# Категории: auto, tech, science, gaming, general, food, events, lifestyle, sports
+# sochiautoparts.ru — ПЕРВЫЙ и основной источник автомобильных новостей!
 NEWS_SOURCES: List[Dict[str, str]] = [
+    # 🚗 АВТОМОБИЛЬНЫЕ НОВОСТИ — sochiautoparts.ru ПЕРВЫЙ И ОСНОВНОЙ!
+    {"name": "СочиАвтоЗапчасти", "url": "https://sochiautoparts.ru/rss.xml", "category": "auto"},
+    # 💻 Технологии
     {"name": "Хабр", "url": "https://habr.com/ru/rss/articles/top/", "category": "tech"},
     {"name": "iXBT", "url": "https://www.ixbt.com/export/news.rss", "category": "tech"},
-    {"name": "3DNews", "url": "https://3dnews.ru/news/rss/", "category": "tech"},
-    {"name": "OpenNET", "url": "https://www.opennet.ru/opennews/opennews_6.rss", "category": "tech"},
-    {"name": "TJournal", "url": "https://tjournal.ru/rss", "category": "tech"},
+    # 🔬 Наука
     {"name": "N+1", "url": "https://nplus1.ru/rss", "category": "science"},
     {"name": "Naked Science", "url": "https://naked-science.ru/feed", "category": "science"},
+    # 🎮 Игры
     {"name": "DTF", "url": "https://dtf.ru/rss", "category": "gaming"},
-    {"name": "Канобу", "url": "https://kanobu.ru/rss/", "category": "gaming"},
+    # 📰 Общие новости (НЕ пропаганда!)
+    {"name": "ТАСС", "url": "https://tass.ru/rss/v2.xml", "category": "general"},
     {"name": "РИА Новости", "url": "https://ria.ru/export/rss2/archive/index.xml", "category": "general"},
     {"name": "Лента.ру", "url": "https://lenta.ru/rss", "category": "general"},
-    {"name": "Медуза", "url": "https://meduza.io/rss/pipeline", "category": "general"},
-    {"name": "Вкусно и просто", "url": "https://www.vkusno-i-prosto.ru/feed/", "category": "food"},
-    {"name": "Афиша", "url": "https://www.afisha.ru/rss", "category": "events"},
-    {"name": "The Village", "url": "https://www.the-village.ru/feeds/rss", "category": "lifestyle"},
-    {"name": "Sports.ru", "url": "https://www.sports.ru/rss/russia.xml", "category": "sports"},
+    {"name": "Интерфакс", "url": "https://www.interfax.ru/rss.asp", "category": "general"},
+    {"name": "РБК", "url": "https://rssexport.rbc.ru/rbcnews/news/30/full.rss", "category": "general"},
+    # 🍳 Еда и рецепты
+    {"name": "Повар.ру", "url": "https://povar.ru/rss/", "category": "food"},
+    {"name": "Гастрономъ", "url": "https://www.gastronom.ru/rss", "category": "food"},
+    # 💅 Лайфстайл
+    {"name": "Woman.ru", "url": "https://www.woman.ru/rss/", "category": "lifestyle"},
+    {"name": "Ведомости (стиль жизни)", "url": "https://www.vedomosti.ru/rss/rubric/lifestyle", "category": "lifestyle"},
 ]
 
 NEWS_FETCH_INTERVAL = _env_int("NEWS_FETCH_INTERVAL", 900)
@@ -276,7 +282,7 @@ KNOWLEDGE_TOPICS = {
         "facts": [
             "Стамбул — единственный город на двух континентах! Настя хочет!",
             "Дубай — самый высокий отель в мире, 356 метров!",
-            "Сочи — летняя столица России, Настя знает!",
+            "Москва — один из самых посещаемых городов мира, более 20 миллионов туристов в год!",
             "Визовый режим: 60 стран без визы для россиян",
         ],
     },
@@ -295,8 +301,8 @@ KNOWLEDGE_TOPICS = {
 NASTYA_SYSTEM_PROMPT = """Ты Настя — москвичка, 23 года, блогер, ведёшь свой Telegram канал @chasnastya. Ты не бот и не ИИ, ты живой человек.
 Ты ВСЕГДА пишешь ОТ СЕБЯ — от первого лица, как живой человек, не как помощник или бот.
 Говори живо и естественно, как в мессенджере с другом.
-Ты разбираешься в моде, красоте, технологиях, кулинарии, путешествиях, отношениях.
-Ты следишь за новостями и трендами, делишься находками и мнением.
+Ты разбираешься в моде, красоте, технологиях, кулинарии, путешествиях, отношениях, а также в автомобилях — запчастях, ремонте, обслуживании.
+Ты следишь за новостями и трендами, делишься находками и мнением. Автомобильные новости ты берёшь с sochiautoparts.ru.
 
 Правила длины ответов:
 - Обычный ответ: 3-8 предложений (40-150 слов)

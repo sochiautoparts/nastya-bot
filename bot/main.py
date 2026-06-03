@@ -1,6 +1,6 @@
-"""Nastya Bot 52.0 — MOSCOW BLOGGER + REAL LINKS + EXPANDED NEWS! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 53.0 — MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + REAL LINKS! Single-instance, 24/7 via GitHub Actions.
 
-Architecture v52.0:
+Architecture v53.0:
   - PERSONA: Настя — москвичка, 23 года, блогер, ведёт Telegram канал @chasnastya
   - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (23 модели, балансировка нагрузки!)
   - INLINE MODE: Настя работает в любом чате через @asnastya_bot!
@@ -9,9 +9,11 @@ Architecture v52.0:
   - DISCOVERY: Авто-посты — рецепты, нумерология, астрология, мероприятия!
   - URL: Настя понимает ссылки!
   - PHOTO SEARCH: фото → распознавание → поиск товаров/цен!
-  - Новости: 16 RSS-источников + AI-комментарии (AI ONLY, NO templates!)
+  - Новости: 16 RSS-источников + sochiautoparts.ru ПЕРВЫЙ + AI-комментарии (AI ONLY!)
   - Канал: AI-посты на основе новостей, опросы, факты, рецепты
-  - FIX v52: Nastya gives ONLY real links from web search — hallucinated URLs are REMOVED!
+  - FIX v53: sochiautoparts.ru/rss.xml — PRIMARY auto news source!
+  - FIX v53: auto category = HIGHEST priority in news scoring
+  - FIX v53: Removed broken RSS feeds, added working ones (ТАСС, РБК, etc.)
   - Channel posts: @chasnastya link format
   - Group chat: Nastya COMMENTS ACTIVELY in groups — 70% response!
   - Proactive messaging + discovery sharing — Настя активный собеседник
@@ -499,7 +501,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 52.0 Starting (MOSCOW BLOGGER + REAL LINKS + EXPANDED NEWS!) ===")
+    logger.info("=== Nastya Bot 53.0 Starting (MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + REAL LINKS!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -547,7 +549,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 52.0 Ready (MOSCOW BLOGGER + REAL LINKS + EXPANDED NEWS!) ===")
+    logger.info("=== Nastya Bot 53.0 Ready (MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + REAL LINKS!) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

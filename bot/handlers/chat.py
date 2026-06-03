@@ -2034,11 +2034,12 @@ def _clean_response(text: str) -> str:
             text = re.sub(r'\s*(?:Ссылк[аиу]:?|🔗)\s*\n', '\n', text, flags=re.IGNORECASE)
             logger.info(f"Removed hallucinated URL: {url[:50]}")
 
-    # ── Replace @chasnastya with real channel URL format when used as link ──
-    # If AI wrote "Ссылка: @chasnastya" or "🔗 @chasnastya" — remove it
+    # ── Replace @chasnastya when AI used it as a PRODUCT link replacement ──
+    # If AI wrote "Ссылка: @chasnastya" or "🔗 @chasnastya" after a product — remove it
     # (the channel link should only appear when specifically asked about the channel)
-    text = re.sub(r'\s*(?:Ссылк[аиу]:?\s*)?@chasnastya\s*', ' ', text, flags=re.IGNORECASE)
-    text = re.sub(r'\s*🔗\s*@chasnastya\s*', ' ', text, flags=re.IGNORECASE)
+    # But KEEP @chasnastya when it's a natural mention or channel reference
+    text = re.sub(r'\s*(?:Ссылк[аиу]:?\s*)?@chasnastya\s*(?=$)', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*🔗\s*@chasnastya\s*(?=$)', '', text, flags=re.IGNORECASE)
     # But keep @chasnastya when it's a natural mention (not a link replacement)
 
     return text.strip()

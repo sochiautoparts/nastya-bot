@@ -1,11 +1,12 @@
-"""Nastya News Engine 5.0 — AI-ONLY COMMENTS!
+"""Nastya News Engine 5.1 — AI-ONLY COMMENTS + SOCHIAUTOPARTS PRIMARY!
 
-v5.0 KEY CHANGES (v51):
+v5.1 KEY CHANGES:
+  - sochiautoparts.ru/rss.xml — PRIMARY auto news source!
+  - auto category = HIGHEST priority for Nastya's channel!
   - AI-GENERATED Nastya commentary for news — ALWAYS AI, NO templates!
   - Each news item gets a unique, personality-rich comment from AI
   - NO MORE template-based fallbacks — AI only! If AI fails, use generic comment
   - News sources: ТОЛЬКО русскоязычные! Англоязычные УБРАНЫ!
-  - Автомобильные новости: ТОЛЬКО sochiautoparts.ru/rss.xml!
   - AI commentary for channel posts is handled by channel.py
 
 Architecture:
@@ -16,7 +17,7 @@ Architecture:
   - Generic comment only when ALL AI providers fail (no more templates!)
   - Stores in DB + JSON file for channel posting + conversation context
   - Runs periodically as background task
-  - Picks interesting items by category priority (auto = highest!)
+  - Picks interesting items by category priority (auto = HIGHEST!)
 """
 
 import asyncio
@@ -122,8 +123,9 @@ def _parse_rss(xml_text: str, source_name: str, category: str = "general") -> Li
 # ── News Fetcher ────────────────────────────────────────────
 
 # Category priority for picking interesting news (higher = more interesting for Nastya)
-# v44: auto = HIGHEST priority (sochiautoparts.ru — the bot's niche!)
+# v53: auto = HIGHEST priority (sochiautoparts.ru — PRIMARY source!)
 CATEGORY_PRIORITY = {
+    "auto": 10,           # 🚗 sochiautoparts.ru — ОСНОВНОЙ источник!
     "food": 7,            # Рецепты и еда — Настя любит готовить!
     "events": 6,          # Мероприятия — Настя хочет везде!
     "lifestyle": 5,       # Стиль и красота — Настина тема!
@@ -135,7 +137,6 @@ CATEGORY_PRIORITY = {
     "science": 3,
     "world": 2,
     "general": 1,
-    "auto": 1,            # Авто — не приоритет, Настя не в автозапчастях
 }
 
 # Keywords that make news more interesting for Nastya
@@ -324,7 +325,7 @@ async def generate_ai_commentary(title: str, summary: str = "", category: str = 
     if ai_router:
         try:
             category_context = {
-                "auto": "Это автомобильная новость — Настя интересуется автомобилями и делится мнением.",
+                "auto": "Это автомобильная новость от СочиАвтоЗапчасти — Настя хорошо разбирается в автомобилях, запчастях и ремонте! Делись экспертным мнением.",
                 "tech": "Это технологическая новость — Настя интересуется гаджетами и технологиями.",
                 "science": "Это научная новость — Настя любит науку и удивительные факты.",
                 "gaming": "Это игровая новость — Настя играет в игры и следит за индустрией.",
