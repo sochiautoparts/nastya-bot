@@ -458,19 +458,13 @@ async def health_watchdog() -> None:
             await asyncio.sleep(_HEALTH_CHECK_INTERVAL)
 
             # ── Check 1: Model health (non-critical — Pollinations handles chat) ──
-            if ai_router and ai_router.provider:
-                model_ok = ai_router.provider.is_available()
-                if not model_ok:
-                    logger.warning("Model not available! Chat uses Pollinations fallback.")
-                    # Попробовать перезагрузить модель
-                    try:
-                        await ai_router.provider.init()
-                        if ai_router.provider.is_available():
-                            logger.info("Model reloaded successfully!")
-                        else:
-                            logger.warning("Model still down. Chat works via Pollinations.")
-                    except Exception as e:
-                        logger.error(f"Model reload attempt failed: {e}")
+            if ai_router and ai_router._pollinations:
+                try:
+                    model_ok = ai_router._pollinations.is_available()
+                    if not model_ok:
+                        logger.warning("Pollinations provider not available! Chat may be affected.")
+                except Exception:
+                    pass
 
             # ── Check 2: Telegram API health ──
             if bot:
@@ -513,7 +507,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 47.0 Starting (FIX LINKS + WRITE FROM SELF + MORE MODELS!) ===")
+    logger.info("=== Nastya Bot 48.0 Starting (FIX ALL + EXPANDED MODELS + LINK PROTECTION!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -561,7 +555,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 47.0 Ready (FIX LINKS + WRITE FROM SELF + MORE MODELS!) ===")
+    logger.info("=== Nastya Bot 48.0 Ready (FIX ALL + EXPANDED MODELS + LINK PROTECTION!) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

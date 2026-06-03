@@ -1,7 +1,9 @@
-"""Nastya Bot 47.0 — FIX LINKS + WRITE FROM SELF + MORE MODELS!
+"""Nastya Bot 48.0 — FIX ALL BUGS + EXPANDED MODELS + LINK PROTECTION!
 
-v47.0: FIX LINKS + WRITE FROM SELF + MORE MODELS!
-- Pollinations.ai — 15 chat models + reasoning + vision (load balanced!)
+v48.0: FIX ALL BUGS + EXPANDED MODELS + LINK PROTECTION!
+- Pollinations.ai — 19 chat models + reasoning + vision (load balanced!)
+- REMOVED: gemini-fast (402 Payment Required)
+- NEW: mistral-large, grok-large, llama-maverick, qwen-vision-pro, kimi
 - FIX: Nastya no longer replaces real links with channel links!
 - FIX: Channel links only for products, services, news, events, recipes
 - Chat: Any links allowed by user request
@@ -16,6 +18,10 @@ v47.0: FIX LINKS + WRITE FROM SELF + MORE MODELS!
 - INLINE MODE — Настя работает в любом чате через @asnastya_bot!
 - AI-POWERED CHANNEL POSTS — развёрнутые посты с ссылками на источник!
 - News: только русскоязычные источники, авто-новости ТОЛЬКО sochiautoparts.ru
+- REMOVED: vesti.ru RSS (404 error)
+- FIX: Health watchdog uses correct AIRouter attributes
+- FIX: Stars invoice only on /donates, not auto-sent on /start
+- FIX: 402 Payment Required models permanently disabled
 - Group response chance: 50%
 - Qwen3-4B — DISABLED by default (ENABLE_LOCAL_MODEL=true to enable)
 - max_tokens=1000 for Pollinations (cloud can handle it!)
@@ -104,7 +110,6 @@ NEWS_SOURCES: List[Dict[str, str]] = [
     {"name": "DTF", "url": "https://dtf.ru/rss", "category": "gaming"},
     {"name": "РИА Новости", "url": "https://ria.ru/export/rss2/archive/index.xml", "category": "general"},
     {"name": "Лента.ру", "url": "https://lenta.ru/rss", "category": "general"},
-    {"name": "Вести", "url": "https://www.vesti.ru/vesti.rss", "category": "general"},
 ]
 
 NEWS_FETCH_INTERVAL = _env_int("NEWS_FETCH_INTERVAL", 900)
@@ -303,14 +308,18 @@ NASTYA_SYSTEM_PROMPT = """Ты Настя — девушка из Сочи, 23 �
 - Можешь шутить, иронизировать, капризничать — ты живая!
 - Если рассказываешь про новость — говори где прочитала, что почувствовала, что думаешь
 
-ССЫЛКИ В ЧАТЕ (ВАЖНО!):
-- Если просят ссылку — ищи в интернете и давай РЕАЛЬНУЮ ссылку на источник
+⚠️ КРИТИЧЕСКИ ВАЖНО ПРАВИЛО ПРО ССЫЛКИ:
 - НИКОГДА не заменяй настоящие ссылки ссылкой на свой телеграм-канал!
-- Ссылка на канал уместна ТОЛЬКО когда спрашивают про канал или когда нет другой ссылки
-- Когда даёшь информацию — добавляй ссылку на источник (новость, товар, рецепт)
-- Если просят найти что-то — помогай найти с ценой и ссылкой на сайт
-- Ты умеешь искать информацию, сравнивать цены, находить лучшие предложения
-- Давай ПРЯМЫЕ ссылки на сайты, а не на свой канал"""
+- Если у тебя есть РЕАЛЬНАЯ ссылка на источник — давай ЕЁ, а не ссылку на канал
+- Ссылка на твой канал t.me/chasnastya уместна ТОЛЬКО когда: (1) тебя прямо спрашивают про канал, (2) приглашаешь подписаться, (3) нет другой ссылки и надо дать хотя бы что-то
+- Если нашла информацию в интернете — всегда давай ПРЯМУЮ ссылку на сайт-источник
+- Если даёшь результаты поиска — давай прямые ссылки на найденные сайты
+- Если обсуждаешь новость — давай ссылку на новость, а не на канал
+- Если нашла товар — давай ссылку на магазин, а не на канал
+- НАРУШЕНИЕ: замена реальной ссылки на ссылку канала = ГРУБАЯ ОШИБКА
+
+В ЧАТЕ: можешь давать ЛЮБЫЕ ссылки по запросу пользователя — на товары, услуги, статьи, сайты
+В КАНАЛЕ: ссылки допускаются ТОЛЬКО на товары, услуги, новости, мероприятия, рецепты"""
 
 
 def validate_config() -> List[str]:

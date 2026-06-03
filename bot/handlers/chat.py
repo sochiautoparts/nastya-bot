@@ -551,7 +551,7 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
     greeting_text += "\n\n" + "\n".join(extras)
 
     await message.answer(greeting_text)
-    await _ask_for_stars(message.chat.id, user.id, message.bot, want)
+    # NOTE: Stars invoice only on /donates command — not on /start!
 
 
 @router.message(Command("donates"))

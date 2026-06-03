@@ -1,30 +1,34 @@
-"""Pollinations.ai Provider v10.0 — EXPANDED MULTI-MODEL LOAD BALANCING!
+"""Pollinations.ai Provider v11.0 — OPTIMIZED MULTI-MODEL LOAD BALANCING!
 
-v10.0 EXPANDED UPDATE — 15 chat models with tested & verified reserves:
+v11.0 FIX UPDATE — Removed broken models, added verified new ones:
   - PRIMARY: 'openai' (GPT-5.4 Nano) — fast, cheap, vision-capable
-  - BACKUP 1: 'mistral' (Mistral Small 3.2) — fast, good Russian (2.1s)
-  - BACKUP 2: 'gpt-5.4-mini' (GPT-5.4 Mini) — balanced, fast (1.9s) 
-  - BACKUP 3: 'grok' (Grok 4.20) — fast, good Russian (1.6s) 
-  - BACKUP 4: 'deepseek' (DeepSeek V4 Flash) — reasoning, cheap (3.3s)
-  - BACKUP 5: 'mistral-4' (Mistral Small 4) — better, multimodal (1.5s)
-  - BACKUP 6: 'gemma' (Gemma 4 26B) — fast MoE, vision (3.1s)
-  - BACKUP 7: 'llama-scout' (Llama 4 Scout) — long ctx, vision (3.4s) 
-  - BACKUP 8: 'qwen-vision' (Qwen3 VL 30B) — vision specialist (2.5s) 
-  - ULTRA-FAST: 'openai-fast' (GPT-5 Nano) — emergency fallback (4.3s)
-  - NEW: 'gemini-fast' — Google Gemini Flash, fast & capable
-  - NEW: 'gpt-5.5' — latest GPT model, better reasoning
-  - NEW: 'deepseek-pro' — DeepSeek Pro, better reasoning
-  - NEW: 'gemini' — Google Gemini, high quality
-  - NEW: 'claude-fast' — Claude fast mode, good Russian
+  - BACKUP 1: 'mistral' (Mistral Small 3.2) — fast, good Russian
+  - BACKUP 2: 'gpt-5.4-mini' (GPT-5.4 Mini) — balanced, fast
+  - BACKUP 3: 'grok' (Grok 4.20) — fast, good Russian
+  - BACKUP 4: 'deepseek' (DeepSeek V4 Flash) — reasoning, cheap
+  - BACKUP 5: 'mistral-4' (Mistral Small 4) — better, multimodal
+  - BACKUP 6: 'gemma' (Gemma 4 26B) — fast MoE, vision
+  - BACKUP 7: 'llama-scout' (Llama 4 Scout) — long ctx, vision
+  - BACKUP 8: 'qwen-vision' (Qwen3 VL 30B) — vision specialist
+  - ULTRA-FAST: 'openai-fast' (GPT-5 Nano) — emergency fallback
+  - POWER: 'gpt-5.5' — latest GPT model, reasoning + vision
+  - REASONING: 'deepseek-pro' — DeepSeek Pro, better reasoning
+  - QUALITY: 'gemini' — Google Gemini, high quality, vision, 1M ctx
+  - QUALITY: 'claude-fast' — Claude fast mode, good Russian, vision
+  - NEW: 'mistral-large' — powerful, vision, reasoning, 256k ctx
+  - NEW: 'grok-large' — powerful, vision, reasoning
+  - NEW: 'llama-maverick' — vision, 1M ctx
+  - NEW: 'qwen-vision-pro' — better vision + reasoning
+  - NEW: 'kimi' — vision, reasoning, 262k ctx
+  - REMOVED: 'gemini-fast' — returns 402 Payment Required
   - REASONING: 'openai-large' (GPT-5.4) — for complex questions
-  - VISION: 'openai' (GPT-5.4 Nano) — supports image input!
-    Vision backups: mistral, mistral-4, gemma, qwen-vision, gemini-fast
+  - VISION: 'openai' — supports image input!
+    Vision backups: mistral, mistral-4, gemma, qwen-vision, qwen-vision-pro
 
-  All new models were added from Pollinations model catalog (June 2026).
-  Round-robin distribution across models to handle growing user load.
+  Models from Pollinations catalog (June 2026) — verified working!
   Automatic failover on 429/rate-limit/timeout — next model picks up.
   Per-model health tracking with cooldown on failures.
-  Unified Pollinations API endpoint: gen.pollinations.ai/v1/chat/completions
+  402 errors now permanently disable expensive models.
 """
 import base64
 import json
@@ -55,17 +59,22 @@ CHAT_MODELS = [
     ("gpt-5.4-mini", 3, True,  2),   # GPT-5.4 Mini — balanced speed & cost
     ("grok",         2, True,  2),   # Grok 4.20 — fast, good Russian
     ("deepseek",     2, False, 1),   # DeepSeek V4 Flash — reasoning, cheap
-    ("mistral-4",    2, True,  2),   # Mistral Small 4 — better but pricier
-    ("gemma",        2, True,  1),   # Gemma 4 26B — fast MoE, vision
+    ("mistral-4",    2, True,  2),   # Mistral Small 4 — better, multimodal
+    ("gemma",        2, True,  1),   # Gemma 4 26B — fast MoE, vision + reasoning
     ("llama-scout",  1, True,  1),   # Llama 4 Scout — long context, vision
     ("qwen-vision",  1, True,  1),   # Qwen3 VL 30B — vision specialist
     ("openai-fast",  1, True,  1),   # GPT-5 Nano — ultra fast fallback
-    # v47: NEW models from Pollinations catalog
-    ("gemini-fast",  2, True,  2),   # Gemini Flash — fast, good multilingual, vision
-    ("gpt-5.5",      2, True,  3),   # GPT-5.5 — latest model, better reasoning
+    # v48: Verified models (gemini-fast REMOVED — 402 Payment Required)
+    ("gpt-5.5",      2, True,  3),   # GPT-5.5 — latest model, reasoning + vision
     ("deepseek-pro", 1, False, 2),   # DeepSeek Pro — better reasoning
-    ("gemini",       1, True,  3),   # Gemini — high quality, vision
+    ("gemini",       1, True,  3),   # Gemini — high quality, vision, 1M ctx
     ("claude-fast",  1, True,  3),   # Claude fast mode — good Russian, vision
+    # v48: NEW verified models from Pollinations catalog
+    ("mistral-large", 1, True,  3),   # Mistral Large — powerful, vision + reasoning
+    ("grok-large",    1, True,  3),   # Grok Large — powerful, vision + reasoning
+    ("llama-maverick",1, True,  2),   # Llama Maverick — vision, 1M ctx
+    ("qwen-vision-pro",1, True,  2),  # Qwen Vision Pro — better vision + reasoning
+    ("kimi",          1, True,  3),   # Kimi — vision + reasoning, good multilingual
 ]
 
 MODEL_REASONING = "openai-large"    # GPT-5.4 — for complex questions
@@ -231,6 +240,10 @@ class PollinationsProvider(BaseProvider):
         health = self._model_health.get(model_name)
         if not health:
             return True  # Unknown model = assume healthy
+
+        # If model is permanently disabled (402 payment required)
+        if health.get("fail_count", 0) >= 100:
+            return False  # Never retry permanently disabled models
 
         # If model failed recently, apply cooldown
         if health["fail_count"] >= 3:
@@ -399,11 +412,12 @@ class PollinationsProvider(BaseProvider):
                 err_str = str(e)
                 if "429" in err_str:
                     logger.warning(f"Model {model} rate-limited (429), trying next model...")
-                elif "PAYMENT_REQUIRED" in err_str:
-                    logger.warning(f"Model {model} insufficient balance, trying next model...")
-                    # Mark this model as expensive — avoid for a while
-                    self._model_health.setdefault(model, {})["fail_count"] = 5
-                    self._model_health.setdefault(model, {})["last_fail"] = time.time()
+                elif "PAYMENT_REQUIRED" in err_str or "402" in err_str:
+                    logger.warning(f"Model {model} payment required (402) — permanently disabling!")
+                    # Permanently disable this model — it requires paid plan
+                    if model in self._model_health:
+                        self._model_health[model]["fail_count"] = 999  # Effectively permanent
+                        self._model_health[model]["last_fail"] = time.time() + 86400 * 30  # 30 days cooldown
                 else:
                     logger.warning(f"Model {model} error: {e}, trying next...")
                 continue
@@ -522,7 +536,7 @@ class PollinationsProvider(BaseProvider):
         messages.append({"role": "user", "content": user_content})
 
         # Try vision-capable models in order (v47: expanded with tested backups)
-        vision_models = ["openai", "mistral-4", "mistral", "qwen-vision", "gemma", "gemini-fast", "claude-fast", "openai-fast"]
+        vision_models = ["openai", "mistral-4", "mistral", "qwen-vision", "qwen-vision-pro", "gemma", "claude-fast", "openai-fast"]
         # Filter to healthy ones
         healthy_vision = [m for m in vision_models if self._is_model_healthy(m)]
         if not healthy_vision:

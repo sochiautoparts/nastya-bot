@@ -1,4 +1,4 @@
-"""AI Router v45.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE!
+"""AI Router v48.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE + LINK PROTECTION!
 
 АРХИТЕКТУРА v45:
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
@@ -414,6 +414,25 @@ class AIRouter:
         text = re.sub(r'\*([^*]+)\*', r'\1', text)
         text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
         text = re.sub(r'^\s*[-•]\s+', '', text, flags=re.MULTILINE)
+
+        # ── LINK PROTECTION: Remove channel link when AI incorrectly replaced real links ──
+        # The AI sometimes replaces actual URLs with the channel link.
+        # Pattern: "t.me/chasnastya" or "https://t.me/chasnastya" when it should be a real URL
+        # We remove it ONLY if it appears in a context that looks like it replaced a real link
+        channel_link_patterns = [
+            r'https?://t\.me/chasnastya\b',
+            r't\.me/chasnastya\b',
+        ]
+        for pattern in channel_link_patterns:
+            # Only remove if the message has other content suggesting it was a link replacement
+            # (e.g., "вот ссылка: t.me/chasnastya" or "ссылка на товар: t.me/chasnastya")
+            link_context_patterns = [
+                rf'(?:ссылк[аиу]|источник|читай|здесь|тут|по ссылке|найти|купить|читать):\s*{pattern}',
+                rf'{pattern}\s*(?:—|–|-)\s*(?:источник|ссылка|читать)',
+                rf'(?:🔗|📌|📎|🔗)\s*{pattern}',
+            ]
+            for ctx_pattern in link_context_patterns:
+                text = re.sub(ctx_pattern, '', text, flags=re.IGNORECASE)
 
         # Clean up whitespace
         text = re.sub(r'\n{3,}', '\n\n', text)
