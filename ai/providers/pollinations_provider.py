@@ -85,6 +85,11 @@ CHAT_MODELS = [
     ("qwen-vision",   1, True,  2),   # Qwen3 VL — vision specialist
     ("llama",         1, False, 1),   # Llama 3.3 70B — strong reasoning
     ("grok",          1, True,  2),   # Grok — vision, good Russian (was 500, working now)
+    # v56: NEW tested and verified models!
+    ("qwen-coder",    1, False, 1),   # Qwen3 Coder 30B — code + reasoning, good for technical
+    ("openai-large",  1, True,  4),   # GPT-5.4 — reasoning model for complex questions
+    ("kimi",          1, True,  2),   # Kimi — latest, good multilingual (was timeout, working now)
+    ("perplexity-deep",1, False, 2),  # Perplexity Deep — deep web search + reasoning
     # REMOVED v55: grok-large (500 Internal Server Error)
     # REMOVED v55: grok-4.3 (timeout issues)
     # REMOVED v55: gemini (402 Payment Required)
@@ -555,7 +560,8 @@ class PollinationsProvider(BaseProvider):
         # Try vision-capable models in order (v55: expanded with tested backups)
         vision_models = ["openai", "mistral-4", "mistral", "qwen-vision-pro", "qwen-vision",
                         "gemma", "openai-fast", "kimi-k2.6", "nova", "nova-fast",
-                        "mistral-small", "polly", "llama-scout", "grok"]
+                        "mistral-small", "polly", "llama-scout", "grok",
+                        "openai-large", "kimi"]
         # Filter to healthy ones
         healthy_vision = [m for m in vision_models if self._is_model_healthy(m)]
         if not healthy_vision:
