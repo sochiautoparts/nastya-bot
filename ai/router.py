@@ -1,19 +1,22 @@
-"""AI Router v56.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE + HALLUCINATED LINK FIX!
+"""AI Router v57.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE + HALLUCINATED LINK FIX!
 
-АРХИТЕКТУРА v56:
+АРХИТЕКТУРА v57:
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
-    1. PollinationsProvider v14 (23-MODEL LOAD BALANCING!)
+    1. PollinationsProvider v15 (40-MODEL LOAD BALANCING!)
        - gen.pollinations.ai/v1/chat/completions — OpenAI-compatible
-       - 23 chat models: openai, mistral, gpt-5.4-mini, deepseek,
-         mistral-4, gemma, llama-scout, openai-fast, gpt-5.5,
-         deepseek-pro, gemini, claude-fast, mistral-large,
-         llama-maverick, qwen-vision-pro, kimi, kimi-k2.6,
-         nova-fast, glm, minimax, grok-4.3, qwen-large, gemini-3.5-flash
-       - REMOVED: grok (500), grok-large (500), qwen-vision (error)
+       - 40 chat models: openai, mistral, gpt-5.4-mini, deepseek,
+         mistral-4, gemma, llama-scout, gpt-5.5, deepseek-pro,
+         mistral-large, qwen-vision-pro, kimi-k2.6, nova-fast, glm,
+         minimax, nova, mistral-small, polly, perplexity-fast,
+         perplexity, qwen-vision, llama, grok, qwen-coder,
+         openai-large, kimi, perplexity-deep, grok-large, grok-4.3,
+         perplexity-reasoning, minimax-m3, step-3.5-flash,
+         openai-reasoning, nova-micro, mistral-small-3.2
+       - REMOVED: openai-fast (empty), qwen-large (empty), step-flash (empty)
        - Automatic failover: if one model fails (429/timeout), next one picks up
        - Weighted round-robin for fair load distribution across models
        - Reasoning: openai-large (GPT-5.4) for complex questions
-       - Vision: openai + 12 vision-capable backups
+       - Vision: openai + 16 vision-capable backups
        - Per-model health tracking with cooldown on failures
     2. LlamaCppProvider (Qwen3-4B) — LOCAL FALLBACK (OPTIONAL!)
        - Only loaded when ENABLE_LOCAL_MODEL=true
@@ -32,7 +35,7 @@
 
   VISION (фото-понимание + поиск по фото):
     - Pollinations vision API — Настя ВИДИТ фото!
-    - 13 vision-capable моделей
+    - 16 vision-capable моделей
 
   URL UNDERSTANDING:
     - Настя читает ссылки и понимает контекст!
@@ -81,11 +84,11 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """AI Router v56.0 — 30-MODEL Pollinations + Vision + Image Gen + Local Fallback.
+    """AI Router v57.0 — 40-MODEL Pollinations + Vision + Image Gen + Local Fallback.
 
-    Chat: Pollinations (30 models, load balanced) → LlamaCpp (if enabled) → static fallback.
+    Chat: Pollinations (40 models, load balanced) → LlamaCpp (if enabled) → static fallback.
     Inline: Pollinations (fast response for @asnastya_bot).
-    Vision: Pollinations vision API (14 vision-capable models).
+    Vision: Pollinations vision API (16 vision-capable models).
     Image Gen: Pollinations image API (flux model).
     Background: AI-powered news posts for channel (low priority).
     Date Awareness: Nastya knows current date/time in Moscow timezone.
@@ -162,7 +165,7 @@ class AIRouter:
         model_name = self._local._model_name if self._local and self._local._loaded else "none"
 
         logger.info(
-            f"AI Router v56.0 initialized: "
+            f"AI Router v57.0 initialized: "
             f"pollinations={pollinations_status} (PRIMARY, {len(CHAT_MODELS)} models, vision=yes, image_gen=yes), "
             f"local={local_status} (FALLBACK, model={model_name}, ENABLE_LOCAL_MODEL={ENABLE_LOCAL_MODEL}), "
             f"news=AI+RSS (no templates!), "

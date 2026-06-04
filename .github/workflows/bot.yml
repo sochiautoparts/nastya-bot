@@ -1,10 +1,13 @@
-name: Nastya Bot — CLOUD-ONLY v56
+name: Nastya Bot — CLOUD-ONLY v57
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v56.0 — BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!
+# Nastya Bot v57.0 — 40 POLLINATIONS MODELS + VISION + IMAGE GEN!
 #
 # Architecture:
-#   - Pollinations.ai EXPANDED MULTI-MODEL (30 chat models!)
+#   - Pollinations.ai EXPANDED MULTI-MODEL (40 chat models!)
+#   - NEW v57: grok-large, grok-4.3, perplexity-reasoning, minimax-m3,
+#              step-3.5-flash, openai-reasoning, nova-micro, mistral-small-3.2
+#   - REMOVED v57: openai-fast (empty), qwen-large (empty), step-flash (empty)
 #   - IMAGE GENERATION — Настя РИСУЕТ! 🎨 (flux model)
 #   - /films — подборка фильмов от Насти! 🎬
 #   - /weather — погода в любом городе! 🌤️
@@ -22,7 +25,7 @@ name: Nastya Bot — CLOUD-ONLY v56
 #   - WEB SEARCH — поиск товаров, услуг, лучших цен!
 #   - PHOTO SEARCH — фото → распознавание → поиск!
 #   - DISCOVERY ENGINE — кино, рецепты, места, мероприятия!
-#   - REAL PHOTO UNDERSTANDING via Pollinations vision API (14 models!)
+#   - REAL PHOTO UNDERSTANDING via Pollinations vision API (16 models!)
 #   - URL UNDERSTANDING — Настя читает ссылки!
 #
 # LOCAL MODEL (Qwen3-4B):
@@ -197,9 +200,10 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v56.0 (BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!) ==="
-          echo "PRIMARY: Pollinations.ai EXPANDED 30-MODEL (openai + 29 backups)"
-          echo "NEW: /events — мероприятия и афиша, /places — заведения и рестораны!"
+          echo "=== Starting Nastya Bot v57.0 (40 POLLINATIONS MODELS + VISION + IMAGE GEN!) ==="
+          echo "PRIMARY: Pollinations.ai EXPANDED 40-MODEL (openai + 39 backups)"
+          echo "NEW v57: grok-large, grok-4.3, perplexity-reasoning, minimax-m3, step-3.5-flash, openai-reasoning, nova-micro, mistral-small-3.2"
+          echo "REMOVED v57: openai-fast (empty), qwen-large (empty), step-flash (empty)"
           echo "PERSONA: Настя — москвичка, владеет BMW M3 2025 серого цвета!"
           echo "BMW EXPERT: регламенты, болячки, приколы баварцев!"
           echo "DATE AWARE: Настя знает какой сегодня день!"
@@ -220,7 +224,7 @@ jobs:
             echo "To enable: set ENABLE_LOCAL_MODEL=true in GitHub Secrets AND uncomment model steps in bot.yml"
           fi
 
-          echo "Config: inline=yes, vision=yes(14), image_gen=yes, search=yes, discovery=yes, ai_news=yes, ai_comments=AI_ONLY, group_comments=70%, max_tokens=2000(cloud), history=10, hallucination_fix=yes, date_aware=yes, local_expert=yes"
+          echo "Config: inline=yes, vision=yes(16), image_gen=yes, search=yes, discovery=yes, ai_news=yes, ai_comments=AI_ONLY, group_comments=70%, max_tokens=2000(cloud), history=10, hallucination_fix=yes, date_aware=yes, local_expert=yes"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!

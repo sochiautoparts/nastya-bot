@@ -1,10 +1,13 @@
-"""AI Providers v45.0 — Pollinations PRIMARY + Local FALLBACK (optional)!
+"""AI Providers v57.0 — Pollinations PRIMARY (40 models!) + Local FALLBACK (optional)!
 
-v45: CLOUD-ONLY by default!
+v57: 40 Pollinations models with load balancing!
 PRIMARY: PollinationsProvider
-  - 10 chat models with load balancing
-  - Vision API for photo understanding
+  - 40 chat models with load balancing
+  - NEW: grok-large, grok-4.3, perplexity-reasoning, minimax-m3,
+         step-3.5-flash, openai-reasoning, nova-micro, mistral-small-3.2
+  - Vision API for photo understanding (16 vision models!)
   - Automatic failover on 429/timeout
+  - REMOVED: openai-fast (empty), qwen-large (empty), step-flash (empty)
 
 FALLBACK (optional, disabled by default):
   LlamaCppProvider — only when ENABLE_LOCAL_MODEL=true

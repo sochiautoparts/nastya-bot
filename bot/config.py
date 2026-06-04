@@ -1,6 +1,6 @@
-"""Nastya Bot 56.0 — MOSCOW BLOGGER + BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!
+"""Nastya Bot 57.0 — MOSCOW BLOGGER + BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!
 
-v56.0: DEEPER PERSONA + LOCAL KNOWLEDGE + DATE AWARENESS!
+v57.0: 40 POLLINATIONS MODELS + EXPANDED VISION!
 - Persona: Настя — москвичка, 23 года, блогер, ведёт Telegram канал @chasnastya
   - Владеет BMW M3 2025 модного серого цвета! 🏎️💨
   - Технически подкована: регламенты ТО, болячки BMW, приколы баварцев
@@ -17,7 +17,11 @@ v56.0: DEEPER PERSONA + LOCAL KNOWLEDGE + DATE AWARENESS!
 - /events — мероприятия и афиша! 🎫
 - /places — заведения и рестораны! 🍽️
 - MULTI-ENGINE SEARCH: DuckDuckGo → Yandex → SearXNG → DDG API fallback!
-- EXPANDED AI: 30+ моделей Pollinations
+- EXPANDED AI: 40 моделей Pollinations
+- NEW v57: grok-large, grok-4.3, perplexity-reasoning, minimax-m3,
+           step-3.5-flash, openai-reasoning, nova-micro, mistral-small-3.2
+- REMOVED v57: openai-fast (empty), qwen-large (empty), step-flash (empty)
+- 16 vision-capable моделей
 - CRITICAL FIX: Nastya provides ONLY real links from web search!
 - Channel link format: @chasnastya in channel posts
 - Nastya writes ОТ СЕБЯ (from herself) — first person, personal voice

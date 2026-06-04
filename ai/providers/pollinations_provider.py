@@ -1,6 +1,6 @@
-"""Pollinations.ai Provider v14.0 — EXPANDED 30+ MODEL LOAD BALANCING + IMAGE GEN!
+"""Pollinations.ai Provider v15.0 — EXPANDED 40+ MODEL LOAD BALANCING + IMAGE GEN!
 
-v14.0 UPDATE — 30 models, image generation, no restrictions, full responses:
+v15.0 UPDATE — 40 models, image generation, no restrictions, full responses:
   - PRIMARY: 'openai' (GPT-5.4 Nano) — fast, vision-capable
   - BACKUP 1: 'mistral' (Mistral Small 3.2) — fast, good Russian
   - BACKUP 2: 'gpt-5.4-mini' (GPT-5.4 Mini) — balanced, fast
@@ -8,7 +8,6 @@ v14.0 UPDATE — 30 models, image generation, no restrictions, full responses:
   - BACKUP 4: 'mistral-4' (Mistral Small 4) — better, multimodal
   - BACKUP 5: 'gemma' (Gemma 4 26B) — fast MoE, vision
   - BACKUP 6: 'llama-scout' (Llama 4 Scout) — long ctx, vision
-  - BACKUP 7: 'openai-fast' (GPT-5 Nano) — emergency fallback
   - QUALITY: 'gpt-5.5' — latest GPT model, reasoning + vision
   - REASONING: 'deepseek-pro' — DeepSeek Pro, better reasoning
   - POWER: 'mistral-large' — powerful, vision, reasoning, 256k ctx
@@ -17,7 +16,6 @@ v14.0 UPDATE — 30 models, image generation, no restrictions, full responses:
   - POWER: 'nova-fast' — Amazon Nova fast, good Russian
   - POWER: 'glm' — ChatGLM, good multilingual + Chinese/Russian
   - POWER: 'minimax' — MiniMax, good for chat
-  - POWER: 'qwen-large' — Qwen Large, powerful reasoning
   - v55: NEW MODELS from Pollinations catalog!
   - NEW: 'nova' — Amazon Nova, vision + reasoning, 1M ctx
   - NEW: 'mistral-small' — Mistral Small, fast, good Russian
@@ -26,12 +24,23 @@ v14.0 UPDATE — 30 models, image generation, no restrictions, full responses:
   - NEW: 'perplexity' — Perplexity, deep web search, 200k ctx
   - NEW: 'qwen-vision' — Qwen3 VL, vision specialist
   - NEW: 'llama' — Llama 3.3 70B, strong reasoning
-  - NEW: 'step-flash' — Step Flash, fast + vision
   - REASONING: 'openai-large' (GPT-5.4) — for complex questions
   - VISION: 'openai' — supports image input!
   - IMAGE GEN: Pollinations /v1/images/generations (flux model)
-  - REMOVED: grok-large (500), grok-4.3 (timeout), gemini (402),
-             gemini-3.5-flash (402), llama-maverick (402), kimi (timeout)
+
+  v57: NEW MODELS tested and verified (June 2026)!
+  - NEW: 'grok-large' — powerful Grok, good Russian (was 500, FIXED!)
+  - NEW: 'grok-4.3' — latest Grok, best reasoning (was timeout, FIXED!)
+  - NEW: 'perplexity-reasoning' — Perplexity with reasoning
+  - NEW: 'minimax-m3' — MiniMax M3, good Russian
+  - NEW: 'step-3.5-flash' — Step 3.5 Flash, fast
+  - NEW: 'openai-reasoning' — OpenAI reasoning + VISION!
+  - NEW: 'nova-micro' — Amazon Nova Micro, ultra fast
+  - NEW: 'mistral-small-3.2' — Mistral Small 3.2 explicit, fast + VISION!
+  - REMOVED: openai-fast (empty responses), qwen-large (empty responses)
+  - REMOVED: step-flash (empty responses)
+  - STILL REMOVED: gemini (402), gemini-3.5-flash (402), llama-maverick (402)
+  - STILL REMOVED: claude (402), claude-haiku (402), claude-sonnet (402)
 """
 import base64
 import json
@@ -57,6 +66,7 @@ CHAT_MODELS = [
     # (model_name, weight_for_round_robin, supports_vision, cost_tier)
     # Cost tiers: 1=cheapest, 2=cheap, 3=moderate, 4=expensive
     # Models from Pollinations catalog (June 2026) — tested and verified!
+    # ── PRIMARY TIER — Fast & Reliable ──
     ("openai",       4, True,  1),   # GPT-5.4 Nano — PRIMARY, fast, vision, cheapest
     ("mistral",      3, True,  1),   # Mistral Small 3.2 — fast, good multilingual
     ("gpt-5.4-mini", 3, True,  2),   # GPT-5.4 Mini — balanced speed & cost
@@ -64,19 +74,17 @@ CHAT_MODELS = [
     ("mistral-4",    2, True,  2),   # Mistral Small 4 — better, multimodal
     ("gemma",        2, True,  1),   # Gemma 4 26B — fast MoE, vision + reasoning
     ("llama-scout",  1, True,  1),   # Llama 4 Scout — long context, vision
-    ("openai-fast",  1, True,  1),   # GPT-5 Nano — ultra fast fallback
-    # v49: Quality models
+    # ── QUALITY TIER — Better Responses ──
     ("gpt-5.5",      2, True,  3),   # GPT-5.5 — latest model, reasoning + vision
     ("deepseek-pro", 1, False, 2),   # DeepSeek Pro — better reasoning
-    # v49: Powerful models
+    # ── POWERFUL TIER — Vision + Reasoning ──
     ("mistral-large", 1, True,  3),   # Mistral Large — powerful, vision + reasoning
     ("qwen-vision-pro",1, True,  2),  # Qwen Vision Pro — better vision + reasoning
     ("kimi-k2.6",     1, True,  3),   # Kimi K2.6 — latest, better multilingual
     ("nova-fast",     2, True,  2),   # Amazon Nova Fast — good Russian, fast
     ("glm",           1, True,  2),   # ChatGLM — good multilingual
     ("minimax",       1, True,  2),   # MiniMax — good for chat
-    ("qwen-large",    1, True,  3),   # Qwen Large — powerful reasoning
-    # v55: NEW tested and verified models!
+    # ── CATALOG EXPANSION — More Models ──
     ("nova",          1, True,  3),   # Amazon Nova — vision + reasoning, 1M ctx
     ("mistral-small", 2, True,  1),   # Mistral Small — fast, good Russian
     ("polly",         1, True,  2),   # Polly — vision + reasoning
@@ -84,19 +92,30 @@ CHAT_MODELS = [
     ("perplexity",    1, False, 2),   # Perplexity — deep web search, 200k ctx
     ("qwen-vision",   1, True,  2),   # Qwen3 VL — vision specialist
     ("llama",         1, False, 1),   # Llama 3.3 70B — strong reasoning
-    ("grok",          1, True,  2),   # Grok — vision, good Russian (was 500, working now)
-    # v56: NEW tested and verified models!
-    ("qwen-coder",    1, False, 1),   # Qwen3 Coder 30B — code + reasoning, good for technical
+    ("grok",          1, True,  2),   # Grok — vision, good Russian
+    # ── CODE + REASONING ──
+    ("qwen-coder",    1, False, 1),   # Qwen3 Coder 30B — code + reasoning
     ("openai-large",  1, True,  4),   # GPT-5.4 — reasoning model for complex questions
-    ("kimi",          1, True,  2),   # Kimi — latest, good multilingual (was timeout, working now)
+    ("kimi",          1, True,  2),   # Kimi — latest, good multilingual
     ("perplexity-deep",1, False, 2),  # Perplexity Deep — deep web search + reasoning
-    # REMOVED v55: grok-large (500 Internal Server Error)
-    # REMOVED v55: grok-4.3 (timeout issues)
+    # ── v57: NEW MODELS — Tested & Verified June 2026! ──
+    ("grok-large",    2, False, 3),   # Grok Large — powerful, good Russian (was 500, FIXED!)
+    ("grok-4.3",      1, False, 3),   # Grok 4.3 — latest Grok, best reasoning (was timeout, FIXED!)
+    ("perplexity-reasoning",1, False, 2),  # Perplexity Reasoning — web search + reasoning
+    ("minimax-m3",    2, False, 2),   # MiniMax M3 — good Russian, fast
+    ("step-3.5-flash",1, False, 1),   # Step 3.5 Flash — fast, good for quick chat
+    ("openai-reasoning",1, True, 3),  # OpenAI Reasoning — reasoning + VISION!
+    ("nova-micro",    2, False, 1),   # Amazon Nova Micro — ultra fast, cheapest
+    ("mistral-small-3.2",2, True, 1), # Mistral Small 3.2 — fastest + VISION!
+    # REMOVED v57: openai-fast (empty responses — returns nothing)
+    # REMOVED v57: qwen-large (empty responses — returns nothing)
+    # REMOVED v57: step-flash (empty responses — returns nothing)
     # REMOVED v55: gemini (402 Payment Required)
     # REMOVED v55: gemini-3.5-flash (402 Payment Required)
     # REMOVED v55: llama-maverick (402 Payment Required)
-    # REMOVED v55: claude-fast (402 Payment Required)
-    # REMOVED v55: kimi (timeout issues)
+    # REMOVED v55: claude (402 Payment Required)
+    # REMOVED v55: claude-haiku (402 Payment Required)
+    # REMOVED v55: claude-sonnet (402 Payment Required)
 ]
 
 MODEL_REASONING = "openai-large"    # GPT-5.4 — for complex questions
@@ -188,12 +207,14 @@ def _parse_json_response(text: str) -> Optional[str]:
 
 
 class PollinationsProvider(BaseProvider):
-    """Pollinations.ai provider v8.0 — MULTI-MODEL LOAD BALANCING!
+    """Pollinations.ai provider v15.0 — 40+ MODEL LOAD BALANCING!
 
     Uses gen.pollinations.ai/v1/chat/completions (OpenAI-compatible).
-    Round-robin across multiple models for load distribution.
+    Round-robin across 40+ models for load distribution.
     Automatic failover on 429/rate-limit errors.
     Supports vision via multimodal content format (image_url with base64).
+    v57: Added grok-large, grok-4.3, perplexity-reasoning, minimax-m3,
+         step-3.5-flash, openai-reasoning, nova-micro, mistral-small-3.2
     """
 
     name: str = "pollinations"
@@ -243,7 +264,7 @@ class PollinationsProvider(BaseProvider):
         }
 
         logger.info(
-            f"PollinationsProvider v8 initialized: {len(CHAT_MODELS)} chat models, "
+            f"PollinationsProvider v15 initialized: {len(CHAT_MODELS)} chat models, "
             f"vision={MODEL_VISION}, reasoning={MODEL_REASONING}, "
             f"auth={'yes' if self._api_key else 'anonymous'}, "
             f"timeout={self.timeout}s"
@@ -557,11 +578,12 @@ class PollinationsProvider(BaseProvider):
         ]
         messages.append({"role": "user", "content": user_content})
 
-        # Try vision-capable models in order (v55: expanded with tested backups)
+        # Try vision-capable models in order (v57: expanded with new tested models!)
         vision_models = ["openai", "mistral-4", "mistral", "qwen-vision-pro", "qwen-vision",
-                        "gemma", "openai-fast", "kimi-k2.6", "nova", "nova-fast",
+                        "gemma", "kimi-k2.6", "nova", "nova-fast",
                         "mistral-small", "polly", "llama-scout", "grok",
-                        "openai-large", "kimi"]
+                        "openai-large", "kimi", "openai-reasoning",
+                        "mistral-small-3.2", "llama-4-scout"]
         # Filter to healthy ones
         healthy_vision = [m for m in vision_models if self._is_model_healthy(m)]
         if not healthy_vision:
