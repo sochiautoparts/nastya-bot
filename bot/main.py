@@ -1,7 +1,10 @@
-"""Nastya Bot 55.0 — MOSCOW BLOGGER + BMW FAN + FILM BUFF + IMAGE GEN + EXPANDED AI!
+"""Nastya Bot 56.0 — MOSCOW BLOGGER + BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!
 
-Architecture v55.0:
-  - PERSONA: Настя — москвичка, 23 года, блогер, фанат BMW, киноманка!
+Architecture v56.0:
+  - PERSONA: Настя — москвичка, 23 года, блогер, владеет BMW M3 2025 серого цвета!
+  - BMW EXPERT: регламенты, болячки, приколы — Настя знает ВСЁ про баварцев!
+  - DATE AWARE: Настя знает какой сегодня день и учитывает актуальность!
+  - LOCAL EXPERT: Москва, Питер, Сочи, Красная Поляна — заведения, мероприятия!
   - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (30 моделей, балансировка нагрузки!)
   - INLINE MODE: Настя работает в любом чате через @asnastya_bot!
   - VISION: Pollinations vision API — Настя ВИДИТ фото! 14 vision-моделей
@@ -10,8 +13,10 @@ Architecture v55.0:
   - /find — поиск товаров, услуг, лучших цен — ВСЕГДА находит!
   - /films — подборка фильмов от Насти! 🎬
   - /weather — погода в любом городе! 🌤️
+  - /events — мероприятия и афиша! 🎫
+  - /places — заведения и рестораны! 🍽️
   - /image — Настя нарисует что хочешь! 🎨
-  - DISCOVERY: Авто-посты + кино-подборки + рецепты + нумерология + астрология!
+  - DISCOVERY: Авто-посты + кино-подборки + рецепты + места + мероприятия!
   - URL: Настя понимает ссылки!
   - PHOTO SEARCH: фото → распознавание → поиск товаров/цен!
   - Новости: 22+ RSS-источника + AI-комментарии (AI ONLY!)
@@ -504,7 +509,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 55.0 Starting (MOSCOW BLOGGER + BMW FAN + FILM BUFF + IMAGE GEN!) ===")
+    logger.info("=== Nastya Bot 56.0 Starting (BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -552,7 +557,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 55.0 Ready (MOSCOW BLOGGER + BMW FAN + FILM BUFF + IMAGE GEN!) ===")
+    logger.info("=== Nastya Bot 56.0 Ready (BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

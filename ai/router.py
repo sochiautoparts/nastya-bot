@@ -1,6 +1,6 @@
-"""AI Router v54.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE + HALLUCINATED LINK FIX!
+"""AI Router v56.0 — CLOUD-ONLY POLLINATIONS + LOCAL FALLBACK (optional) + VISION + INLINE + HALLUCINATED LINK FIX!
 
-АРХИТЕКТУРА v54:
+АРХИТЕКТУРА v56:
   ЧАТ (пользовательские сообщения — ПРИОРИТЕТ):
     1. PollinationsProvider v14 (23-MODEL LOAD BALANCING!)
        - gen.pollinations.ai/v1/chat/completions — OpenAI-compatible
@@ -81,13 +81,15 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """AI Router v55.0 — 30-MODEL Pollinations + Vision + Image Gen + Local Fallback.
+    """AI Router v56.0 — 30-MODEL Pollinations + Vision + Image Gen + Local Fallback.
 
     Chat: Pollinations (30 models, load balanced) → LlamaCpp (if enabled) → static fallback.
     Inline: Pollinations (fast response for @asnastya_bot).
     Vision: Pollinations vision API (14 vision-capable models).
     Image Gen: Pollinations image API (flux model).
     Background: AI-powered news posts for channel (low priority).
+    Date Awareness: Nastya knows current date/time in Moscow timezone.
+    Local Expert: Moscow, SPb, Sochi, Krasnaya Polyana venues and events.
     """
 
     def __init__(self, db=None):
@@ -160,7 +162,7 @@ class AIRouter:
         model_name = self._local._model_name if self._local and self._local._loaded else "none"
 
         logger.info(
-            f"AI Router v55.0 initialized: "
+            f"AI Router v56.0 initialized: "
             f"pollinations={pollinations_status} (PRIMARY, {len(CHAT_MODELS)} models, vision=yes, image_gen=yes), "
             f"local={local_status} (FALLBACK, model={model_name}, ENABLE_LOCAL_MODEL={ENABLE_LOCAL_MODEL}), "
             f"news=AI+RSS (no templates!), "

@@ -1,23 +1,27 @@
-name: Nastya Bot — CLOUD-ONLY v55
+name: Nastya Bot — CLOUD-ONLY v56
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v55.0 — BMW FAN + FILM BUFF + IMAGE GEN + 30 MODELS!
+# Nastya Bot v56.0 — BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!
 #
 # Architecture:
 #   - Pollinations.ai EXPANDED MULTI-MODEL (30 chat models!)
 #   - IMAGE GENERATION — Настя РИСУЕТ! 🎨 (flux model)
 #   - /films — подборка фильмов от Насти! 🎬
 #   - /weather — погода в любом городе! 🌤️
+#   - /events — мероприятия и афиша! 🎫
+#   - /places — заведения и рестораны! 🍽️
 #   - /image — Настя нарисует что хочешь! 🎨
-#   - Persona: Настя — москвичка, фанат BMW, киноманка!
-#   - BMW fan + film buff + lively conversation
+#   - Persona: Настя — москвичка, владеет BMW M3 2025 серого цвета!
+#   - BMW expert: регламенты, болячки, приколы баварцев
+#   - DATE AWARE: Настя знает какой сегодня день!
+#   - LOCAL EXPERT: Москва, Питер, Сочи, Красная Поляна
 #   - AI-GENERATED news commentary — ALWAYS AI, NO templates!
 #   - Group commenting: 70% response, active participation
 #   - max_tokens=2000 — full detailed responses, no limits!
 #   - INLINE MODE — Настя работает в любом чате!
 #   - WEB SEARCH — поиск товаров, услуг, лучших цен!
 #   - PHOTO SEARCH — фото → распознавание → поиск!
-#   - DISCOVERY ENGINE — кино, рецепты, нумерология, астрология!
+#   - DISCOVERY ENGINE — кино, рецепты, места, мероприятия!
 #   - REAL PHOTO UNDERSTANDING via Pollinations vision API (14 models!)
 #   - URL UNDERSTANDING — Настя читает ссылки!
 #
@@ -164,7 +168,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v55
+          key: nastya-db-v56
           restore-keys: |
             nastya-db-
 
@@ -193,22 +197,20 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v55.0 (BMW FAN + FILM BUFF + IMAGE GEN + 30 MODELS!) ==="
+          echo "=== Starting Nastya Bot v56.0 (BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!) ==="
           echo "PRIMARY: Pollinations.ai EXPANDED 30-MODEL (openai + 29 backups)"
-          echo "NEW: /films — подборка фильмов, /weather — погода, /image — рисование!"
-          echo "NEW: nova, mistral-small, perplexity, polly, qwen-vision, llama, grok"
-          echo "PERSONA: Настя — москвичка, фанат BMW, киноманка!"
+          echo "NEW: /events — мероприятия и афиша, /places — заведения и рестораны!"
+          echo "PERSONA: Настя — москвичка, владеет BMW M3 2025 серого цвета!"
+          echo "BMW EXPERT: регламенты, болячки, приколы баварцев!"
+          echo "DATE AWARE: Настя знает какой сегодня день!"
+          echo "LOCAL EXPERT: Москва, Питер, Сочи, Красная Поляна!"
           echo "IMAGE GEN: Pollinations flux model — Настя рисует!"
           echo "AI: News commentary AI-generated ONLY (no more templates!)"
           echo "FIX: Real product links from search, fake URLs detected and removed"
           echo "GROUP: 70% response, active commenting!"
           echo "INLINE: @asnastya_bot works in any chat!"
           echo "SEARCH: /find — товары и лучшие цены! /search — поиск информации!"
-          echo "DISCOVERY: кино-подборки, рецепты, нумерология, астрология, мероприятия!"
-          echo "REMOVED: grok-large (500), gemini (402), gemini-3.5-flash (402)"
-          echo "REMOVED: llama-maverick (402), claude-fast (402), kimi (timeout)"
-          echo "REASONING: Pollinations.ai (openai-large / GPT-5.4)"
-          echo "NO LIMITS: max_tokens=2000, full detailed responses!"
+          echo "DISCOVERY: кино-подборки, рецепты, места, мероприятия, нумерология!"
 
           if [ "${ENABLE_LOCAL_MODEL}" = "true" ]; then
             echo "LOCAL FALLBACK: ENABLED — but model steps are commented out in workflow!"
@@ -218,7 +220,7 @@ jobs:
             echo "To enable: set ENABLE_LOCAL_MODEL=true in GitHub Secrets AND uncomment model steps in bot.yml"
           fi
 
-          echo "Config: inline=yes, vision=yes(14), image_gen=yes, search=yes, discovery=yes, ai_news=yes, ai_comments=AI_ONLY, group_comments=70%, max_tokens=2000(cloud), history=10, hallucination_fix=yes"
+          echo "Config: inline=yes, vision=yes(14), image_gen=yes, search=yes, discovery=yes, ai_news=yes, ai_comments=AI_ONLY, group_comments=70%, max_tokens=2000(cloud), history=10, hallucination_fix=yes, date_aware=yes, local_expert=yes"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -259,7 +261,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v55-${{ github.run_id }}
+          key: nastya-db-v56-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation

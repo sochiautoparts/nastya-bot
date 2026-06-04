@@ -584,6 +584,8 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
     extras.append("🔮 /horoscope — гороскоп на сегодня")
     extras.append("🔢 /numerology — число судьбы")
     extras.append("🌤️ /weather — погода в любом городе")
+    extras.append("🎫 /events — мероприятия и афиша")
+    extras.append("🍽️ /places — заведения и рестораны")
     extras.append("🎨 /image — Настя нарисует что хочешь!")
     if CHANNEL_USERNAME:
         extras.append(f"📺 Мой канал: t.me/{CHANNEL_USERNAME.replace('@', '')}")
@@ -1014,6 +1016,129 @@ async def cmd_weather(message: Message, db=None, ai_router=None) -> None:
         await message.answer(f"🌤️ Погода в {query}: {search_context[:300]}")
     else:
         await message.answer(f"Ой, Настя не узнала погоду в {query}... Попробуй позже! 🌤️😔")
+
+
+# ── /events — Events and activities! ──
+
+@router.message(Command("events"))
+async def cmd_events(message: Message, db=None, ai_router=None) -> None:
+    """Find events and activities in a city — Nastya knows what's happening!"""
+    query = message.text.replace("/events", "").strip()
+    if not query:
+        query = random.choice(["Москва", "Санкт-Петербург", "Сочи"])
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    await message.answer(f"Настя ищет мероприятия в {query}! 🎫✨")
+
+    # Search for current events
+    _now = _moscow_now()
+    _date_str = _now.strftime("%d.%m.%Y")
+    results = await search_web(f"афиша мероприятия {query} {_date_str} концерты выставки", num_results=5)
+
+    search_context = ""
+    if results:
+        for r in results[:3]:
+            title = r.get("title", "")
+            snippet = r.get("snippet", "")
+            url = r.get("url", "")
+            search_context += f"\n- {title}: {snippet[:150]}"
+            if url:
+                search_context += f" [{url}]"
+
+    if ai_router:
+        try:
+            city_context = {
+                "Москва": "Ты из Москвы, знаешь все площадки — Крокус Сити, Лужники, Красный Октябрь, Флакон, Севкабель, ГЭС-2, ВДНХ, Зарядье, Московский Кремль.",
+                "Санкт-Петербург": "Ты знаешь Питер — Севкабель Порт, Новая Голландия, Ледовый, Мариинский, БКЗ Октябрьский.",
+                "Сочи": "Ты знаешь Сочи — Олимпийский парк, Сириус, Красная Поляна, Жемчужина, Фестивальный.",
+                "Красная Поляна": "Красная Поляна — Rosa Khutor, Gazprom, горные мероприятия, après-ski.",
+            }.get(query, f"Ты знаешь {query} — основные площадки и заведения.")
+
+            result = await ai_router.chat(
+                prompt=f"Найди интересные мероприятия в {query} на сегодня {_date_str}. {'Вот что нашла:' + search_context if search_context else 'Поищи по своим знаниям.'}",
+                system_prompt=(
+                    f"Ты Настя — москвичка, 23 года, блогер, знаешь афишу и мероприятия. "
+                    f"{city_context} "
+                    f"Сегодня {_date_str}. Напиши 4-6 конкретных мероприятий с датами, местами и описаниями. "
+                    f"Пиши ОТ СЕБЯ — 'я хочу пойти', 'прикинь, кто выступает'. "
+                    f"Живо, эмоционально, с конкретными датами и местами. "
+                    f"Без markdown, без буллетов — сплошной текст. "
+                    f"Если есть ссылки — добавляй!"
+                ),
+                max_tokens=500,
+            )
+            if result and result.text:
+                from ai.router import AIRouter
+                cleaned = AIRouter.clean_ai_response(result.text)
+                if cleaned:
+                    response = f"🎫 Мероприятия в {query}:\n\n{cleaned}"
+                    await message.answer(response)
+                    if db:
+                        await _save_simple_exchange(message, f"/events {query}", cleaned[:200], db)
+                    return
+        except Exception as e:
+            logger.error(f"Events command error: {e}")
+
+    await message.answer(f"Ой, Настя не нашла мероприятия в {query}... Попробуй позже! 🎫😔")
+
+
+# ── /places — Restaurants and venues! ──
+
+@router.message(Command("places"))
+async def cmd_places(message: Message, db=None, ai_router=None) -> None:
+    """Find restaurants and venues in a city — Nastya knows the best spots!"""
+    query = message.text.replace("/places", "").strip()
+    if not query:
+        query = random.choice(["Москва", "Санкт-Петербург", "Сочи"])
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+
+    results = await search_web(f"лучшие рестораны {query} 2025 отзывы рекомендации", num_results=5)
+
+    search_context = ""
+    if results:
+        for r in results[:3]:
+            title = r.get("title", "")
+            snippet = r.get("snippet", "")
+            url = r.get("url", "")
+            search_context += f"\n- {title}: {snippet[:150]}"
+            if url:
+                search_context += f" [{url}]"
+
+    if ai_router:
+        try:
+            city_context = {
+                "Москва": "Ты из Москвы, знаешь рестораны: White Rabbit, Twins Garden, Bjorn, Dr. Живаго, LavkaLavka, glu, Северяне, СибирьСибирь. Рестораторы: Новиков, Гинзбург, White Rabbit Family.",
+                "Санкт-Петербург": "Ты знаешь Питер: EM, Harvest, Joli, Cococo, Гастрономика, Манго Танго. Бары: Сердце, El Copitas SPb.",
+                "Сочи": "Ты знаешь Сочи: Бугенвиль, Санторини, Мадам Суши, рестораны на набережной, Красная Поляна.",
+            }.get(query, f"Ты знаешь {query} — основные заведения.")
+
+            result = await ai_router.chat(
+                prompt=f"Посоветуй рестораны и заведения в {query}. {'Вот что нашла:' + search_context if search_context else ''}",
+                system_prompt=(
+                    f"Ты Настя — москвичка, 23 года, блогер, разбираешься в ресторанах и заведениях. "
+                    f"{city_context} "
+                    f"Посоветуй 4-6 конкретных мест с описанием кухни, атмосферы и примерными ценами. "
+                    f"Пиши ОТ СЕБЯ — 'я была', 'мне нравится', 'прикинь, какой вид'. "
+                    f"Живо, эмоционально, с конкретными деталями. "
+                    f"Без markdown, без буллетов — сплошной текст. "
+                    f"Если есть ссылки — добавляй!"
+                ),
+                max_tokens=500,
+            )
+            if result and result.text:
+                from ai.router import AIRouter
+                cleaned = AIRouter.clean_ai_response(result.text)
+                if cleaned:
+                    response = f"🍽️ Заведения в {query} от Насти:\n\n{cleaned}"
+                    await message.answer(response)
+                    if db:
+                        await _save_simple_exchange(message, f"/places {query}", cleaned[:200], db)
+                    return
+        except Exception as e:
+            logger.error(f"Places command error: {e}")
+
+    await message.answer(f"Ой, Настя не нашла заведения в {query}... Попробуй позже! 🍽️😔")
 
 
 # ── /image — Generate image with Pollinations! ──
@@ -1645,7 +1770,14 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         user_context += " Вопрос про политику — переведи тему!"
 
     # Build system prompt
-    system_prompt = NASTYA_SYSTEM_PROMPT + f" Настроение: {mood}. Время: {time_mood}."
+    # v56: Date/time awareness — Настя знает какой сегодня день!
+    _now = _moscow_now()
+    _date_str = _now.strftime("%d.%m.%Y")
+    _day_name = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"][_now.weekday()]
+    _time_str = _now.strftime("%H:%M")
+    _month_name = ["", "января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"][_now.month]
+    _date_context = f" Сегодня {_day_name}, {_now.day} {_month_name} {_now.year} года, время {_time_str} МСК. Учитывай это — не пиши про старые новости как свежие."
+    system_prompt = NASTYA_SYSTEM_PROMPT + f" Настроение: {mood}. Время: {time_mood}.{_date_context}"
     system_prompt += f" {user_context}"
     if extra_context:
         system_prompt += f" {extra_context}"

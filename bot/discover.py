@@ -98,6 +98,18 @@ DISCOVERY_TOPICS = [
      "post_type": "events", "weight": 1},
     {"query": "бесплатные мероприятия выходные Россия", "category": "events",
      "post_type": "events", "weight": 1},
+    # Events — city-specific (v56)
+    {"query": "мероприятия Сочи Красная Поляна афиша 2025", "category": "events",
+     "post_type": "events", "weight": 2},
+    {"query": "афиша Москва сегодня концерт выставка", "category": "events",
+     "post_type": "events", "weight": 2},
+    # Places & Restaurants (v56)
+    {"query": "лучшие рестораны Москва 2025 обзор", "category": "places",
+     "post_type": "places", "weight": 2},
+    {"query": "рестораны Сочи Краснодарский край рекомендации", "category": "places",
+     "post_type": "places", "weight": 1},
+    {"query": "модные бары коктейльные Москва Питер", "category": "places",
+     "post_type": "places", "weight": 1},
     # Lifestyle & Beauty
     {"query": "тренды моды 2025 одежда аксессуары", "category": "lifestyle",
      "post_type": "lifestyle", "weight": 2},
@@ -193,6 +205,10 @@ CATEGORY_TEMPLATES = {
         "🛍️ Настя нашла скидки!\n\n{content}\n\nБеги пока есть! 💅✨",
         "Распродажа! Настя уже смотрит!\n\n{content}\n\nНадо брать! 🛒💅",
     ],
+    "places": [
+        "🍽️ Настя рекомендует!\n\n{content}\n\nНастя знает вкус! 💅✨",
+        "Заведения от Насти!\n\n{content}\n\nПрикинь, какие места! 🍽️✨",
+    ],
 }
 
 
@@ -244,6 +260,7 @@ async def discover_content(ai_router) -> Optional[Dict]:
                 "lifestyle": "Поделись советами по стилю, красоте или здоровью. Конкретные рекомендации. 5-8 предложений. Без markdown.",
                 "facts": "Расскажи интересный факт подробно и увлекательно. Добавь своё мнение. 5-8 предложений. Без markdown.",
                 "deals": "Расскажи про выгодные покупки и скидки. Где купить, сколько стоит. 5-8 предложений. Без markdown.",
+                "places": "Расскажи про рестораны и заведения. Конкретные названия, кухня, атмосфера, цены. Настя разбирается в ресторанах Москвы, Питера, Сочи! Знает рестораторов: Новиков, Гинзбург, White Rabbit Family. 5-8 предложений. Без markdown.",
             }
 
             category_prompt = category_prompts.get(category, "Напиши интересный развёрнутый пост. 5-8 предложений. Без markdown.")
@@ -327,6 +344,7 @@ async def post_discovery_to_channel(bot: Bot, db, ai_router, discovery: Dict) ->
         "facts": "#ФактДня #Интересно",
         "deals": "#Скидки #Покупки",
         "films": "#Кино #Подборка #НастяРекомендует",
+        "places": "#Рестораны #Заведения #НастяРекомендует",
     }
     hashtags = category_hashtags.get(category, "#Интересно")
     post_text += f"\n{hashtags}"
