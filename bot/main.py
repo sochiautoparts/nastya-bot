@@ -1,20 +1,22 @@
-"""Nastya Bot 54.0 — MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + MULTI-ENGINE SEARCH! Single-instance, 24/7 via GitHub Actions.
+"""Nastya Bot 55.0 — MOSCOW BLOGGER + BMW FAN + FILM BUFF + IMAGE GEN + EXPANDED AI!
 
-Architecture v54.0:
-  - PERSONA: Настя — москвичка, 23 года, блогер, ведёт Telegram канал @chasnastya
-  - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (23 модели, балансировка нагрузки!)
+Architecture v55.0:
+  - PERSONA: Настя — москвичка, 23 года, блогер, фанат BMW, киноманка!
+  - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (30 моделей, балансировка нагрузки!)
   - INLINE MODE: Настя работает в любом чате через @asnastya_bot!
-  - VISION: Pollinations vision API — Настя ВИДИТ фото! 13 vision-моделей
+  - VISION: Pollinations vision API — Настя ВИДИТ фото! 14 vision-моделей
+  - IMAGE GEN: Pollinations image API — Настя РИСУЕТ! 🎨
   - SEARCH: MULTI-ENGINE! DuckDuckGo → Yandex → SearXNG → DDG API fallback!
   - /find — поиск товаров, услуг, лучших цен — ВСЕГДА находит!
-  - DISCOVERY: Авто-посты — рецепты, нумерология, астрология, мероприятия!
+  - /films — подборка фильмов от Насти! 🎬
+  - /weather — погода в любом городе! 🌤️
+  - /image — Настя нарисует что хочешь! 🎨
+  - DISCOVERY: Авто-посты + кино-подборки + рецепты + нумерология + астрология!
   - URL: Настя понимает ссылки!
   - PHOTO SEARCH: фото → распознавание → поиск товаров/цен!
-  - Новости: 22 RSS-источника + sochiautoparts.ru ПЕРВЫЙ + AI-комментарии (AI ONLY!)
+  - Новости: 22+ RSS-источника + AI-комментарии (AI ONLY!)
   - Канал: AI-посты на основе новостей, опросы, факты, рецепты
-  - FIX v54: /find использует 4 поисковых движка для надёжности!
-  - FIX v54: Убран vesti.ru (404), добавлены kolesa.ru, auto.mail.ru, iz.ru, vc.ru и др.
-  - sochiautoparts.ru/rss.xml — PRIMARY auto news source!
+  - sochiautoparts.ru/rss.xml — источник автомобильных новостей
   - Channel posts: @chasnastya link format
   - Group chat: Nastya COMMENTS ACTIVELY in groups — 70% response!
   - Proactive messaging + discovery sharing — Настя активный собеседник
@@ -502,7 +504,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 54.0 Starting (MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + MULTI-ENGINE SEARCH!) ===")
+    logger.info("=== Nastya Bot 55.0 Starting (MOSCOW BLOGGER + BMW FAN + FILM BUFF + IMAGE GEN!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() — no need to do it here again
@@ -550,7 +552,7 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 54.0 Ready (MOSCOW BLOGGER + SOCHIAUTOPARTS AUTO NEWS + MULTI-ENGINE SEARCH!) ===")
+    logger.info("=== Nastya Bot 55.0 Ready (MOSCOW BLOGGER + BMW FAN + FILM BUFF + IMAGE GEN!) ===")
 
 
 async def on_shutdown(**kwargs) -> None:

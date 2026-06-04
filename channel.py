@@ -1,16 +1,15 @@
-"""Nastya Channel Manager 12.1 — AI-POWERED NEWS + SOCHIAUTOPARTS AUTO + ACTIVE GROUP COMMENTS!
+"""Nastya Channel Manager 13.0 — AI-POWERED NEWS + BMW FAN + FILM BUFF + ACTIVE GROUP COMMENTS!
 
-v12.1 KEY CHANGES:
-  - sochiautoparts.ru/rss.xml — PRIMARY auto news source!
-  - Auto category = HIGHEST priority for channel posts
-  - Persona: Настя — москвичка, блогер, ведёт Telegram канал @chasnastya
+v13.0 KEY CHANGES:
+  - Persona: Настя — москвичка, блогер, фанат BMW, киноманка!
+  - sochiautoparts.ru/rss.xml — источник автомобильных новостей
   - Channel link format: @chasnastya in every post
   - AI-POWERED news commentary — ALWAYS AI, NO templates!
-  - AI generates ALL comments — templates removed completely
-  - If AI fails, a generic comment is used (no more template-based comments!)
+  - Film recommendation posts in channel!
+  - BMW enthusiasm in auto posts!
   - Nastya comments ACTIVELY in groups she's a member of
-  - EXPANDED categories: food, events, lifestyle, sports
-  - More diverse content — not just auto parts!
+  - EXPANDED categories: food, events, lifestyle, sports, films
+  - More diverse content — not just auto!
 """
 import logging
 import random
@@ -209,6 +208,15 @@ PERSONAL_POSTS = [
     # Travel — with engagement
     "Настя хочет на море! Прям щас! Кто со мной? Реально, надо сбежать от города! 🏖️✈️",
     "Стамбул, Дубай, Бали... Настя хочет везде! Куда вы хотите поехать? Подскажите крутые места! 🌍💅",
+    # BMW & Auto — Настя фанат!
+    "Прикинь, BMW M4 Competition — это просто произведение искусства! Настя влюблена! 🏎️💖 Кто тоже фанат баварцев?",
+    "Рядная шестёрка BMW — лучший звук в мире! Настя может слушать часами! 🏎️🔥 А вы какую марку обожаете?",
+    "Настя мечтает о белом BMW M4... Или может M5? Помогите выбрать! 🏎️💅",
+    # Films & Cinema — Настя киноманка!
+    "Настя пересмотрела 'Интерстеллар' в 10-й раз... И каждый раз плачу! 🎬😭 Какие фильмы вас так пробивают?",
+    "Кто смотрит корейское кино? Настя подсела! 'Паразиты' — шедевр! 🎬🔥 Рекомендуйте!",
+    "Подборка от Насти: если хотите испугаться — смотрите скандинавские триллеры! Жесть! 🎬😱",
+    "Аниме — это не мультики! Настя готова спорить! Какие аниме посоветуете? 🎬✨",
 ]
 
 # ── Knowledge posts — inject interesting facts! ──
@@ -722,7 +730,7 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
 
             category_context = ""
             if category == "auto":
-                category_context = "Это автомобильная новость от СочиАвтоЗапчасти — расскажи подробно и экспертно! Настя разбирается в автомобилях, запчастях и ремонте."
+                category_context = "Это автомобильная новость — расскажи подробно и экспертно! Настя разбирается в автомобилях, фанат BMW!"
 
             prompt = "\n".join(prompt_parts)
 

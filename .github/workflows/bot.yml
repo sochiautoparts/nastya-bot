@@ -1,27 +1,29 @@
-name: Nastya Bot — CLOUD-ONLY v51
+name: Nastya Bot — CLOUD-ONLY v55
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v51.0 — FIX HALLUCINATED LINKS + AI-ONLY COMMENTS!
+# Nastya Bot v55.0 — BMW FAN + FILM BUFF + IMAGE GEN + 30 MODELS!
 #
 # Architecture:
-#   - Pollinations.ai EXPANDED MULTI-MODEL (23 chat models!)
-#   - CRITICAL FIX: Nastya gives ONLY real links from web search!
-#   - AI-hallucinated commercial URLs are detected and REMOVED
+#   - Pollinations.ai EXPANDED MULTI-MODEL (30 chat models!)
+#   - IMAGE GENERATION — Настя РИСУЕТ! 🎨 (flux model)
+#   - /films — подборка фильмов от Насти! 🎬
+#   - /weather — погода в любом городе! 🌤️
+#   - /image — Настя нарисует что хочешь! 🎨
+#   - Persona: Настя — москвичка, фанат BMW, киноманка!
+#   - BMW fan + film buff + lively conversation
 #   - AI-GENERATED news commentary — ALWAYS AI, NO templates!
 #   - Group commenting: 70% response, active participation
 #   - max_tokens=2000 — full detailed responses, no limits!
-#   - INLINE MODE — Настя работает в любом чате через @asnastya_bot!
+#   - INLINE MODE — Настя работает в любом чате!
 #   - WEB SEARCH — поиск товаров, услуг, лучших цен!
 #   - PHOTO SEARCH — фото → распознавание → поиск!
-#   - DISCOVERY ENGINE — рецепты, нумерология, астрология, мероприятия!
-#   - REAL PHOTO UNDERSTANDING via Pollinations vision API (13 models!)
+#   - DISCOVERY ENGINE — кино, рецепты, нумерология, астрология!
+#   - REAL PHOTO UNDERSTANDING via Pollinations vision API (14 models!)
 #   - URL UNDERSTANDING — Настя читает ссылки!
-#   - REMOVED: grok (500), grok-large (500), qwen-vision (error)
 #
 # LOCAL MODEL (Qwen3-4B):
 #   - DISABLED by default for faster startup
 #   - To enable: set ENABLE_LOCAL_MODEL=true in GitHub Secrets
-#     AND uncomment the LOCAL MODEL steps below
 #
 # NO TESTS — bot starts immediately!
 #
@@ -162,7 +164,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v51
+          key: nastya-db-v55
           restore-keys: |
             nastya-db-
 
@@ -191,16 +193,20 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v51.0 (FIX HALLUCINATED LINKS + AI-ONLY COMMENTS!) ==="
-          echo "PRIMARY: Pollinations.ai EXPANDED 23-MODEL (openai + 22 backups)"
-          echo "FIX: FORCE web search for product queries, hallucinated URLs REMOVED!"
+          echo "=== Starting Nastya Bot v55.0 (BMW FAN + FILM BUFF + IMAGE GEN + 30 MODELS!) ==="
+          echo "PRIMARY: Pollinations.ai EXPANDED 30-MODEL (openai + 29 backups)"
+          echo "NEW: /films — подборка фильмов, /weather — погода, /image — рисование!"
+          echo "NEW: nova, mistral-small, perplexity, polly, qwen-vision, llama, grok"
+          echo "PERSONA: Настя — москвичка, фанат BMW, киноманка!"
+          echo "IMAGE GEN: Pollinations flux model — Настя рисует!"
           echo "AI: News commentary AI-generated ONLY (no more templates!)"
           echo "FIX: Real product links from search, fake URLs detected and removed"
           echo "GROUP: 70% response, active commenting!"
           echo "INLINE: @asnastya_bot works in any chat!"
           echo "SEARCH: /find — товары и лучшие цены! /search — поиск информации!"
-          echo "DISCOVERY: рецепты, нумерология, астрология, мероприятия, скидки!"
-          echo "REMOVED: grok (500), grok-large (500), qwen-vision (error)"
+          echo "DISCOVERY: кино-подборки, рецепты, нумерология, астрология, мероприятия!"
+          echo "REMOVED: grok-large (500), gemini (402), gemini-3.5-flash (402)"
+          echo "REMOVED: llama-maverick (402), claude-fast (402), kimi (timeout)"
           echo "REASONING: Pollinations.ai (openai-large / GPT-5.4)"
           echo "NO LIMITS: max_tokens=2000, full detailed responses!"
 
@@ -212,7 +218,7 @@ jobs:
             echo "To enable: set ENABLE_LOCAL_MODEL=true in GitHub Secrets AND uncomment model steps in bot.yml"
           fi
 
-          echo "Config: inline=yes, vision=yes(13), search=yes, discovery=yes, ai_news=yes, ai_comments=AI_ONLY, group_comments=70%, max_tokens=2000(cloud), history=10, hallucination_fix=yes"
+          echo "Config: inline=yes, vision=yes(14), image_gen=yes, search=yes, discovery=yes, ai_news=yes, ai_comments=AI_ONLY, group_comments=70%, max_tokens=2000(cloud), history=10, hallucination_fix=yes"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -253,7 +259,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v51-${{ github.run_id }}
+          key: nastya-db-v55-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation

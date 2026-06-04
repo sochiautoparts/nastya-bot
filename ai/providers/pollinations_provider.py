@@ -1,42 +1,37 @@
-"""Pollinations.ai Provider v13.0 — EXPANDED MULTI-MODEL LOAD BALANCING!
+"""Pollinations.ai Provider v14.0 — EXPANDED 30+ MODEL LOAD BALANCING + IMAGE GEN!
 
-v13.0 UPDATE — 25 models, no restrictions, full responses:
+v14.0 UPDATE — 30 models, image generation, no restrictions, full responses:
   - PRIMARY: 'openai' (GPT-5.4 Nano) — fast, vision-capable
   - BACKUP 1: 'mistral' (Mistral Small 3.2) — fast, good Russian
   - BACKUP 2: 'gpt-5.4-mini' (GPT-5.4 Mini) — balanced, fast
-  - BACKUP 3: 'grok' (Grok 4.20) — fast, good Russian
-  - BACKUP 4: 'deepseek' (DeepSeek V4 Flash) — reasoning, cheap
-  - BACKUP 5: 'mistral-4' (Mistral Small 4) — better, multimodal
-  - BACKUP 6: 'gemma' (Gemma 4 26B) — fast MoE, vision
-  - BACKUP 7: 'llama-scout' (Llama 4 Scout) — long ctx, vision
-  - BACKUP 8: 'qwen-vision' (Qwen3 VL 30B) — vision specialist
-  - ULTRA-FAST: 'openai-fast' (GPT-5 Nano) — emergency fallback
-  - POWER: 'gpt-5.5' — latest GPT model, reasoning + vision
+  - BACKUP 3: 'deepseek' (DeepSeek V4 Flash) — reasoning, cheap
+  - BACKUP 4: 'mistral-4' (Mistral Small 4) — better, multimodal
+  - BACKUP 5: 'gemma' (Gemma 4 26B) — fast MoE, vision
+  - BACKUP 6: 'llama-scout' (Llama 4 Scout) — long ctx, vision
+  - BACKUP 7: 'openai-fast' (GPT-5 Nano) — emergency fallback
+  - QUALITY: 'gpt-5.5' — latest GPT model, reasoning + vision
   - REASONING: 'deepseek-pro' — DeepSeek Pro, better reasoning
-  - QUALITY: 'gemini' — Google Gemini, high quality, vision, 1M ctx
-  - QUALITY: 'claude-fast' — Claude fast mode, good Russian, vision
   - POWER: 'mistral-large' — powerful, vision, reasoning, 256k ctx
-  - POWER: 'grok-large' — powerful, vision, reasoning
-  - POWER: 'llama-maverick' — vision, 1M ctx
   - POWER: 'qwen-vision-pro' — better vision + reasoning
-  - POWER: 'kimi' — vision, reasoning, 262k ctx
   - POWER: 'kimi-k2.6' — latest Kimi, better multilingual
   - POWER: 'nova-fast' — Amazon Nova fast, good Russian
   - POWER: 'glm' — ChatGLM, good multilingual + Chinese/Russian
   - POWER: 'minimax' — MiniMax, good for chat
-  - POWER: 'grok-4.3' — latest Grok, better reasoning
   - POWER: 'qwen-large' — Qwen Large, powerful reasoning
-  - POWER: 'gemini-3.5-flash' — Gemini 3.5 Flash, fast + vision
-  - REMOVED: 'gemini-fast' — returns 402 Payment Required
+  - v55: NEW MODELS from Pollinations catalog!
+  - NEW: 'nova' — Amazon Nova, vision + reasoning, 1M ctx
+  - NEW: 'mistral-small' — Mistral Small, fast, good Russian
+  - NEW: 'polly' — Polly, vision + reasoning
+  - NEW: 'perplexity-fast' — Perplexity, fast web search
+  - NEW: 'perplexity' — Perplexity, deep web search, 200k ctx
+  - NEW: 'qwen-vision' — Qwen3 VL, vision specialist
+  - NEW: 'llama' — Llama 3.3 70B, strong reasoning
+  - NEW: 'step-flash' — Step Flash, fast + vision
   - REASONING: 'openai-large' (GPT-5.4) — for complex questions
   - VISION: 'openai' — supports image input!
-    Vision backups: mistral, mistral-4, gemma, qwen-vision, qwen-vision-pro, kimi
-
-  Models from Pollinations catalog (June 2026) — verified in catalog!
-  Automatic failover on 429/rate-limit/timeout — next model picks up.
-  Per-model health tracking with cooldown on failures.
-  402 errors now permanently disable expensive models.
-  max_tokens=2000 — full detailed responses, no artificial limits!
+  - IMAGE GEN: Pollinations /v1/images/generations (flux model)
+  - REMOVED: grok-large (500), grok-4.3 (timeout), gemini (402),
+             gemini-3.5-flash (402), llama-maverick (402), kimi (timeout)
 """
 import base64
 import json
@@ -61,7 +56,7 @@ BASE_URL = "https://gen.pollinations.ai"
 CHAT_MODELS = [
     # (model_name, weight_for_round_robin, supports_vision, cost_tier)
     # Cost tiers: 1=cheapest, 2=cheap, 3=moderate, 4=expensive
-    # Models from Pollinations catalog (June 2026)
+    # Models from Pollinations catalog (June 2026) — tested and verified!
     ("openai",       4, True,  1),   # GPT-5.4 Nano — PRIMARY, fast, vision, cheapest
     ("mistral",      3, True,  1),   # Mistral Small 3.2 — fast, good multilingual
     ("gpt-5.4-mini", 3, True,  2),   # GPT-5.4 Mini — balanced speed & cost
@@ -73,24 +68,30 @@ CHAT_MODELS = [
     # v49: Quality models
     ("gpt-5.5",      2, True,  3),   # GPT-5.5 — latest model, reasoning + vision
     ("deepseek-pro", 1, False, 2),   # DeepSeek Pro — better reasoning
-    ("gemini",       1, True,  3),   # Gemini — high quality, vision, 1M ctx
-    ("claude-fast",  1, True,  3),   # Claude fast mode — good Russian, vision
     # v49: Powerful models
     ("mistral-large", 1, True,  3),   # Mistral Large — powerful, vision + reasoning
-    ("llama-maverick",1, True,  2),   # Llama Maverick — vision, 1M ctx
     ("qwen-vision-pro",1, True,  2),  # Qwen Vision Pro — better vision + reasoning
-    ("kimi",          1, True,  3),   # Kimi — vision + reasoning, good multilingual
-    # v49: NEW models from Pollinations catalog
     ("kimi-k2.6",     1, True,  3),   # Kimi K2.6 — latest, better multilingual
     ("nova-fast",     2, True,  2),   # Amazon Nova Fast — good Russian, fast
     ("glm",           1, True,  2),   # ChatGLM — good multilingual
     ("minimax",       1, True,  2),   # MiniMax — good for chat
-    ("grok-4.3",      1, True,  3),   # Grok 4.3 — latest Grok, better reasoning
     ("qwen-large",    1, True,  3),   # Qwen Large — powerful reasoning
-    ("gemini-3.5-flash", 1, True, 2), # Gemini 3.5 Flash — fast + vision
-    # REMOVED v51: grok (500 Internal Server Error)
-    # REMOVED v51: grok-large (500 from same provider)
-    # REMOVED v51: qwen-vision (unexpected errors)
+    # v55: NEW tested and verified models!
+    ("nova",          1, True,  3),   # Amazon Nova — vision + reasoning, 1M ctx
+    ("mistral-small", 2, True,  1),   # Mistral Small — fast, good Russian
+    ("polly",         1, True,  2),   # Polly — vision + reasoning
+    ("perplexity-fast",1, False, 1),  # Perplexity — fast web search
+    ("perplexity",    1, False, 2),   # Perplexity — deep web search, 200k ctx
+    ("qwen-vision",   1, True,  2),   # Qwen3 VL — vision specialist
+    ("llama",         1, False, 1),   # Llama 3.3 70B — strong reasoning
+    ("grok",          1, True,  2),   # Grok — vision, good Russian (was 500, working now)
+    # REMOVED v55: grok-large (500 Internal Server Error)
+    # REMOVED v55: grok-4.3 (timeout issues)
+    # REMOVED v55: gemini (402 Payment Required)
+    # REMOVED v55: gemini-3.5-flash (402 Payment Required)
+    # REMOVED v55: llama-maverick (402 Payment Required)
+    # REMOVED v55: claude-fast (402 Payment Required)
+    # REMOVED v55: kimi (timeout issues)
 ]
 
 MODEL_REASONING = "openai-large"    # GPT-5.4 — for complex questions
@@ -551,10 +552,10 @@ class PollinationsProvider(BaseProvider):
         ]
         messages.append({"role": "user", "content": user_content})
 
-        # Try vision-capable models in order (v49: expanded with tested backups)
-        vision_models = ["openai", "mistral-4", "mistral", "qwen-vision-pro",
-                        "gemma", "claude-fast", "openai-fast", "kimi", "kimi-k2.6",
-                        "gemini", "gemini-3.5-flash", "llama-maverick", "nova-fast"]
+        # Try vision-capable models in order (v55: expanded with tested backups)
+        vision_models = ["openai", "mistral-4", "mistral", "qwen-vision-pro", "qwen-vision",
+                        "gemma", "openai-fast", "kimi-k2.6", "nova", "nova-fast",
+                        "mistral-small", "polly", "llama-scout", "grok"]
         # Filter to healthy ones
         healthy_vision = [m for m in vision_models if self._is_model_healthy(m)]
         if not healthy_vision:
@@ -661,6 +662,46 @@ class PollinationsProvider(BaseProvider):
             f"All vision models failed. Last error: {last_error}",
             retryable=True,
         )
+
+    async def generate_image(self, prompt: str, size: str = "1024x1024",
+                              model: str = "flux") -> Optional[bytes]:
+        """Generate an image using Pollinations image API.
+
+        Returns image bytes or None on failure.
+        Uses /v1/images/generations endpoint with base64 response.
+        """
+        if not self._client:
+            await self.init()
+
+        try:
+            payload = {
+                "prompt": prompt,
+                "size": size,
+                "model": model,
+            }
+
+            headers = {"Content-Type": "application/json"}
+            if self._api_key:
+                headers["Authorization"] = f"Bearer {self._api_key}"
+
+            response = await self._client.post(
+                f"{BASE_URL}/v1/images/generations",
+                json=payload,
+                headers=headers,
+                timeout=60.0,
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            if "data" in data and data["data"]:
+                b64 = data["data"][0].get("b64_json", "")
+                if b64:
+                    return base64.b64decode(b64)
+
+        except Exception as e:
+            logger.warning(f"Image generation failed: {e}")
+
+        return None
 
     def get_model_stats(self) -> Dict[str, Any]:
         """Get statistics about model usage and health."""

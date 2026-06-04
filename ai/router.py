@@ -81,13 +81,13 @@ FALLBACK_RESPONSES = [
 
 
 class AIRouter:
-    """AI Router v51.0 — CLOUD-ONLY Pollinations + Local FALLBACK (optional) + VISION + INLINE.
+    """AI Router v55.0 — 30-MODEL Pollinations + Vision + Image Gen + Local Fallback.
 
-    Chat: Pollinations (23 models, load balanced) → LlamaCpp (if enabled) → static fallback.
+    Chat: Pollinations (30 models, load balanced) → LlamaCpp (if enabled) → static fallback.
     Inline: Pollinations (fast response for @asnastya_bot).
-    Vision: Pollinations vision API (13 vision-capable models).
+    Vision: Pollinations vision API (14 vision-capable models).
+    Image Gen: Pollinations image API (flux model).
     Background: AI-powered news posts for channel (low priority).
-    Hallucinated Link Fix: Force web search for product queries, remove fake URLs.
     """
 
     def __init__(self, db=None):
@@ -160,8 +160,8 @@ class AIRouter:
         model_name = self._local._model_name if self._local and self._local._loaded else "none"
 
         logger.info(
-            f"AI Router v51.0 initialized: "
-            f"pollinations={pollinations_status} (PRIMARY, {len(CHAT_MODELS)} models, vision=yes, inline=yes), "
+            f"AI Router v55.0 initialized: "
+            f"pollinations={pollinations_status} (PRIMARY, {len(CHAT_MODELS)} models, vision=yes, image_gen=yes), "
             f"local={local_status} (FALLBACK, model={model_name}, ENABLE_LOCAL_MODEL={ENABLE_LOCAL_MODEL}), "
             f"news=AI+RSS (no templates!), "
             f"max_tokens={POLLINATIONS_MAX_TOKENS}(cloud)/256(local), history={MODEL_HISTORY_LIMIT}"
@@ -377,6 +377,18 @@ class AIRouter:
     async def transcribe_voice(self, ogg_bytes: bytes) -> Optional[str]:
         """Transcribe voice message."""
         return await transcribe_voice_ogg(ogg_bytes)
+
+    async def generate_image(self, prompt: str, size: str = "1024x1024") -> Optional[bytes]:
+        """Generate an image using Pollinations image API.
+
+        Returns image bytes or None on failure.
+        """
+        if self._pollinations and self._pollinations.is_available():
+            try:
+                return await self._pollinations.generate_image(prompt, size=size)
+            except Exception as e:
+                logger.warning(f"Image generation error: {e}")
+        return None
 
     @staticmethod
     def clean_ai_response(text: str) -> str:

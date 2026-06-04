@@ -579,9 +579,12 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
     extras = []
     extras.append("⭐ /donates — кинуть Насте звёздочки!")
     extras.append("🔍 /find — найти товар, лучшую цену!")
+    extras.append("🎬 /films — подборка фильмов от Насти!")
     extras.append("🍳 /recipe — рецепт от Насти!")
     extras.append("🔮 /horoscope — гороскоп на сегодня")
     extras.append("🔢 /numerology — число судьбы")
+    extras.append("🌤️ /weather — погода в любом городе")
+    extras.append("🎨 /image — Настя нарисует что хочешь!")
     if CHANNEL_USERNAME:
         extras.append(f"📺 Мой канал: t.me/{CHANNEL_USERNAME.replace('@', '')}")
 
@@ -882,6 +885,175 @@ async def cmd_numerology(message: Message, db=None, ai_router=None) -> None:
             pass
 
     await message.answer(f"🔢 Число судьбы: {number}\n\n{meaning}")
+
+
+# ── /films — Film recommendations from Nastya! ──
+
+FILM_GENRES = [
+    "триллер", "комедия", "драма", "фантастика", "ужасы",
+    "мелодрама", "детектив", "приключения", "аниме", "артхаус",
+    "корейское кино", "скандинавский триллер", "научная фантастика",
+]
+
+FILM_MOODS = [
+    "почтисть под пледом", "поплакать", "испугаться",
+    "посмеяться от души", "задуматься о жизни", "увидеть красивое",
+    "погрузиться в другой мир", "поразмышлять",
+]
+
+
+@router.message(Command("films"))
+async def cmd_films(message: Message, db=None, ai_router=None) -> None:
+    """Get film recommendations from Nastya — she's a cinephile!"""
+    query = message.text.replace("/films", "").strip()
+
+    if not ai_router:
+        await message.answer("Настя пока не может подобрать фильмы... Попробуй позже! 🎬💅")
+        return
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+
+    # If no genre specified, pick a random mood
+    if not query:
+        query = random.choice(FILM_MOODS)
+
+    # Search for film recommendations online
+    search_query = f"лучшие фильмы {query} 2024 2025 подборка рекомендации"
+    results = await search_web(search_query, num_results=3)
+
+    search_context = ""
+    if results:
+        for r in results[:2]:
+            title = r.get("title", "")
+            snippet = r.get("snippet", "")
+            url = r.get("url", "")
+            search_context += f"\n- {title}: {snippet[:150]}"
+            if url:
+                search_context += f" [{url}]"
+
+    try:
+        result = await ai_router.chat(
+            prompt=f"Подбери 5-7 фильмов для настроения '{query}'. {'Вот что нашла в интернете:' + search_context if search_context else ''}",
+            system_prompt=(
+                "Ты Настя — москвичка, 23 года, блогер, КИНОМАНКА. "
+                "Ты смотришь всё: от артхауса до блокбастеров. Знаешь режиссёров, актёров, тренды. "
+                "Подбери фильмы С КОНКРЕТНЫМИ названиями, годами и коротким описанием почему стоит смотреть. "
+                "Пиши ОТ СЕБЯ — 'я смотрела', 'мне понравилось', 'прикинь, какой фильм'. "
+                "Живо, эмоционально, как подруга-киноманка. "
+                "Без markdown, без буллетов — сплошной текст с номерами. "
+                "Если есть ссылки на Кинопоиск или другие ресурсы — добавляй!"
+            ),
+            max_tokens=600,
+        )
+        if result and result.text:
+            from ai.router import AIRouter
+            cleaned = AIRouter.clean_ai_response(result.text)
+            if cleaned:
+                response = f"🎬 Подборка фильмов от Насти!\n\n{cleaned}"
+                await message.answer(response)
+                if db:
+                    await _save_simple_exchange(message, f"/films {query}", cleaned[:200], db)
+                return
+    except Exception as e:
+        logger.error(f"Films command error: {e}")
+
+    await message.answer("Ой, Настя не смогла подобрать фильмы... Попробуй позже! 🎬😔")
+
+
+# ── /weather — Weather in any city ──
+
+@router.message(Command("weather"))
+async def cmd_weather(message: Message, db=None, ai_router=None) -> None:
+    """Get weather for any city — Nastya style!"""
+    query = message.text.replace("/weather", "").strip()
+
+    if not query:
+        await message.answer(
+            "Настя узнает погоду! Напиши город! 🌤️\n\n"
+            "Пример: /weather Москва\n/weather Стамбул"
+        )
+        return
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+
+    # Search for weather
+    results = await search_web(f"погода {query} сегодня", num_results=2)
+
+    search_context = ""
+    if results:
+        for r in results[:2]:
+            snippet = r.get("snippet", "")
+            if snippet:
+                search_context += f" {snippet[:200]}"
+
+    if ai_router and search_context:
+        try:
+            result = await ai_router.chat(
+                prompt=f"Погода в городе {query}: {search_context}. Расскажи про погоду живо и посоветуй что надеть!",
+                system_prompt=(
+                    "Ты Настя — москвичка, 23 года, блогер. "
+                    "Расскажи про погоду живо, с эмоциями, посоветуй что надеть и чем заняться. "
+                    "3-4 предложения. Без markdown. "
+                    "Используй слова: 'прикинь', 'капец', 'кайф'."
+                ),
+                max_tokens=200,
+            )
+            if result and result.text:
+                from ai.router import AIRouter
+                cleaned = AIRouter.clean_ai_response(result.text)
+                if cleaned:
+                    await message.answer(f"🌤️ Погода в {query}:\n\n{cleaned}")
+                    if db:
+                        await _save_simple_exchange(message, f"/weather {query}", cleaned[:200], db)
+                    return
+        except Exception as e:
+            logger.error(f"Weather AI error: {e}")
+
+    # Fallback: just show search results
+    if search_context:
+        await message.answer(f"🌤️ Погода в {query}: {search_context[:300]}")
+    else:
+        await message.answer(f"Ой, Настя не узнала погоду в {query}... Попробуй позже! 🌤️😔")
+
+
+# ── /image — Generate image with Pollinations! ──
+
+@router.message(Command("image"))
+async def cmd_image(message: Message, db=None, ai_router=None) -> None:
+    """Generate an image using Pollinations AI — Nastya draws!"""
+    query = message.text.replace("/image", "").strip()
+
+    if not query:
+        await message.answer(
+            "Настя нарисует что хочешь! 🎨\n\n"
+            "Пример: /image котик в космосе\n/image BMW M4 на закате\n/image красивый закат над морем"
+        )
+        return
+
+    if not ai_router:
+        await message.answer("Настя пока не может рисовать... Попробуй позже! 🎨😔")
+        return
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    await message.answer("Настя рисует! Секунду... 🎨✨")
+
+    try:
+        image_bytes = await ai_router.generate_image(query, size="1024x1024")
+        if image_bytes:
+            from io import BytesIO
+            buf = BytesIO(image_bytes)
+            buf.seek(0)
+            await message.answer_photo(
+                photo=buf,
+                caption=f"🎨 Настя нарисовала: {query}",
+            )
+            if db:
+                await _save_simple_exchange(message, f"/image {query}", "[Image generated]", db)
+            return
+    except Exception as e:
+        logger.error(f"Image generation error: {e}")
+
+    await message.answer(f"Ой, Настя не смогла нарисовать '{query}'... Попробуй другой запрос! 🎨😔")
 
 
 # ── Voice handler ────────────────────────────────────────────
