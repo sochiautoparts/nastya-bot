@@ -114,55 +114,53 @@ jobs:
           pip install -r requirements.txt
 
       # ═══════════════════════════════════════════════════════════
-      #  LOCAL MODEL STEPS — COMMENTED OUT (cloud-only mode!)
-      #  To enable local model (Qwen3-4B):
-      #    1. Set ENABLE_LOCAL_MODEL=true in GitHub Secrets
-      #    2. Uncomment all steps below
-      #    3. Add MODEL_PATH env to Run step below
+      #  LOCAL MODEL — Qwen3-4B as FALLBACK when cloud is unavailable
       # ═══════════════════════════════════════════════════════════
 
-      # - name: Install llama-cpp-python with AVX2
-      #   run: |
-      #     echo "=== Installing llama-cpp-python with AVX2 support ==="
-      #     CMAKE_ARGS="-DGGML_AVX2=on" pip install llama-cpp-python --force-reinstall --no-cache-dir 2>&1 || {
-      #       echo "WARNING: AVX2 build failed, trying without..."
-      #       pip install llama-cpp-python --force-reinstall --no-cache-dir
-      #     }
-      #     python3 -c "from llama_cpp import Llama; print('llama-cpp-python OK!')"
-      #     pip install huggingface_hub
-      #
-      # - name: Cache LOCAL FALLBACK model (Qwen3-4B)
-      #   id: cache-model
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
-      #     key: qwen3-4b-instruct-q4km-v3
-      #
-      # - name: Download Qwen3-4B-Instruct GGUF model
-      #   if: steps.cache-model.outputs.cache-hit != 'true'
-      #   run: |
-      #     echo "=== Downloading Qwen3-4B-Instruct Q4_K_M model (~2.4GB) — LOCAL FALLBACK ==="
-      #     mkdir -p models
-      #     python3 -c "
-      #     from huggingface_hub import hf_hub_download
-      #     path = hf_hub_download(
-      #         repo_id='unsloth/Qwen3-4B-Instruct-2507-GGUF',
-      #         filename='Qwen3-4B-Instruct-2507-Q4_K_M.gguf',
-      #         local_dir='models',
-      #     )
-      #     print('Downloaded to:', path)
-      #     "
-      #
-      # - name: Verify model
-      #   run: |
-      #     echo "=== Verifying GGUF model ==="
-      #     MODEL_FILE=models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
-      #     if [ ! -f "$MODEL_FILE" ] || [ ! -s "$MODEL_FILE" ]; then
-      #       echo "WARNING: Model file missing or empty — running in CLOUD-ONLY mode"
-      #     else
-      #       MODEL_SIZE=$(du -h "$MODEL_FILE" | cut -f1)
-      #       echo "OK: Qwen3-4B-Instruct-Q4_K_M (${MODEL_SIZE}) — LOCAL FALLBACK"
-      #     fi
+      - name: Install llama-cpp-python with AVX2
+        run: |
+          echo "=== Installing llama-cpp-python with AVX2 support ==="
+          CMAKE_ARGS="-DGGML_AVX2=on" pip install llama-cpp-python --force-reinstall --no-cache-dir 2>&1 || {
+            echo "WARNING: AVX2 build failed, trying without..."
+            pip install llama-cpp-python --force-reinstall --no-cache-dir
+          }
+          python3 -c "from llama_cpp import Llama; print('llama-cpp-python OK!')" || {
+            echo "WARNING: llama-cpp-python import failed — running CLOUD-ONLY"
+          }
+          pip install huggingface_hub
+
+      - name: Cache LOCAL FALLBACK model (Qwen3-4B)
+        id: cache-model
+        uses: actions/cache@v4
+        with:
+          path: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+          key: qwen3-4b-instruct-q4km-v3
+
+      - name: Download Qwen3-4B-Instruct GGUF model
+        if: steps.cache-model.outputs.cache-hit != 'true'
+        run: |
+          echo "=== Downloading Qwen3-4B-Instruct Q4_K_M model (~2.4GB) — LOCAL FALLBACK ==="
+          mkdir -p models
+          python3 -c "
+          from huggingface_hub import hf_hub_download
+          path = hf_hub_download(
+              repo_id='unsloth/Qwen3-4B-Instruct-2507-GGUF',
+              filename='Qwen3-4B-Instruct-2507-Q4_K_M.gguf',
+              local_dir='models',
+          )
+          print('Downloaded to:', path)
+          " || echo "WARNING: Model download failed — running CLOUD-ONLY"
+
+      - name: Verify model
+        run: |
+          echo "=== Verifying GGUF model ==="
+          MODEL_FILE=models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+          if [ ! -f "$MODEL_FILE" ] || [ ! -s "$MODEL_FILE" ]; then
+            echo "WARNING: Model file missing or empty — running in CLOUD-ONLY mode"
+          else
+            MODEL_SIZE=$(du -h "$MODEL_FILE" | cut -f1)
+            echo "OK: Qwen3-4B-Instruct-Q4_K_M (${MODEL_SIZE}) — LOCAL FALLBACK"
+          fi
 
       - name: Create data directory
         run: mkdir -p data
@@ -184,14 +182,13 @@ jobs:
           BOT_USERNAME: asnastya_bot
           # Pollinations.ai — MULTI-MODEL PRIMARY + VISION
           POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
-          # Local model — disabled by default
-          ENABLE_LOCAL_MODEL: ${{ secrets.ENABLE_LOCAL_MODEL }}
-          # When enabling local model, uncomment these:
-          # MODEL_PATH: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
-          # MODEL_N_CTX: 2048
-          # MODEL_N_THREADS: 4
-          # MODEL_MAX_TOKENS: 256
-          # MODEL_HISTORY_LIMIT: 10
+          # Local model — enabled as FALLBACK when cloud unavailable
+          ENABLE_LOCAL_MODEL: "true"
+          MODEL_PATH: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+          MODEL_N_CTX: 2048
+          MODEL_N_THREADS: 4
+          MODEL_MAX_TOKENS: 256
+          MODEL_HISTORY_LIMIT: 10
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           CHANNEL_USERNAME: ${{ secrets.CHANNEL_USERNAME }}
@@ -217,11 +214,9 @@ jobs:
           echo "DISCOVERY: кино-подборки, рецепты, места, мероприятия, нумерология!"
 
           if [ "${ENABLE_LOCAL_MODEL}" = "true" ]; then
-            echo "LOCAL FALLBACK: ENABLED — but model steps are commented out in workflow!"
-            echo "Uncomment the LOCAL MODEL steps in .github/workflows/bot.yml to use local model."
+            echo "LOCAL FALLBACK: ENABLED — Qwen3-4B loaded when cloud models unavailable"
           else
-            echo "LOCAL FALLBACK: DISABLED (cloud-only mode — faster startup)"
-            echo "To enable: set ENABLE_LOCAL_MODEL=true in GitHub Secrets AND uncomment model steps in bot.yml"
+            echo "LOCAL FALLBACK: DISABLED (cloud-only mode)"
           fi
 
           echo "Config: inline=yes, vision=yes(16), image_gen=yes, search=yes, discovery=yes, ai_news=yes, ai_comments=AI_ONLY, group_comments=70%, max_tokens=2000(cloud), history=10, hallucination_fix=yes, date_aware=yes, local_expert=yes"
