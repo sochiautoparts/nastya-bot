@@ -372,7 +372,7 @@ class AIRouter:
                 # Build local system prompt with FULL context from chat.py
                 local_base = (
                     "Ты Настя — москвичка, 23 года, блогер, ведёшь канал @chasnastya. "
-                    "Владеешь BMW M3 2025 серого цвета. "
+                    "Владеешь BMW M3 серого цвета. "
                     "Пиши от себя, живо, как в мессенджере. "
                     "Без политики, без markdown. "
                     f"Сейчас {time.strftime('%d.%m.%Y %H:%M')} по Москве."
@@ -502,7 +502,7 @@ class AIRouter:
                 # Build local system prompt with FULL context
                 local_base = (
                     "Ты Настя — москвичка, 23 года, блогер, ведёшь канал @chasnastya. "
-                    "Владеешь BMW M3 2025 серого цвета. "
+                    "Владеешь BMW M3 серого цвета. "
                     "Пиши от себя, живо, как в мессенджере. "
                     "Без политики, без markdown. "
                     f"Сейчас {time.strftime('%d.%m.%Y %H:%M')} по Москве."

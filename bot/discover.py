@@ -1,6 +1,8 @@
 """Nastya Discovery Engine — auto-discovers interesting content for channel & chat.
 
-v2.0: Improved news-based post writing + robust product search!
+v3.0: DYNAMIC YEAR — no more hardcoded 2025! + Date context in AI prompts!
+  - All search queries use dynamic current year
+  - AI prompts include current date/time — Настя knows what year it is!
   - Better AI prompts for engaging, personal posts
   - search_products uses multi-engine search (always finds results)
   - More diverse discovery topics including automotive news
@@ -19,11 +21,13 @@ Then:
   - Shares with chat users proactively
 """
 import asyncio
+import datetime
 import logging
 import random
 import re
 import time
 from typing import Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -35,29 +39,32 @@ from bot.web_search import search_web
 
 logger = logging.getLogger(__name__)
 
+# ── Dynamic year for search queries ──
+_YEAR = datetime.datetime.now(ZoneInfo("Europe/Moscow")).year
+
 # ── Discovery Topics — diverse content categories ──
 
 DISCOVERY_TOPICS = [
     # 🚗 Automotive news (sochiautoparts.ru — source!)
-    {"query": "автомобильные новости ремонт запчасти 2025", "category": "auto",
+    {"query": f"автомобильные новости ремонт запчасти {_YEAR}", "category": "auto",
      "post_type": "auto", "weight": 3},
-    {"query": "BMW новости модели M3 M4 M5 2025", "category": "auto",
+    {"query": f"BMW новости модели M3 M4 M5 {_YEAR}", "category": "auto",
      "post_type": "auto", "weight": 3},
     {"query": "советы по обслуживанию автомобиля замена масла", "category": "auto",
      "post_type": "auto", "weight": 2},
-    {"query": "новые автомобили тест драйв обзор 2025", "category": "auto",
+    {"query": f"новые автомобили тест драйв обзор {_YEAR}", "category": "auto",
      "post_type": "auto", "weight": 2},
     # 🎬 Film recommendations
-    {"query": "лучшие фильмы 2025 подборка рекомендации", "category": "films",
+    {"query": f"лучшие фильмы {_YEAR} подборка рекомендации", "category": "films",
      "post_type": "films", "weight": 3},
-    {"query": "новинки кино афиша премьеры 2025", "category": "films",
+    {"query": f"новинки кино афиша премьеры {_YEAR}", "category": "films",
      "post_type": "films", "weight": 2},
     {"query": "подборка фильмов триллер комедия драма", "category": "films",
      "post_type": "films", "weight": 2},
     {"query": "корейское кино аниме сериалы рекомендации", "category": "films",
      "post_type": "films", "weight": 1},
     # Recipes
-    {"query": "простой вкусный рецепт на ужин 2025", "category": "recipe",
+    {"query": f"простой вкусный рецепт на ужин {_YEAR}", "category": "recipe",
      "post_type": "recipe", "weight": 3},
     {"query": "быстрый завтрак рецепт за 10 минут", "category": "recipe",
      "post_type": "recipe", "weight": 2},
@@ -70,7 +77,7 @@ DISCOVERY_TOPICS = [
     {"query": "суп рецепт домашний вкусный", "category": "recipe",
      "post_type": "recipe", "weight": 1},
     # Numerology
-    {"query": "нумерология число судьбы значение 2025", "category": "numerology",
+    {"query": f"нумерология число судьбы значение {_YEAR}", "category": "numerology",
      "post_type": "numerology", "weight": 2},
     {"query": "значение чисел в нумерологии характер", "category": "numerology",
      "post_type": "numerology", "weight": 1},
@@ -92,37 +99,37 @@ DISCOVERY_TOPICS = [
     # Events
     {"query": "афиша мероприятий мероприятия сегодня Россия", "category": "events",
      "post_type": "events", "weight": 2},
-    {"query": "концерты фестивали афиша 2025 Россия", "category": "events",
+    {"query": f"концерты фестивали афиша {_YEAR} Россия", "category": "events",
      "post_type": "events", "weight": 2},
     {"query": "выставки Москва Санкт-Петербург афиша", "category": "events",
      "post_type": "events", "weight": 1},
     {"query": "бесплатные мероприятия выходные Россия", "category": "events",
      "post_type": "events", "weight": 1},
     # Events — city-specific (v56)
-    {"query": "мероприятия Сочи Красная Поляна афиша 2025", "category": "events",
+    {"query": f"мероприятия Сочи Красная Поляна афиша {_YEAR}", "category": "events",
      "post_type": "events", "weight": 2},
     {"query": "афиша Москва сегодня концерт выставка", "category": "events",
      "post_type": "events", "weight": 2},
     # Places & Restaurants (v56)
-    {"query": "лучшие рестораны Москва 2025 обзор", "category": "places",
+    {"query": f"лучшие рестораны Москва {_YEAR} обзор", "category": "places",
      "post_type": "places", "weight": 2},
     {"query": "рестораны Сочи Краснодарский край рекомендации", "category": "places",
      "post_type": "places", "weight": 1},
     {"query": "модные бары коктейльные Москва Питер", "category": "places",
      "post_type": "places", "weight": 1},
     # Lifestyle & Beauty
-    {"query": "тренды моды 2025 одежда аксессуары", "category": "lifestyle",
+    {"query": f"тренды моды {_YEAR} одежда аксессуары", "category": "lifestyle",
      "post_type": "lifestyle", "weight": 2},
     {"query": "уход за кожей лица советы косметолога", "category": "lifestyle",
      "post_type": "lifestyle", "weight": 2},
-    {"query": "маникюр тренды дизайн ногтей 2025", "category": "lifestyle",
+    {"query": f"маникюр тренды дизайн ногтей {_YEAR}", "category": "lifestyle",
      "post_type": "lifestyle", "weight": 1},
     {"query": "фитнес домашние упражнения для начинающих", "category": "lifestyle",
      "post_type": "lifestyle", "weight": 1},
     # Interesting facts
     {"query": "интересные факты о которых вы не знали", "category": "facts",
      "post_type": "facts", "weight": 2},
-    {"query": "научные открытия 2025 последние новости", "category": "facts",
+    {"query": f"научные открытия {_YEAR} последние новости", "category": "facts",
      "post_type": "facts", "weight": 2},
     {"query": "необычные места мира которые стоит посетить", "category": "facts",
      "post_type": "facts", "weight": 1},
@@ -250,6 +257,17 @@ async def discover_content(ai_router) -> Optional[Dict]:
     ai_content = ""
     if ai_router:
         try:
+            # ── DATE CONTEXT — Настя знает какой сейчас год! ──
+            _now = datetime.datetime.now(ZoneInfo("Europe/Moscow"))
+            _days_ru = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+            _months_ru = ["января", "февраля", "марта", "апреля", "мая", "июня",
+                          "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+            _date_context = (
+                f"Сейчас {_days_ru[_now.weekday()]}, {_now.day} {_months_ru[_now.month - 1]} "
+                f"{_now.year} года, время {_now.strftime('%H:%M')} МСК. "
+                f"Учитывай текущую дату — не пиши про прошлые годы как про текущие! "
+            )
+
             category_prompts = {
                 "auto": "Напиши интересный пост про автомобили. Если это совет — дай конкретные рекомендации. Если новость — поделись мнением. Настя — фанат BMW, обожает баварские тачки! Если речь про BMW — прояви энтузиазм! 5-8 предложений. Без markdown.",
                 "films": "Напиши подборку 5-7 фильмов с краткими описаниями. Настя — киноманка, знает режиссёров и тренды. Пиши конкретные названия, годы, почему стоит смотреть. 6-10 предложений. Без markdown, без буллетов.",
@@ -270,6 +288,7 @@ async def discover_content(ai_router) -> Optional[Dict]:
                 system_prompt=(
                     "Ты Настя — москвичка, 23 года, блогер, ведёшь Telegram канал @chasnastya. "
                     "Пишешь пост для своего канала ОТ СЕБЯ, от первого лица. "
+                    f"{_date_context}"
                     "Говоришь от первого лица — 'я думаю', 'мне кажется', 'я нашла', 'прикинь'. "
                     "Живо, эмоционально, как живой человек — не как журналист или бот. "
                     "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто', 'точняк', 'блин'. "

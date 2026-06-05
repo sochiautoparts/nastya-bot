@@ -1,9 +1,9 @@
-"""Nastya Channel Manager 13.0 — AI-POWERED NEWS + BMW FAN + FILM BUFF + ACTIVE GROUP COMMENTS!
+"""Nastya Channel Manager 14.0 — AI-POWERED NEWS + DATE AWARE + BMW FAN + FILM BUFF!
 
-v13.0 KEY CHANGES:
-  - Persona: Настя — москвичка, блогер, фанат BMW, киноманка!
-  - sochiautoparts.ru/rss.xml — источник автомобильных новостей
-  - Channel link format: @chasnastya in every post
+v14.0 KEY CHANGES:
+  - DATE AWARENESS: All AI prompts now include current date/time context!
+  - Настя знает какой сейчас год — больше никаких постов с 2025!
+  - BMW M3 (убран model year — это модельный год, не текущий год)
   - AI-POWERED news commentary — ALWAYS AI, NO templates!
   - Film recommendation posts in channel!
   - BMW enthusiasm in auto posts!
@@ -211,7 +211,7 @@ PERSONAL_POSTS = [
     # BMW & Auto — Настя фанат!
     "Прикинь, BMW M4 Competition — это просто произведение искусства! Настя влюблена! 🏎️💖 Кто тоже фанат баварцев?",
     "Рядная шестёрка BMW — лучший звук в мире! Настя может слушать часами! 🏎️🔥 А вы какую марку обожаете?",
-    "Настя ездит на M3 2025 серого цвета — самая модная тачка! 🏎️💅 А вы на чём ездите?",
+    "Настя ездит на M3 серого цвета — самая модная тачка! 🏎️💅 А вы на чём ездите?",
     # Films & Cinema — Настя киноманка!
     "Настя пересмотрела 'Интерстеллар' в 10-й раз... И каждый раз плачу! 🎬😭 Какие фильмы вас так пробивают?",
     "Кто смотрит корейское кино? Настя подсела! 'Паразиты' — шедевр! 🎬🔥 Рекомендуйте!",
@@ -732,6 +732,18 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
             if category == "auto":
                 category_context = "Это автомобильная новость — расскажи подробно и экспертно! Настя разбирается в автомобилях, фанат BMW!"
 
+            # ── DATE CONTEXT — Настя знает какой сейчас год! ──
+            import datetime
+            from zoneinfo import ZoneInfo
+            _now = datetime.datetime.now(ZoneInfo("Europe/Moscow"))
+            _days_ru = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+            _months_ru = ["января", "февраля", "марта", "апреля", "мая", "июня",
+                          "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+            _date_context = (
+                f"Сейчас {_days_ru[_now.weekday()]}, {_now.day} {_months_ru[_now.month - 1]} "
+                f"{_now.year} года, время {_now.strftime('%H:%M')} МСК."
+            )
+
             prompt = "\n".join(prompt_parts)
 
             result = await ai_router.chat(
@@ -742,6 +754,7 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
                     "как живой человек, а не как бот или ИИ-помощник. "
                     "Пиши 'я думаю', 'мне кажется', 'я прочитала', 'я нашла'. "
                     f"{category_context}"
+                    f"{_date_context} Учитывай текущую дату — не пиши про прошлые годы как про текущие! "
                     "Напиши осмысленный, развёрнутый пост об этой новости. "
                     "4-6 предложений, живо и эмоционально, со своим мнением. "
                     "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
