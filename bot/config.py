@@ -76,10 +76,10 @@ ENABLE_LOCAL_MODEL: bool = _env("ENABLE_LOCAL_MODEL", "false").lower() in ("true
 # Only loaded when ENABLE_LOCAL_MODEL=true
 MODEL_PATH: str = _env("MODEL_PATH", "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf") if ENABLE_LOCAL_MODEL else ""
 
-MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 2048)
+MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 4096)  # v58: Was 2048 — too small!
 MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 4)
-MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 256)
-MODEL_HISTORY_LIMIT: int = _env_int("MODEL_HISTORY_LIMIT", 10)
+MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 384)  # v58: Was 256 — allows fuller responses
+MODEL_HISTORY_LIMIT: int = _env_int("MODEL_HISTORY_LIMIT", 6)  # v58: Was 10 — 6 with 4096 ctx
 
 OWNER_ID: int = _env_int("OWNER_ID", 0)
 ADMIN_IDS: List[int] = list(set(

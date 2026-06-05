@@ -1,36 +1,22 @@
-name: Nastya Bot — CLOUD-ONLY v57
+name: Nastya Bot — LOCAL-FIRST v58
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v57.0 — 40 POLLINATIONS MODELS + VISION + IMAGE GEN!
+# Nastya Bot v58.0 — LOCAL-FIRST (saves cloud balance!)
 #
-# Architecture:
-#   - Pollinations.ai EXPANDED MULTI-MODEL (40 chat models!)
-#   - NEW v57: grok-large, grok-4.3, perplexity-reasoning, minimax-m3,
-#              step-3.5-flash, openai-reasoning, nova-micro, mistral-small-3.2
-#   - REMOVED v57: openai-fast (empty), qwen-large (empty), step-flash (empty)
+#   - LlamaCpp Qwen3-4B (n_ctx=4096) — PRIMARY for simple chat
+#   - Pollinations.ai (40 chat models) — for COMPLEX tasks + vision
+#   - Balance refreshes every hour — use local model to conserve!
+#   - Simple chat → LOCAL model (free, instant)
+#   - Complex tasks (VIN, diagnostics, search) → CLOUD model
+#   - Vision (photos) → CLOUD model only
+#   - Background (news, channel) → LOCAL model first
 #   - IMAGE GENERATION — Настя РИСУЕТ! 🎨 (flux model)
-#   - /films — подборка фильмов от Насти! 🎬
-#   - /weather — погода в любом городе! 🌤️
-#   - /events — мероприятия и афиша! 🎫
-#   - /places — заведения и рестораны! 🍽️
-#   - /image — Настя нарисует что хочешь! 🎨
-#   - Persona: Настя — москвичка, владеет BMW M3 2025 серого цвета!
-#   - BMW expert: регламенты, болячки, приколы баварцев
-#   - DATE AWARE: Настя знает какой сегодня день!
-#   - LOCAL EXPERT: Москва, Питер, Сочи, Красная Поляна
-#   - AI-GENERATED news commentary — ALWAYS AI, NO templates!
-#   - Group commenting: 70% response, active participation
-#   - max_tokens=2000 — full detailed responses, no limits!
+#   - Persona: Настя — москвичка, владеет BMW M3 2025!
 #   - INLINE MODE — Настя работает в любом чате!
-#   - WEB SEARCH — поиск товаров, услуг, лучших цен!
-#   - PHOTO SEARCH — фото → распознавание → поиск!
-#   - DISCOVERY ENGINE — кино, рецепты, места, мероприятия!
-#   - REAL PHOTO UNDERSTANDING via Pollinations vision API (16 models!)
-#   - URL UNDERSTANDING — Настя читает ссылки!
 #
-# LOCAL MODEL (Qwen3-4B):
-#   - DISABLED by default for faster startup
-#   - To enable: set ENABLE_LOCAL_MODEL=true in GitHub Secrets
+# LOCAL MODEL (Qwen3-4B, n_ctx=4096):
+#   - ENABLED — PRIMARY for simple chat tasks
+#   - Saves cloud balance — use for greetings, short chat, news
 #
 # NO TESTS — bot starts immediately!
 #
@@ -169,7 +155,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v56
+          key: nastya-db-v58
           restore-keys: |
             nastya-db-
 
@@ -185,10 +171,10 @@ jobs:
           # Local model — enabled as FALLBACK when cloud unavailable
           ENABLE_LOCAL_MODEL: "true"
           MODEL_PATH: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
-          MODEL_N_CTX: 2048
+          MODEL_N_CTX: 4096
           MODEL_N_THREADS: 4
-          MODEL_MAX_TOKENS: 256
-          MODEL_HISTORY_LIMIT: 4
+          MODEL_MAX_TOKENS: 384
+          MODEL_HISTORY_LIMIT: 6
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           CHANNEL_USERNAME: ${{ secrets.CHANNEL_USERNAME }}
@@ -197,29 +183,18 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v57.0 (40 POLLINATIONS MODELS + VISION + IMAGE GEN!) ==="
-          echo "PRIMARY: Pollinations.ai EXPANDED 40-MODEL (openai + 39 backups)"
-          echo "NEW v57: grok-large, grok-4.3, perplexity-reasoning, minimax-m3, step-3.5-flash, openai-reasoning, nova-micro, mistral-small-3.2"
-          echo "REMOVED v57: openai-fast (empty), qwen-large (empty), step-flash (empty)"
-          echo "PERSONA: Настя — москвичка, владеет BMW M3 2025 серого цвета!"
-          echo "BMW EXPERT: регламенты, болячки, приколы баварцев!"
-          echo "DATE AWARE: Настя знает какой сегодня день!"
-          echo "LOCAL EXPERT: Москва, Питер, Сочи, Красная Поляна!"
-          echo "IMAGE GEN: Pollinations flux model — Настя рисует!"
-          echo "AI: News commentary AI-generated ONLY (no more templates!)"
-          echo "FIX: Real product links from search, fake URLs detected and removed"
-          echo "GROUP: 70% response, active commenting!"
+          echo "=== Starting Nastya Bot v58.0 LOCAL-FIRST (saves cloud balance!) ==="
+          echo "PRIMARY: LOCAL Qwen3-4B (n_ctx=4096) for simple chat — FREE!"
+          echo "COMPLEX: Pollinations.ai 40-MODEL for VIN, diagnostics, search"
+          echo "VISION: Pollinations vision (16 models) for photos"
+          echo "BACKGROUND: LOCAL model for news comments — saves balance!"
+          echo "STRATEGY: Simple→Local, Complex→Cloud, Vision→Cloud only"
+          echo "PERSONA: Настя — москвичка, владеет BMW M3 2025!"
           echo "INLINE: @asnastya_bot works in any chat!"
           echo "SEARCH: /find — товары и лучшие цены! /search — поиск информации!"
-          echo "DISCOVERY: кино-подборки, рецепты, места, мероприятия, нумерология!"
 
-          if [ "${ENABLE_LOCAL_MODEL}" = "true" ]; then
-            echo "LOCAL FALLBACK: ENABLED — Qwen3-4B loaded when cloud models unavailable"
-          else
-            echo "LOCAL FALLBACK: DISABLED (cloud-only mode)"
-          fi
-
-          echo "Config: inline=yes, vision=yes(16), image_gen=yes, search=yes, discovery=yes, ai_news=yes, ai_comments=AI_ONLY, group_comments=70%, max_tokens=2000(cloud), history=10, hallucination_fix=yes, date_aware=yes, local_expert=yes"
+          echo "LOCAL-FIRST: ENABLED — Qwen3-4B (n_ctx=4096) PRIMARY for simple chat!"
+          echo "Config: strategy=LOCAL_FIRST, n_ctx=4096, max_tokens=384(local)/2000(cloud), history=6, vision=cloud_only, background=local_first"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -260,7 +235,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v56-${{ github.run_id }}
+          key: nastya-db-v58-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation
