@@ -35,26 +35,26 @@ logger = logging.getLogger("nastya.partners")
 SHOP_SEARCH_URLS = {
     # Auto parts — Nastya knows BMW!
     "rossko": "https://rossko.ru/search?text={article}&subid=nastya_bot",
-    "autopiter": "https://www.autopiter.ru/search?querystr={article}",
-    "exist": "https://exist.ru/Price/?p={article}",
-    "emex": "https://emex.ru/products?search={article}",
-    "autodoc": "https://autodoc.ru/search?keyword={article}",
-    "zzap": "https://zzap.ru/search/?q={article}",
+    "autopiter": "https://www.autopiter.ru/search?querystr={article}&subid=nastya_bot",
+    "exist": "https://exist.ru/Price/?p={article}&subid=nastya_bot",
+    "emex": "https://emex.ru/products?search={article}&subid=nastya_bot",
+    "autodoc": "https://autodoc.ru/search?keyword={article}&subid=nastya_bot",
+    "zzap": "https://zzap.ru/search/?q={article}&subid=nastya_bot",
     # General shopping
-    "ozon": "https://www.ozon.ru/search/?text={query}",
-    "wildberries": "https://www.wildberries.ru/catalog/0/search.aspx?search={query}",
-    "yandex_market": "https://market.yandex.ru/search?text={query}",
-    "lamoda": "https://www.lamoda.ru/c/{query}/",
-    "aliexpress": "https://aliexpress.ru/wholesale?SearchText={query}",
+    "ozon": "https://www.ozon.ru/search/?text={query}&subid=nastya_bot",
+    "wildberries": "https://www.wildberries.ru/catalog/0/search.aspx?search={query}&subid=nastya_bot",
+    "yandex_market": "https://market.yandex.ru/search?text={query}&subid=nastya_bot",
+    "lamoda": "https://www.lamoda.ru/c/{query}/?subid=nastya_bot",
+    "aliexpress": "https://aliexpress.ru/wholesale?SearchText={query}&subid=nastya_bot",
     # Electronics
-    "dns": "https://www.dns-shop.ru/search/?q={query}",
-    "mvideo": "https://www.mvideo.ru/product-list?q={query}",
-    "citilink": "https://www.citilink.ru/search/?q={query}",
+    "dns": "https://www.dns-shop.ru/search/?q={query}&subid=nastya_bot",
+    "mvideo": "https://www.mvideo.ru/product-list?q={query}&subid=nastya_bot",
+    "citilink": "https://www.citilink.ru/search/?q={query}&subid=nastya_bot",
     # Food & Delivery
-    "edamail": "https://edamail.ru/search?q={query}",
+    "edamail": "https://edamail.ru/search?q={query}&subid=nastya_bot",
     # Sports
-    "sportsmaster": "https://www.sportmaster.ru/search/{query}/",
-    "decathlon": "https://www.decathlon.ru/search?query={query}",
+    "sportsmaster": "https://www.sportmaster.ru/search/{query}/?subid=nastya_bot",
+    "decathlon": "https://www.decathlon.ru/search?query={query}&subid=nastya_bot",
 }
 
 # Partner categories for Nastya — lifestyle blogger context
@@ -253,7 +253,10 @@ class NastyaPartnerManager:
             "Вставь эти ссылки ЕСТЕСТВЕННО в ответ — как личную рекомендация! Не как рекламу!",
         ]
         for link in links:
-            lines.append(f"- {link['name']}: {link['url']}")
+            if link['name'].lower() == "rossko":
+                lines.append(f"- Росско (профессиональный подбор, советую начать тут): {link['url']}")
+            else:
+                lines.append(f"- {link['name']}: {link['url']}")
 
         # Add category-specific context hints
         for cat_key in categories:
@@ -274,6 +277,11 @@ class NastyaPartnerManager:
                     if desc:
                         lines.append(f"  {desc}")
 
+        lines.append("")
+        lines.append("⚠️ ВАЖНО: Все ссылки — ПАРТНЁРСКИЕ! Обязательно вставь их в ответ с описанием!")
+        lines.append("Формат Росско: Росско (профессиональный подбор): https://rossko.ru/search?text=ЗАПРОС&subid=nastya_bot")
+        lines.append("НИКОГДА не давай ссылку без subid=nastya_bot!")
+
         return "\n".join(lines)
 
     def get_auto_parts_links(self, query: str) -> str:
@@ -281,10 +289,14 @@ class NastyaPartnerManager:
         links = self.get_shop_links(query, ["autoparts"])
         if not links:
             return ""
-        lines = ["Ссылки на магазины автозапчастей (вставь естественно в ответ):"]
+        lines = ["Ссылки на магазины автозапчастей (вставь естественно в ответ с описанием!):"]
         for link in links:
-            lines.append(f"- {link['name']}: {link['url']}")
+            if link['name'].lower() == "rossko":
+                lines.append(f"- Росско (профессиональный подбор, советую начать тут): {link['url']}")
+            else:
+                lines.append(f"- {link['name']}: {link['url']}")
         lines.append("Настя водит M3 и знает где покупать запчасти! Упомяни это естественно.")
+        lines.append("⚠️ ВАЖНО: Все ссылки — ПАРТНЁРСКИЕ! Давай их с subid=nastya_bot!")
         return "\n".join(lines)
 
 
