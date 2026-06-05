@@ -1,14 +1,12 @@
-"""LlamaCppProvider v3.0 — SINGLE-MODEL llama-cpp-python provider.
+"""LlamaCppProvider v3.1 — SINGLE-MODEL llama-cpp-python provider.
 
-v41: SINGLE MODEL ARCHITECTURE!
-  - Removed dual-model support (Qwen2.5-3B removed from project)
-  - Only Qwen3-4B-Instruct remains as LOCAL FALLBACK
-  - Pollinations.ai is now PRIMARY (cloud, fast, smart)
-  - Qwen3-4B = offline/reserve when Pollinations is down
-  - max_tokens=256 — decent response length for local fallback
-  - n_ctx=2048, history=10 — optimized for speed
-  - stop=["<think"] — BLOCKS Qwen3 thinking mode
+v3.1 FIX: Context window overflow prevention!
+  - Aggressively truncate system prompt (max 500 chars for local model)
+  - Reduce history to max 4 messages (was 10 — too many for 2048 ctx)
+  - Truncate each message to max 200 chars
+  - Token estimation before sending — skip messages if too long
   - /no_think prefix for Qwen models
+  - stop=["<think"] — BLOCKS Qwen3 thinking mode
   - asyncio.Semaphore(1) for serialized generation
   - asyncio.to_thread() for non-blocking generation
 """
@@ -46,6 +44,15 @@ DEFAULT_GEN_CONFIG = {
     "presence_penalty": 0.0,
     "stop": ["<think", "<|im_end|>"],  # Block thinking mode
 }
+
+# ── Context window limits for local model ──
+# Qwen3-4B with n_ctx=2048 needs aggressive truncation
+# Rough estimate: 1 token ≈ 4 chars for Russian text
+LOCAL_MAX_SYSTEM_CHARS = 500    # Short system prompt for local
+LOCAL_MAX_HISTORY_MSGS = 4     # Max 4 history messages (was 10 — too many)
+LOCAL_MAX_MSG_CHARS = 200      # Max chars per history message
+LOCAL_MAX_USER_CHARS = 800     # Max chars for current user message
+LOCAL_MAX_TOTAL_CHARS = 6000   # Safety limit (~1500 tokens estimate)
 
 
 class LlamaCppProvider(BaseProvider):
@@ -172,6 +179,7 @@ class LlamaCppProvider(BaseProvider):
 
         Uses asyncio.to_thread() to not block event loop.
         Semaphore ensures only one request at a time.
+        v3.1: Aggressively truncates messages to fit n_ctx=2048.
         """
         if not self._llm:
             raise ProviderError(self.name, "Model not loaded", retryable=True)
@@ -180,13 +188,44 @@ class LlamaCppProvider(BaseProvider):
         temperature = kwargs.get("temperature", self.gen_config["temperature"])
         max_tokens = kwargs.get("max_tokens", self.gen_config["max_tokens"])
         messages_history = kwargs.get("messages")
-        history_limit = kwargs.get("history_limit", 10)
 
-        # Limit history
-        if messages_history and len(messages_history) > history_limit:
-            messages_history = messages_history[-history_limit:]
+        # ── Aggressive truncation for local model context window ──
+        # Truncate system prompt — local model doesn't need the full prompt
+        if len(system_prompt) > LOCAL_MAX_SYSTEM_CHARS:
+            # Keep the first part which usually has the persona definition
+            system_prompt = system_prompt[:LOCAL_MAX_SYSTEM_CHARS].rsplit('.', 1)[0] + '.'
 
-        messages = self._build_messages(prompt, system_prompt, messages_history)
+        # Truncate user prompt
+        if len(prompt) > LOCAL_MAX_USER_CHARS:
+            prompt = prompt[:LOCAL_MAX_USER_CHARS]
+
+        # Truncate and limit history messages
+        truncated_history = []
+        if messages_history:
+            # Take only the last N messages
+            recent = messages_history[-LOCAL_MAX_HISTORY_MSGS:]
+            for msg in recent:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role in ("user", "assistant") and content:
+                    # Truncate each message
+                    if len(content) > LOCAL_MAX_MSG_CHARS:
+                        content = content[:LOCAL_MAX_MSG_CHARS] + "..."
+                    truncated_history.append({"role": role, "content": content})
+
+        messages = self._build_messages(prompt, system_prompt, truncated_history)
+
+        # Safety check: estimate total tokens
+        total_chars = sum(len(m.get("content", "")) for m in messages)
+        if total_chars > LOCAL_MAX_TOTAL_CHARS:
+            # Remove oldest history messages until it fits
+            while len(messages) > 2 and total_chars > LOCAL_MAX_TOTAL_CHARS:  # Keep system + user
+                # Remove the message after system prompt (oldest history)
+                if messages[0].get("role") == "system":
+                    messages.pop(1)
+                else:
+                    messages.pop(0)
+                total_chars = sum(len(m.get("content", "")) for m in messages)
 
         # For Qwen3: add /no_think prefix to disable thinking mode
         if messages and messages[-1].get("role") == "user":

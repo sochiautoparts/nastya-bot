@@ -282,11 +282,18 @@ class AIRouter:
         # ── 2. LlamaCpp — LOCAL FALLBACK ──
         if self._local and self._local.is_available():
             try:
+                # Use a SHORT system prompt for local model — it has limited context (2048 tokens)
+                # The full system prompt is too long and causes context overflow
+                local_system_prompt = (
+                    "Ты Настя — москвичка, 23 года, блогер. "
+                    "Пиши от себя, живо, как в мессенджере. "
+                    "Без политики, без markdown. "
+                    f"Сейчас {time.strftime('%d.%m.%Y %H:%M')} по Москве."
+                )
                 result = await self._local.generate(
                     prompt,
-                    system_prompt=system_prompt,
+                    system_prompt=local_system_prompt,  # Short prompt for local model!
                     messages=messages,
-                    history_limit=MODEL_HISTORY_LIMIT,
                 )
                 if result and result.text:
                     cleaned = self.clean_ai_response(result.text)

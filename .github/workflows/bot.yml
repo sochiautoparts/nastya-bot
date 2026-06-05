@@ -188,7 +188,7 @@ jobs:
           MODEL_N_CTX: 2048
           MODEL_N_THREADS: 4
           MODEL_MAX_TOKENS: 256
-          MODEL_HISTORY_LIMIT: 10
+          MODEL_HISTORY_LIMIT: 4
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           CHANNEL_USERNAME: ${{ secrets.CHANNEL_USERNAME }}

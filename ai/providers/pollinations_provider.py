@@ -284,9 +284,15 @@ class PollinationsProvider(BaseProvider):
         if not health:
             return True  # Unknown model = assume healthy
 
-        # If model is permanently disabled (402 payment required)
-        if health.get("fail_count", 0) >= 100:
-            return False  # Never retry permanently disabled models
+        # If model is temporarily disabled (high fail count), check cooldown
+        if health.get("fail_count", 0) >= 10:
+            # Even for high fail counts, allow retry after longer cooldown (10 min)
+            if time.time() - health["last_fail"] < 600:
+                return False
+            else:
+                # Reset after long cooldown — models may become available again
+                health["fail_count"] = 0
+                return True
 
         # If model failed recently, apply cooldown
         if health["fail_count"] >= 3:
@@ -456,11 +462,12 @@ class PollinationsProvider(BaseProvider):
                 if "429" in err_str:
                     logger.warning(f"Model {model} rate-limited (429), trying next model...")
                 elif "PAYMENT_REQUIRED" in err_str or "402" in err_str:
-                    logger.warning(f"Model {model} payment required (402) — permanently disabling!")
-                    # Permanently disable this model — it requires paid plan
+                    # DO NOT permanently disable! Balance will recover.
+                    # Use short cooldown instead (5 minutes)
+                    logger.warning(f"Model {model} payment required (402) — short cooldown, balance will recover")
                     if model in self._model_health:
-                        self._model_health[model]["fail_count"] = 999  # Effectively permanent
-                        self._model_health[model]["last_fail"] = time.time() + 86400 * 30  # 30 days cooldown
+                        self._model_health[model]["fail_count"] = 3  # Trigger cooldown
+                        self._model_health[model]["last_fail"] = time.time()  # 60s cooldown
                 else:
                     logger.warning(f"Model {model} error: {e}, trying next...")
                 continue
