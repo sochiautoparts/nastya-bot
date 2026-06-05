@@ -63,7 +63,7 @@ from bot.config import (
     NEWS_FETCH_INTERVAL, CHANNEL_POST_INTERVAL, CHANNEL_ID, CHANNEL_USERNAME,
     POLLINATIONS_API_KEY, ENABLE_LOCAL_MODEL,
     MODEL_PATH, MODEL_N_CTX, MODEL_MAX_TOKENS, MODEL_HISTORY_LIMIT,
-    POLLINATIONS_MAX_TOKENS,
+    POLLINATIONS_MAX_TOKENS, GH_PAT,
 )
 
 if not BOT_TOKEN:
@@ -413,6 +413,31 @@ async def memory_cleanup() -> None:
             logger.error(f"Memory cleanup error: {e}")
 
 
+async def interbot_review_scheduler() -> None:
+    """Background task: periodically check for pending reviews from Ася and review them.
+    
+    Настя acts as AI-Filter: reviews Ася's news candidates before publishing.
+    Runs every 5 minutes, reviews up to 3 candidates per cycle.
+    """
+    from bot.interbot import interbot_manager
+
+    # Wait for startup
+    await asyncio.sleep(180)  # 3 min — let other systems settle first
+
+    while True:
+        try:
+            if interbot_manager._gh_pat:
+                reviewed = await interbot_manager.run_review_cycle()
+                if reviewed > 0:
+                    logger.info(f"Interbot review scheduler: reviewed {reviewed} candidates from Ася")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Interbot review scheduler error: {e}")
+
+        await asyncio.sleep(300)  # Every 5 minutes
+
+
 async def conflict_monitor() -> None:
     """Background task: monitor conflict state and exit if persistent.
 
@@ -527,6 +552,12 @@ async def on_startup(**kwargs) -> None:
     partner_count = await nastya_partner_manager.load_admitad_async()
     logger.info(f"Admitad partner programs loaded: {partner_count}")
 
+    # Initialize inter-bot communication (Настя ↔ Ася via GitHub)
+    from bot.interbot import interbot_manager
+    interbot_manager.configure(gh_pat=GH_PAT, ai_router=ai_router)
+    await interbot_manager.init()
+    logger.info(f"Inter-bot manager initialized: {interbot_manager.get_status()}")
+
     try:
         await db.get_or_create_user(OWNER_ID, "owner", "Owner")
     except Exception as e:
@@ -536,7 +567,8 @@ async def on_startup(**kwargs) -> None:
     if dp_ref:
         dp_ref.workflow_data["db"] = db
         dp_ref.workflow_data["ai_router"] = ai_router
-        logger.info(f"workflow_data set: db={db is not None}, ai_router={ai_router is not None}")
+        dp_ref.workflow_data["interbot_manager"] = interbot_manager
+        logger.info(f"workflow_data set: db={db is not None}, ai_router={ai_router is not None}, interbot_manager={interbot_manager is not None}")
 
     if bot:
         asyncio.create_task(news_scheduler(bot))
@@ -547,6 +579,7 @@ async def on_startup(**kwargs) -> None:
         asyncio.create_task(memory_cleanup())
         asyncio.create_task(conflict_monitor())
         asyncio.create_task(health_watchdog())
+        asyncio.create_task(interbot_review_scheduler())
 
         # Startup notification — Nastya-style, NO technical info
         for admin_id in ADMIN_IDS:
