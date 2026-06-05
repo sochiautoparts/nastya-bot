@@ -22,6 +22,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from bot.config import CHANNEL_ID, CHANNEL_USERNAME, BOT_USERNAME, KNOWLEDGE_TOPICS
 from bot.web_search import POLL_TOPICS
+from bot.channel_scanner import is_duplicate_in_channel, get_channel_context_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -473,6 +474,12 @@ async def post_news_to_channel(bot: Bot, db, news_items: List[Dict]) -> int:
                 logger.debug(f"Skipping duplicate post: {item['title'][:50]}...")
                 continue
 
+            # Skip if already posted in channel (scan actual channel!)
+            if await is_duplicate_in_channel(title, threshold=0.55):
+                logger.info(f"Skipping duplicate (channel scan): {title[:60]}...")
+                await db.mark_news_posted(item["id"])
+                continue
+
             # ── Final safety validation ──
             # Catch SSE artifacts, API errors, and other garbage before posting
             if not _validate_post_text(post_text):
@@ -710,8 +717,13 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
     if not title:
         return False
 
-    # Check dedup
+    # Check dedup (local memory)
     if _is_recent_post(title):
+        return False
+
+    # Check dedup (channel scanner - check actual channel posts!)
+    if await is_duplicate_in_channel(title, threshold=0.55):
+        logger.info(f"Skipping duplicate (channel scan): {title[:60]}...")
         return False
 
     # Try AI-generated commentary first
@@ -746,6 +758,9 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
 
             prompt = "\n".join(prompt_parts)
 
+            # Get channel context so AI doesn't repeat topics
+            channel_ctx = await get_channel_context_for_prompt(max_items=10)
+
             result = await ai_router.chat(
                 prompt=prompt,
                 system_prompt=(
@@ -755,6 +770,7 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
                     "Пиши 'я думаю', 'мне кажется', 'я прочитала', 'я нашла'. "
                     f"{category_context}"
                     f"{_date_context} Учитывай текущую дату - не пиши про прошлые годы как про текущие! "
+                    f"{channel_ctx}"
                     "Напиши осмысленный, развёрнутый пост об этой новости. "
                     "4-6 предложений, живо и эмоционально, со своим мнением. "
                     "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
