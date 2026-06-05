@@ -35,7 +35,7 @@ NASTYA_API_URL = f"https://api.github.com/repos/{NASTYA_REPO}/contents/{INTERBOT
 
 # Local cache
 LOCAL_CACHE = Path("data/interbot_state.json")
-REFRESH_INTERVAL = 60  # Check for updates every 60 seconds
+REFRESH_INTERVAL = 30  # Check for updates every 30 seconds — faster reviews!
 
 
 class InterbotManager:

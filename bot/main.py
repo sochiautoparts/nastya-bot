@@ -422,7 +422,7 @@ async def interbot_review_scheduler() -> None:
     from bot.interbot import interbot_manager
 
     # Wait for startup
-    await asyncio.sleep(180)  # 3 min — let other systems settle first
+    await asyncio.sleep(60)  # 1 min — start reviewing quickly!
 
     while True:
         try:
@@ -435,7 +435,7 @@ async def interbot_review_scheduler() -> None:
         except Exception as e:
             logger.error(f"Interbot review scheduler error: {e}")
 
-        await asyncio.sleep(300)  # Every 5 minutes
+        await asyncio.sleep(120)  # Every 2 minutes — fast enough to review before timeout
 
 
 async def conflict_monitor() -> None:
