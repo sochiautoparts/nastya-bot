@@ -1,11 +1,11 @@
-"""Voice transcription — uses AI router for transcription.
+"""Voice transcription - uses AI router for transcription.
 
 Priority order:
 1. Cloudflare Whisper (free, fast, reliable if credentials available)
 2. Pollinations Whisper (free, no key)
 3. Groq Whisper (if key available)
 
-v2.2: Added Cloudflare Whisper as primary — faster and more reliable.
+v2.2: Added Cloudflare Whisper as primary - faster and more reliable.
 """
 import logging
 import os

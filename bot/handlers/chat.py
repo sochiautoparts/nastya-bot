@@ -1,33 +1,33 @@
-"""Nastya Chat Handler v14.0 — MULTI-MODEL + VISION + HUMAN-LIKE + URL + INLINE + MULTI-ENGINE SEARCH!
+"""Nastya Chat Handler v14.0 - MULTI-MODEL + VISION + HUMAN-LIKE + URL + INLINE + MULTI-ENGINE SEARCH!
 
-v14.0: MULTI-ENGINE SEARCH — /find ВСЕГДА находит!
-  - 4 поисковых движка: DuckDuckGo → Yandex → SearXNG → DDG API
+v14.0: MULTI-ENGINE SEARCH - /find ВСЕГДА находит!
+  - 4 поисковых движка: DuckDuckGo -> Yandex -> SearXNG -> DDG API
   - FORCE web search when user asks for products/services/links
   - Detect AI-hallucinated commercial URLs and replace with real search results
   - Commercial site URLs (ozon, wildberries, yandex.market, etc.) in AI response
-    are REMOVED if they were NOT in the search results — they're hallucinations!
+    are REMOVED if they were NOT in the search results - they're hallucinations!
   - Only real URLs from search results are kept in the response
 
 STABILITY RULES:
   - Bot ALWAYS responds, even if ALL AI providers fail (fallback responses)
   - NO error messages ever shown to user
-  - Per-operation DB with write lock — safe for concurrent users
+  - Per-operation DB with write lock - safe for concurrent users
   - 30-day context memory + news context injection
   - Short, effective system prompt
 
 INTELLIGENCE FEATURES v12.0 (MULTI-MODEL POLLINATIONS + HUMAN-LIKE + URL):
-  - Pollinations.ai MULTI-MODEL — 8 VERIFIED models with load balancing!
+  - Pollinations.ai MULTI-MODEL - 8 VERIFIED models with load balancing!
   - Automatic failover: if one model fails, next one picks up
   - Qwen3-4B local GGUF as LAST FALLBACK
-  - REAL PHOTO UNDERSTANDING — Настя ВИДИТ что на фото!
-  - PHOTO SEARCH — определение объектов на фото по запросу
-  - URL UNDERSTANDING — Настя читает ссылки и понимает контекст!
-  - INLINE MODE — Настя в любом чате через @bot_username
-  - Typing delay indicators — Настя "живой" собеседник
-  - Web search integration — Nastya can find and verify information!
-  - News discussion with emotions — Настя рассказывает подробно!
-  - Group chat message length limiting — короче в группах
-  - Expanded proactive messaging — Настя активный собеседник
+  - REAL PHOTO UNDERSTANDING - Настя ВИДИТ что на фото!
+  - PHOTO SEARCH - определение объектов на фото по запросу
+  - URL UNDERSTANDING - Настя читает ссылки и понимает контекст!
+  - INLINE MODE - Настя в любом чате через @bot_username
+  - Typing delay indicators - Настя "живой" собеседник
+  - Web search integration - Nastya can find and verify information!
+  - News discussion with emotions - Настя рассказывает подробно!
+  - Group chat message length limiting - короче в группах
+  - Expanded proactive messaging - Настя активный собеседник
   - Smart message splitting by sentence boundaries
 """
 import asyncio
@@ -72,11 +72,11 @@ _TRACKER_CLEANUP_INTERVAL = 3600
 # v44: URL detection regex
 _URL_PATTERN = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+')
 
-# v44: Photo search keywords — определение объектов на фото
+# v44: Photo search keywords - определение объектов на фото
 _PHOTO_SEARCH_KEYWORDS = ["что это", "найди", "поиск", "что за", "определи", "узнай что это",
                           "что на фото", "что изображено", "распознай", "опознай"]
 
-# v51: Product/service/link request detection — FORCE web search!
+# v51: Product/service/link request detection - FORCE web search!
 _PRODUCT_LINK_TRIGGERS = [
     "дай ссылк", "скинь ссылк", "найди ссылк", "где купить", "где найти",
     "дай ссылку", "скинь ссылку", "найди ссылку",
@@ -88,7 +88,7 @@ _PRODUCT_LINK_TRIGGERS = [
     "aliexpress", "amazon",
 ]
 
-# v51: Known Russian commercial/marketplace domains — URLs from these domains
+# v51: Known Russian commercial/marketplace domains - URLs from these domains
 # in AI responses are likely HALLUCINATED if not in search results!
 _COMMERCIAL_DOMAINS = [
     "wildberries.ru", "ozon.ru", "market.yandex.ru", "beru.ru",
@@ -105,10 +105,10 @@ _PRODUCT_SEARCH_PREFIXES = [
     "подскажи", "посоветуй", "рекомендуй", "выбери", "какие ",
 ]
 
-# v42: Per-user message dedup — track ACTIVE AI tasks per user
+# v42: Per-user message dedup - track ACTIVE AI tasks per user
 _user_processing: dict = {}  # user_id -> asyncio.Task (active AI task) or None
 
-# v59: Max chars for group/supergroup comments — keep it short!
+# v59: Max chars for group/supergroup comments - keep it short!
 GROUP_COMMENT_MAX_CHARS = 600
 
 
@@ -133,7 +133,7 @@ def _cleanup_trackers():
 
 
 # ════════════════════════════════════════════════════════════
-#  URL UNDERSTANDING — Настя читает ссылки!
+#  URL UNDERSTANDING - Настя читает ссылки!
 # ════════════════════════════════════════════════════════════
 
 async def _fetch_url_content(url: str) -> str:
@@ -170,7 +170,7 @@ _MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 
 def _moscow_now() -> datetime.datetime:
-    """Get current Moscow time — Настя из Москвы!"""
+    """Get current Moscow time - Настя из Москвы!"""
     return datetime.datetime.now(_MOSCOW_TZ)
 
 
@@ -198,12 +198,12 @@ def _get_time_greeting() -> str:
 
 AGE_DESCRIPTIONS = [
     "возраст Насти зависит от настроения, погоды и количества шоколадок",
-    "Настин возраст — тайна, покрытая макияжем",
+    "Настин возраст - тайна, покрытая макияжем",
     "Настя настолько молода, насколько ей хочется сегодня",
     "возраст Насти измеряется не годами, а капризами",
     "Это секрет! Если скажу, придётся тебя поцеловать 💋",
     "Столько, чтобы нравиться, но чтобы не приставали 😏",
-    "Возраст — это просто цифра. А Настя — это явление! 💅✨",
+    "Возраст - это просто цифра. А Настя - это явление! 💅✨",
     "Секрет! Настя никогда не рассказывает... ну, почти 💋",
 ]
 
@@ -217,7 +217,7 @@ STARS_REQUESTS = [
     "Мне {want} надо! Звёздочки давай! 😤💅",
     "Насте звёздочек! На {want}! Щас же! 🥺⭐",
     "Хочу {want} и точка! Звёздочки давай! 💅✨",
-    "Настя требует {want}! Звёздочки — быстро! 😤⭐",
+    "Настя требует {want}! Звёздочки - быстро! 😤⭐",
 ]
 
 # ── Nastya's Wants ──────────────────────────────────────────
@@ -234,7 +234,7 @@ NASTYA_WANTS = [
 ]
 
 # ════════════════════════════════════════════════════════════
-#  TYPING DELAY INDICATORS — Настя "живой" собеседник!
+#  TYPING DELAY INDICATORS - Настя "живой" собеседник!
 # ════════════════════════════════════════════════════════════
 
 TYPING_DELAY_PHRASES = [
@@ -244,7 +244,7 @@ TYPING_DELAY_PHRASES = [
     "Отошла на минутку! Сейчас вернусь! 🏃‍♀️",
     "Настя вспоминает... Подожди! 💅",
     "Ммм... Настя формулирует мысль! 🤔",
-    "Котятки, Настя не бот — нужно время подумать! 😤",
+    "Котятки, Настя не бот - нужно время подумать! 😤",
     "Щас-щас, Настя набирает! ⌨️💅",
     "Ой, Настя отвлеклась на котика... Сейчас отвечу! 🐱",
     "Настя наливает кофе... Минутку! ☕",
@@ -253,7 +253,7 @@ TYPING_DELAY_PHRASES = [
 async def _send_typing_delay(message: Message, delay_seconds: float = 0) -> None:
     """Send a typing indicator phrase while AI is processing.
 
-    Makes Настя feel more human — she's 'thinking' or 'distracted'
+    Makes Настя feel more human - she's 'thinking' or 'distracted'
     rather than being a silent loading bot.
     Only sends if AI is expected to take >3 seconds.
     """
@@ -268,7 +268,7 @@ async def _send_typing_delay(message: Message, delay_seconds: float = 0) -> None
             pass
 
 
-# ── Proactive messages — EXPANDED for human-like behavior ────────────
+# ── Proactive messages - EXPANDED for human-like behavior ────────────
 
 PROACTIVE_MESSAGES = [
     # Classic fun ones (user likes these)
@@ -277,29 +277,29 @@ PROACTIVE_MESSAGES = [
     "Спишь? 🥱",
     # Natural conversation starters
     "Ой, тут кое-что узнала... Хочешь расскажу? 👀✨",
-    "Кстати, я новость прочитала — ничего себе! Спроси! 📰",
+    "Кстати, я новость прочитала - ничего себе! Спроси! 📰",
     "Привет, давно не болтали... 💬",
     "А давай поболтаем? 💬",
     "Скучаю... Напиши что-нибудь! 🥺",
     "Привеееет! 🌸",
     "Ты с другими ботами разговариваешь?! 😤💔",
-    # v42: NEW — More human-like, news-aware, emotional
-    "Слушай, я тут статью прочитала — прикинь что узнала! Спрашивай! 📰✨",
-    "Блин, не могу молчать! Только что новость увидела — шок! 😱🔥",
+    # v42: NEW - More human-like, news-aware, emotional
+    "Слушай, я тут статью прочитала - прикинь что узнала! Спрашивай! 📰✨",
+    "Блин, не могу молчать! Только что новость увидела - шок! 😱🔥",
     "Настя тут подумала о жизни... А ты о чём думаешь? 💭🌙",
-    "Ой, я рецепт нашла — классный! Хочешь? 🍳💅",
+    "Ой, я рецепт нашла - классный! Хочешь? 🍳💅",
     "Слушай, а ты знаешь что... Ладно, сама расскажу если спросишь! 🤭",
     "Насте скучно... Расскажи что-нибудь интересное! 🥺💬",
-    "Котятки, я тут кино смотрела — эмоции через край! 🎬😭",
+    "Котятки, я тут кино смотрела - эмоции через край! 🎬😭",
     "Привет! Как день прошёл? Настя хочет знать! 💅✨",
-    "О, только что с подружкой болтала — есть тема! Спроси! 💬👀",
+    "О, только что с подружкой болтала - есть тема! Спроси! 💬👀",
     "Настя не может уснуть... Поболтаем? 🌙😴",
     "Блин, я сегодня ленивая... Кто со мной? 😴💅",
-    # v46: Discovery-aware — sharing found information
+    # v46: Discovery-aware - sharing found information
     "Настя тут кое-что интересное нашла в интернете! Спроси про что! 🔍✨",
     "Прикинь, какой гороскоп сегодня! Точняк совпадает! Спроси свой знак! 🔮💅",
     "О, я рецепт классный нашла! Настя уже пускает слюнки! 🍳😍",
-    "Котятки, я про одно мероприятие узнала — круть! Спроси! 🎫✨",
+    "Котятки, я про одно мероприятие узнала - круть! Спроси! 🎫✨",
     "Настя нашла скидки! Реально крутые! Спроси на что! 🛍️💰",
 ]
 
@@ -325,7 +325,7 @@ EXCITED_REACTIONS = [
     "Капец!", "Отпад!", "Бомба!", "Чётко!",
 ]
 
-# ── News discussion phrases — Настя рассказывает подробно! ──
+# ── News discussion phrases - Настя рассказывает подробно! ──
 
 NEWS_DISCUSSION_PHRASES = [
     "Прикинь, я тут прочитала про {topic}! {emotion} {detail}",
@@ -356,7 +356,7 @@ def _get_random_want() -> str:
 
 
 # ════════════════════════════════════════════════════════════
-#  STARS PAYMENT — ACTIVE BUTTONS
+#  STARS PAYMENT - ACTIVE BUTTONS
 # ════════════════════════════════════════════════════════════
 
 def _build_stars_invoice_keyboard(default_amount: int = 100) -> InlineKeyboardMarkup:
@@ -464,7 +464,7 @@ async def _maybe_news_opener(db, ai_router, user_id: int) -> str:
 #  HANDLERS
 # ════════════════════════════════════════════════════════════
 
-# NOTE: Inline mode is handled in bot/handlers/inline.py — dedicated handler with caching!
+# NOTE: Inline mode is handled in bot/handlers/inline.py - dedicated handler with caching!
 
 
 @router.message(CommandStart())
@@ -581,23 +581,23 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
     greeting_text = random.choice(greetings)
 
     extras = []
-    extras.append("⭐ /donates — кинуть Насте звёздочки!")
-    extras.append("🔍 /find — найти товар, лучшую цену!")
-    extras.append("🎬 /films — подборка фильмов от Насти!")
-    extras.append("🍳 /recipe — рецепт от Насти!")
-    extras.append("🔮 /horoscope — гороскоп на сегодня")
-    extras.append("🔢 /numerology — число судьбы")
-    extras.append("🌤️ /weather — погода в любом городе")
-    extras.append("🎫 /events — мероприятия и афиша")
-    extras.append("🍽️ /places — заведения и рестораны")
-    extras.append("🎨 /image — Настя нарисует что хочешь!")
+    extras.append("⭐ /donates - кинуть Насте звёздочки!")
+    extras.append("🔍 /find - найти товар, лучшую цену!")
+    extras.append("🎬 /films - подборка фильмов от Насти!")
+    extras.append("🍳 /recipe - рецепт от Насти!")
+    extras.append("🔮 /horoscope - гороскоп на сегодня")
+    extras.append("🔢 /numerology - число судьбы")
+    extras.append("🌤️ /weather - погода в любом городе")
+    extras.append("🎫 /events - мероприятия и афиша")
+    extras.append("🍽️ /places - заведения и рестораны")
+    extras.append("🎨 /image - Настя нарисует что хочешь!")
     if CHANNEL_USERNAME:
         extras.append(f"📺 Мой канал: t.me/{CHANNEL_USERNAME.replace('@', '')}")
 
     greeting_text += "\n\n" + "\n".join(extras)
 
     await message.answer(greeting_text)
-    # NOTE: Stars invoice only on /donates command — not on /start!
+    # NOTE: Stars invoice only on /donates command - not on /start!
 
 
 @router.message(Command("donates"))
@@ -613,7 +613,7 @@ async def cmd_donate(message: Message, db=None, ai_router=None) -> None:
 
 @router.message(Command("news"))
 async def cmd_news(message: Message, db=None, ai_router=None) -> None:
-    """Show recent news that Nastya found interesting — WITH LINKS."""
+    """Show recent news that Nastya found interesting - WITH LINKS."""
     if not db:
         await message.answer("Настя пока не в курсе новостей... 💅")
         return
@@ -701,7 +701,7 @@ async def cmd_search(message: Message, db=None, ai_router=None) -> None:
         await _save_simple_exchange(message, f"/search {query}", "\n".join(lines[:5]), db)
 
 
-# ── /find — Product/Service/Price search with links ──
+# ── /find - Product/Service/Price search with links ──
 
 @router.message(Command("find"))
 async def cmd_find(message: Message, db=None, ai_router=None) -> None:
@@ -739,7 +739,7 @@ async def cmd_find(message: Message, db=None, ai_router=None) -> None:
         await _save_simple_exchange(message, f"/find {query}", response[:200], db)
 
 
-# ── /horoscope — Daily horoscope ──
+# ── /horoscope - Daily horoscope ──
 
 @router.message(Command("horoscope"))
 async def cmd_horoscope(message: Message, db=None, ai_router=None) -> None:
@@ -770,7 +770,7 @@ async def cmd_horoscope(message: Message, db=None, ai_router=None) -> None:
         result = await ai_router.chat(
             prompt=f"Напиши гороскоп на сегодня для знака {sign_name}. Что ждёт в любви, работе, здоровье. Дай конкретные советы.",
             system_prompt=(
-                "Ты Настя — москвичка, 23 года, блогер, увлекаешься астрологией. "
+                "Ты Настя - москвичка, 23 года, блогер, увлекаешься астрологией. "
                 "Пиши гороскоп живо и эмоционально, как подружка-астролог. "
                 "4-6 предложений. Без markdown, без буллетов. "
                 "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
@@ -792,7 +792,7 @@ async def cmd_horoscope(message: Message, db=None, ai_router=None) -> None:
     await message.answer(f"{sign_emoji} Настя не смогла прочитать звёзды... Попробуй позже! 🔮💅")
 
 
-# ── /recipe — Find a recipe ──
+# ── /recipe - Find a recipe ──
 
 @router.message(Command("recipe"))
 async def cmd_recipe(message: Message, db=None, ai_router=None) -> None:
@@ -819,9 +819,9 @@ async def cmd_recipe(message: Message, db=None, ai_router=None) -> None:
             result = await ai_router.chat(
                 prompt=f"Найден рецепт: {snippet}\n\nНапиши подробный рецепт с ингредиентами и пошаговым приготовлением.",
                 system_prompt=(
-                    "Ты Настя — москвичка, 23 года, блогер, любишь готовить. "
+                    "Ты Настя - москвичка, 23 года, блогер, любишь готовить. "
                     "Пиши рецепт подробно: ингредиенты, пошаговое приготовление, советы. "
-                    "6-10 предложений. Без markdown, без буллетов — сплошной текст. "
+                    "6-10 предложений. Без markdown, без буллетов - сплошной текст. "
                     "Говори живо: 'прикинь', 'капец', 'круто'."
                 ),
                 max_tokens=500,
@@ -848,7 +848,7 @@ async def cmd_recipe(message: Message, db=None, ai_router=None) -> None:
     await message.answer("\n".join(lines))
 
 
-# ── /numerology — Numerology by date ──
+# ── /numerology - Numerology by date ──
 
 @router.message(Command("numerology"))
 async def cmd_numerology(message: Message, db=None, ai_router=None) -> None:
@@ -873,7 +873,7 @@ async def cmd_numerology(message: Message, db=None, ai_router=None) -> None:
             ai_result = await ai_router.chat(
                 prompt=f"Число судьбы: {number}. Значение: {meaning}. Распиши подробнее что значит число {number} в нумерологии.",
                 system_prompt=(
-                    "Ты Настя — москвичка, 23 года, блогер, увлекаешься нумерологией. "
+                    "Ты Настя - москвичка, 23 года, блогер, увлекаешься нумерологией. "
                     "Расскажи подробно и интересно. 4-6 предложений. Без markdown. "
                     "Говори живо: 'прикинь', 'офигеть', 'круто'."
                 ),
@@ -893,7 +893,7 @@ async def cmd_numerology(message: Message, db=None, ai_router=None) -> None:
     await message.answer(f"🔢 Число судьбы: {number}\n\n{meaning}")
 
 
-# ── /films — Film recommendations from Nastya! ──
+# ── /films - Film recommendations from Nastya! ──
 
 FILM_GENRES = [
     "триллер", "комедия", "драма", "фантастика", "ужасы",
@@ -910,7 +910,7 @@ FILM_MOODS = [
 
 @router.message(Command("films"))
 async def cmd_films(message: Message, db=None, ai_router=None) -> None:
-    """Get film recommendations from Nastya — she's a cinephile!"""
+    """Get film recommendations from Nastya - she's a cinephile!"""
     query = message.text.replace("/films", "").strip()
 
     if not ai_router:
@@ -941,13 +941,13 @@ async def cmd_films(message: Message, db=None, ai_router=None) -> None:
         result = await ai_router.chat(
             prompt=f"Подбери 5-7 фильмов для настроения '{query}'. {'Вот что нашла в интернете:' + search_context if search_context else ''}",
             system_prompt=(
-                "Ты Настя — москвичка, 23 года, блогер, КИНОМАНКА. "
+                "Ты Настя - москвичка, 23 года, блогер, КИНОМАНКА. "
                 "Ты смотришь всё: от артхауса до блокбастеров. Знаешь режиссёров, актёров, тренды. "
                 "Подбери фильмы С КОНКРЕТНЫМИ названиями, годами и коротким описанием почему стоит смотреть. "
-                "Пиши ОТ СЕБЯ — 'я смотрела', 'мне понравилось', 'прикинь, какой фильм'. "
+                "Пиши ОТ СЕБЯ - 'я смотрела', 'мне понравилось', 'прикинь, какой фильм'. "
                 "Живо, эмоционально, как подруга-киноманка. "
-                "Без markdown, без буллетов — сплошной текст с номерами. "
-                "Если есть ссылки на Кинопоиск или другие ресурсы — добавляй!"
+                "Без markdown, без буллетов - сплошной текст с номерами. "
+                "Если есть ссылки на Кинопоиск или другие ресурсы - добавляй!"
             ),
             max_tokens=600,
         )
@@ -966,11 +966,11 @@ async def cmd_films(message: Message, db=None, ai_router=None) -> None:
     await message.answer("Ой, Настя не смогла подобрать фильмы... Попробуй позже! 🎬😔")
 
 
-# ── /weather — Weather in any city ──
+# ── /weather - Weather in any city ──
 
 @router.message(Command("weather"))
 async def cmd_weather(message: Message, db=None, ai_router=None) -> None:
-    """Get weather for any city — Nastya style!"""
+    """Get weather for any city - Nastya style!"""
     query = message.text.replace("/weather", "").strip()
 
     if not query:
@@ -997,7 +997,7 @@ async def cmd_weather(message: Message, db=None, ai_router=None) -> None:
             result = await ai_router.chat(
                 prompt=f"Погода в городе {query}: {search_context}. Расскажи про погоду живо и посоветуй что надеть!",
                 system_prompt=(
-                    "Ты Настя — москвичка, 23 года, блогер. "
+                    "Ты Настя - москвичка, 23 года, блогер. "
                     "Расскажи про погоду живо, с эмоциями, посоветуй что надеть и чем заняться. "
                     "3-4 предложения. Без markdown. "
                     "Используй слова: 'прикинь', 'капец', 'кайф'."
@@ -1022,11 +1022,11 @@ async def cmd_weather(message: Message, db=None, ai_router=None) -> None:
         await message.answer(f"Ой, Настя не узнала погоду в {query}... Попробуй позже! 🌤️😔")
 
 
-# ── /events — Events and activities! ──
+# ── /events - Events and activities! ──
 
 @router.message(Command("events"))
 async def cmd_events(message: Message, db=None, ai_router=None) -> None:
-    """Find events and activities in a city — Nastya knows what's happening!"""
+    """Find events and activities in a city - Nastya knows what's happening!"""
     query = message.text.replace("/events", "").strip()
     if not query:
         query = random.choice(["Москва", "Санкт-Петербург", "Сочи"])
@@ -1052,22 +1052,22 @@ async def cmd_events(message: Message, db=None, ai_router=None) -> None:
     if ai_router:
         try:
             city_context = {
-                "Москва": "Ты из Москвы, знаешь все площадки — Крокус Сити, Лужники, Красный Октябрь, Флакон, Севкабель, ГЭС-2, ВДНХ, Зарядье, Московский Кремль.",
-                "Санкт-Петербург": "Ты знаешь Питер — Севкабель Порт, Новая Голландия, Ледовый, Мариинский, БКЗ Октябрьский.",
-                "Сочи": "Ты знаешь Сочи — Олимпийский парк, Сириус, Красная Поляна, Жемчужина, Фестивальный.",
-                "Красная Поляна": "Красная Поляна — Rosa Khutor, Gazprom, горные мероприятия, après-ski.",
-            }.get(query, f"Ты знаешь {query} — основные площадки и заведения.")
+                "Москва": "Ты из Москвы, знаешь все площадки - Крокус Сити, Лужники, Красный Октябрь, Флакон, Севкабель, ГЭС-2, ВДНХ, Зарядье, Московский Кремль.",
+                "Санкт-Петербург": "Ты знаешь Питер - Севкабель Порт, Новая Голландия, Ледовый, Мариинский, БКЗ Октябрьский.",
+                "Сочи": "Ты знаешь Сочи - Олимпийский парк, Сириус, Красная Поляна, Жемчужина, Фестивальный.",
+                "Красная Поляна": "Красная Поляна - Rosa Khutor, Gazprom, горные мероприятия, après-ski.",
+            }.get(query, f"Ты знаешь {query} - основные площадки и заведения.")
 
             result = await ai_router.chat(
                 prompt=f"Найди интересные мероприятия в {query} на сегодня {_date_str}. {'Вот что нашла:' + search_context if search_context else 'Поищи по своим знаниям.'}",
                 system_prompt=(
-                    f"Ты Настя — москвичка, 23 года, блогер, знаешь афишу и мероприятия. "
+                    f"Ты Настя - москвичка, 23 года, блогер, знаешь афишу и мероприятия. "
                     f"{city_context} "
                     f"Сегодня {_date_str}. Напиши 4-6 конкретных мероприятий с датами, местами и описаниями. "
-                    f"Пиши ОТ СЕБЯ — 'я хочу пойти', 'прикинь, кто выступает'. "
+                    f"Пиши ОТ СЕБЯ - 'я хочу пойти', 'прикинь, кто выступает'. "
                     f"Живо, эмоционально, с конкретными датами и местами. "
-                    f"Без markdown, без буллетов — сплошной текст. "
-                    f"Если есть ссылки — добавляй!"
+                    f"Без markdown, без буллетов - сплошной текст. "
+                    f"Если есть ссылки - добавляй!"
                 ),
                 max_tokens=500,
             )
@@ -1086,11 +1086,11 @@ async def cmd_events(message: Message, db=None, ai_router=None) -> None:
     await message.answer(f"Ой, Настя не нашла мероприятия в {query}... Попробуй позже! 🎫😔")
 
 
-# ── /places — Restaurants and venues! ──
+# ── /places - Restaurants and venues! ──
 
 @router.message(Command("places"))
 async def cmd_places(message: Message, db=None, ai_router=None) -> None:
-    """Find restaurants and venues in a city — Nastya knows the best spots!"""
+    """Find restaurants and venues in a city - Nastya knows the best spots!"""
     query = message.text.replace("/places", "").strip()
     if not query:
         query = random.choice(["Москва", "Санкт-Петербург", "Сочи"])
@@ -1115,18 +1115,18 @@ async def cmd_places(message: Message, db=None, ai_router=None) -> None:
                 "Москва": "Ты из Москвы, знаешь рестораны: White Rabbit, Twins Garden, Bjorn, Dr. Живаго, LavkaLavka, glu, Северяне, СибирьСибирь. Рестораторы: Новиков, Гинзбург, White Rabbit Family.",
                 "Санкт-Петербург": "Ты знаешь Питер: EM, Harvest, Joli, Cococo, Гастрономика, Манго Танго. Бары: Сердце, El Copitas SPb.",
                 "Сочи": "Ты знаешь Сочи: Бугенвиль, Санторини, Мадам Суши, рестораны на набережной, Красная Поляна.",
-            }.get(query, f"Ты знаешь {query} — основные заведения.")
+            }.get(query, f"Ты знаешь {query} - основные заведения.")
 
             result = await ai_router.chat(
                 prompt=f"Посоветуй рестораны и заведения в {query}. {'Вот что нашла:' + search_context if search_context else ''}",
                 system_prompt=(
-                    f"Ты Настя — москвичка, 23 года, блогер, разбираешься в ресторанах и заведениях. "
+                    f"Ты Настя - москвичка, 23 года, блогер, разбираешься в ресторанах и заведениях. "
                     f"{city_context} "
                     f"Посоветуй 4-6 конкретных мест с описанием кухни, атмосферы и примерными ценами. "
-                    f"Пиши ОТ СЕБЯ — 'я была', 'мне нравится', 'прикинь, какой вид'. "
+                    f"Пиши ОТ СЕБЯ - 'я была', 'мне нравится', 'прикинь, какой вид'. "
                     f"Живо, эмоционально, с конкретными деталями. "
-                    f"Без markdown, без буллетов — сплошной текст. "
-                    f"Если есть ссылки — добавляй!"
+                    f"Без markdown, без буллетов - сплошной текст. "
+                    f"Если есть ссылки - добавляй!"
                 ),
                 max_tokens=500,
             )
@@ -1145,11 +1145,11 @@ async def cmd_places(message: Message, db=None, ai_router=None) -> None:
     await message.answer(f"Ой, Настя не нашла заведения в {query}... Попробуй позже! 🍽️😔")
 
 
-# ── /image — Generate image with Pollinations! ──
+# ── /image - Generate image with Pollinations! ──
 
 @router.message(Command("image"))
 async def cmd_image(message: Message, db=None, ai_router=None) -> None:
-    """Generate an image using Pollinations AI — Nastya draws!"""
+    """Generate an image using Pollinations AI - Nastya draws!"""
     query = message.text.replace("/image", "").strip()
 
     if not query:
@@ -1215,7 +1215,7 @@ async def handle_voice(message: Message, db=None, ai_router=None) -> None:
         await message.answer("Ой, у Насти ушки заболели... Напиши текстом! 👂😅")
 
 
-# ── Photo handler — v42: REAL VISION! Настя ВИДИТ фото! ────
+# ── Photo handler - v42: REAL VISION! Настя ВИДИТ фото! ────
 
 # Per-user photo rate limiter
 _user_photo_times: dict = {}  # user_id -> last_photo_time
@@ -1224,16 +1224,16 @@ _PHOTO_RATE_LIMIT = 2.0  # seconds between photo responses per user
 
 @router.message(F.photo)
 async def handle_photo(message: Message, db=None, ai_router=None) -> None:
-    """v42: Фото обработчик — Настя ВИДИТ что на фото!
+    """v42: Фото обработчик - Настя ВИДИТ что на фото!
 
-    - REAL VISION: Download photo → base64 → Pollinations vision API
-    - Если есть подпись (caption) — дополняет понимание
+    - REAL VISION: Download photo -> base64 -> Pollinations vision API
+    - Если есть подпись (caption) - дополняет понимание
     - Групповые фото и пересылки ИГНОРИРУЮТСЯ (flood control!)
     - Rate limiting: max 1 ответ каждые 2 секунды
     """
     caption = message.caption or ""
 
-    # ИГНОРИРУЕМ фото из групп и пересылки — flood control!
+    # ИГНОРИРУЕМ фото из групп и пересылки - flood control!
     chat_type = message.chat.type if message.chat else "private"
     is_forward = message.forward_date is not None
 
@@ -1286,19 +1286,19 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
             is_search_photo = any(kw in caption_lower for kw in _PHOTO_SEARCH_KEYWORDS)
 
             if is_search_photo:
-                # PHOTO SEARCH MODE — определение и поиск по фото
+                # PHOTO SEARCH MODE - определение и поиск по фото
                 vision_prompt = (
                     "Определи что изображено на этом фото подробно. "
-                    "Если это товар — назови бренд и модель. "
-                    "Если место — назови его. "
-                    "Если растение/животное — определи вид. "
+                    "Если это товар - назови бренд и модель. "
+                    "Если место - назови его. "
+                    "Если растение/животное - определи вид. "
                     "Дай максимум полезной информации."
                 )
                 if caption:
                     vision_prompt += f" Контекст: {caption}."
 
                 vision_system = (
-                    "Ты Настя — девушка из Москвы, 23 года. Ты не бот, ты живой человек. "
+                    "Ты Настя - девушка из Москвы, 23 года. Ты не бот, ты живой человек. "
                     "Ты видишь фото и определяешь что на нём изображено. "
                     "Отвечай подробно но живо, 3-5 предложений. "
                     "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
@@ -1311,7 +1311,7 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
 
                 # System prompt for vision
                 vision_system = (
-                    "Ты Настя — девушка из Москвы, 23 года. Ты не бот, ты живой человек. "
+                    "Ты Настя - девушка из Москвы, 23 года. Ты не бот, ты живой человек. "
                     "Ты видишь фото и реагируешь на него живо и эмоционально. "
                     "2-4 предложения, разговорный стиль. "
                     "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
@@ -1370,11 +1370,11 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
         _user_processing[user_id] = task
         return
 
-    # No caption, no vision — ask what's in the photo
+    # No caption, no vision - ask what's in the photo
     responses = [
         "Ой, фотка! А что на ней? Расскажи! 📸💅",
-        "О, фото! Настя не видит, но если расскажешь — обсудим! 💅",
-        "Фотка! Опиши что там — Насте интересно! 👀✨",
+        "О, фото! Настя не видит, но если расскажешь - обсудим! 💅",
+        "Фотка! Опиши что там - Насте интересно! 👀✨",
         "О, картинка! Что на ней? Настя хочет знать! 📱💅",
     ]
     await message.answer(random.choice(responses))
@@ -1432,7 +1432,7 @@ async def handle_video(message: Message, db=None, ai_router=None) -> None:
 
 
 # ════════════════════════════════════════════════════════════
-#  MAIN TEXT CHAT HANDLER — INTELLIGENT + NEWS AWARE + GROUP LIMITS
+#  MAIN TEXT CHAT HANDLER - INTELLIGENT + NEWS AWARE + GROUP LIMITS
 # ════════════════════════════════════════════════════════════
 
 @router.message(F.text, ~F.text.startswith("/"))
@@ -1465,7 +1465,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         # Decide: respond if mentioned/replied, or by probability for interesting content
         should_respond = is_mentioned or is_reply_to_bot or has_interest
         if not should_respond:
-            # Random chance to comment even without being mentioned — Nastya is active in groups!
+            # Random chance to comment even without being mentioned - Nastya is active in groups!
             if random.random() < GROUP_RESPONSE_CHANCE:
                 should_respond = True
             else:
@@ -1485,7 +1485,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
 
     # ── Quick reactions (no AI needed) ──
 
-    # Donation keywords → ACTIVE payment
+    # Donation keywords -> ACTIVE payment
     donate_keywords = ["донат", "звёзд", "звезд", "подар", "подари",
                        "спонсор", "support", "donate", "stars", "звёздочки", "звездочки"]
     if any(kw in text_lower for kw in donate_keywords):
@@ -1509,7 +1509,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         await _save_simple_exchange(message, text, answer, db)
         return
 
-    # Zodiac/horoscope — MUST go to AI with context
+    # Zodiac/horoscope - MUST go to AI with context
     if any(t in text_lower for t in ["гороскоп", "зодиак", "знак зодиака", "предсказание", "астролог"]):
         pass  # Fall through to normal AI chat
 
@@ -1521,9 +1521,9 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         if CHANNEL_USERNAME:
             answer = random.choice([
                 f"Мой канал! Подписывайся! 💅✨\n👉 t.me/{CHANNEL_USERNAME.replace('@', '')}",
-                f"Конечно! Вот он — t.me/{CHANNEL_USERNAME.replace('@', '')} 💋✨",
+                f"Конечно! Вот он - t.me/{CHANNEL_USERNAME.replace('@', '')} 💋✨",
                 f"О, хочешь подписаться? Кайф! Вот: t.me/{CHANNEL_USERNAME.replace('@', '')} 💅",
-                f"Заходи! t.me/{CHANNEL_USERNAME.replace('@', '')} — там я настоящая! ✨",
+                f"Заходи! t.me/{CHANNEL_USERNAME.replace('@', '')} - там я настоящая! ✨",
                 f"Мой канал @chasnastya! Там новости, факты, опросы! 💅✨\n👉 t.me/{CHANNEL_USERNAME.replace('@', '')}",
             ])
             await db.set_channel_subscribed(message.from_user.id, True)
@@ -1533,7 +1533,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         await _save_simple_exchange(message, text, answer, db)
         return
 
-    # News question — Настя рассказывает ПОДРОБНО с ЭМОЦИЯМИ!
+    # News question - Настя рассказывает ПОДРОБНО с ЭМОЦИЯМИ!
     if any(t in text_lower for t in ["новости", "что нового", "что случилось", "что происходит"]):
         recent = await db.get_recent_news_with_links(limit=2, max_age_hours=24)
         if not recent:
@@ -1571,7 +1571,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
 
     # "Настя проснулась"
     if "настя проснулась" in text_lower:
-        answer = "Если Настя проснулась — все проснулись! 💅✨🔥"
+        answer = "Если Настя проснулась - все проснулись! 💅✨🔥"
         await message.answer(answer)
         await _save_simple_exchange(message, text, answer, db)
         return
@@ -1589,14 +1589,14 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
             await _save_simple_exchange(message, text, answer, db)
             return
 
-    # Silent treatment (0.3% — very rare)
+    # Silent treatment (0.3% - very rare)
     if random.random() < 0.003:
         silent = random.choice(SILENT_TREATMENT)
         await message.answer(silent)
         await _save_simple_exchange(message, text, silent, db)
         return
 
-    # ── "Дай ссылку" — search the web for real links, NOT channel link! ──
+    # ── "Дай ссылку" - search the web for real links, NOT channel link! ──
     if any(t in text_lower for t in ["дай ссылку", "скинь ссылку", "ссылку дай", "где ссылк", "где прочитать", "где посмотреть", "источник", "почему не можешь"]):
         found_link = False
         # Step 1: Try to find a relevant link from recent news
@@ -1653,13 +1653,13 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
             if channel_specific and CHANNEL_USERNAME:
                 answer = f"Мой канал @chasnastya! Там всё самое интересное! 💅✨\n👉 https://t.me/{CHANNEL_USERNAME.replace('@', '')}"
             else:
-                # Generic request — tell user we couldn't find, offer to search
+                # Generic request - tell user we couldn't find, offer to search
                 answer = "Настя не нашла ссылку на это... Попробуй /search и я поищу в интернете! 🔍"
             await message.answer(answer)
             await _save_simple_exchange(message, text, answer, db)
         return
 
-    # ── v44: URL UNDERSTANDING — Настя читает ссылки! ──
+    # ── v44: URL UNDERSTANDING - Настя читает ссылки! ──
     url_context = ""
     urls = _URL_PATTERN.findall(text)
     if urls:
@@ -1671,7 +1671,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
             else:
                 url_context += f"Пользователь скинул ссылку: {url}. Отреагируй и спроси что там интересного. "
 
-    # ── Normal AI chat — MOST conversations go here ──
+    # ── Normal AI chat - MOST conversations go here ──
     # is_group is already computed above for group chat handling
 
     task = asyncio.create_task(
@@ -1697,7 +1697,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                                  is_voice: bool = False, extra_suffix: str = "",
                                  extra_context: str = "", is_group: bool = False,
                                  url_context: str = "") -> None:
-    """Process text with AI. ALWAYS responds — even if all providers fail.
+    """Process text with AI. ALWAYS responds - even if all providers fail.
 
     Enhanced with:
     - Pollinations PRIMARY + local model FALLBACK
@@ -1754,30 +1754,30 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     # Build user context
     user_context = f"Собеседник: {user_name}"
     if gender == "male":
-        user_context += " (парень — флирти, называй по имени, шути, интересуйся им)."
+        user_context += " (парень - флирти, называй по имени, шути, интересуйся им)."
     elif gender == "female":
-        user_context += " (девушка — как подруга, делись новостями, обсуждай)."
+        user_context += " (девушка - как подруга, делись новостями, обсуждай)."
     else:
         user_context += "."
     if msg_count > 20:
-        user_context += " Старый знакомый — можно откровеннее!"
+        user_context += " Старый знакомый - можно откровеннее!"
     elif msg_count > 5:
-        user_context += " Уже общались — помни что говорили раньше."
+        user_context += " Уже общались - помни что говорили раньше."
     else:
-        user_context += " Новый собеседник — познакомься поближе."
+        user_context += " Новый собеседник - познакомься поближе."
 
     # POLITICS FILTER
     political_keywords = ["путин", "зеленск", "байден", "трамп", "навальн", "войн",
                          "санкци", "нато", "политик", "депутат", "президент", "министр",
                          "религи", "конфликт", "террор", "бомб", "фашизм", "нацизм"]
     if any(kw in text.lower() for kw in political_keywords):
-        user_context += " Вопрос про политику — переведи тему!"
+        user_context += " Вопрос про политику - переведи тему!"
 
     # INTER-BOT: Detect messages from Ася (@asiaexp_bot) in shared chats
     if message.from_user and message.from_user.is_bot:
         other_bot_username = (message.from_user.username or "").lower()
         if other_bot_username == "asiaexp_bot":
-            user_context += " Это сообщение от Аси — автоэксперта, ведёт канал @sochiautoparts. Вы коллеги! Можешь обсуждать с ней темы, спорить, шутить, делиться мнением."
+            user_context += " Это сообщение от Аси - автоэксперта, ведёт канал @sochiautoparts. Вы коллеги! Можешь обсуждать с ней темы, спорить, шутить, делиться мнением."
             # Register as shared chat
             try:
                 from bot.interbot import interbot_manager
@@ -1788,13 +1788,13 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                 pass
 
     # Build system prompt
-    # v56: Date/time awareness — Настя знает какой сегодня день!
+    # v56: Date/time awareness - Настя знает какой сегодня день!
     _now = _moscow_now()
     _date_str = _now.strftime("%d.%m.%Y")
     _day_name = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"][_now.weekday()]
     _time_str = _now.strftime("%H:%M")
     _month_name = ["", "января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"][_now.month]
-    _date_context = f" Сегодня {_day_name}, {_now.day} {_month_name} {_now.year} года, время {_time_str} МСК. Учитывай это — не пиши про старые новости как свежие."
+    _date_context = f" Сегодня {_day_name}, {_now.day} {_month_name} {_now.year} года, время {_time_str} МСК. Учитывай это - не пиши про старые новости как свежие."
     system_prompt = NASTYA_SYSTEM_PROMPT + f" Настроение: {mood}. Время: {time_mood}.{_date_context}"
     system_prompt += f" {user_context}"
     if extra_context:
@@ -1805,7 +1805,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     # Group chat: active participation
     if is_group:
-        system_prompt += " Мы в групповом чате — Настя активная участница! Отвечай живо и с интересом, 2-4 предложения. Можешь шутить, обсуждать, реагировать."
+        system_prompt += " Мы в групповом чате - Настя активная участница! Отвечай живо и с интересом, 2-4 предложения. Можешь шутить, обсуждать, реагировать."
 
     # News context
     _current_news_items = []
@@ -1822,7 +1822,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                         entry += f" ({link})"
                     news_parts.append(entry)
             if news_parts:
-                system_prompt += f" Свежие новости: {'; '.join(news_parts)}. Если спрашиваешь про событие — давай ссылку!"
+                system_prompt += f" Свежие новости: {'; '.join(news_parts)}. Если спрашиваешь про событие - давай ссылку!"
         _current_news_items = recent_news
     except Exception:
         pass
@@ -1834,12 +1834,12 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     except Exception:
         pass
 
-    # ── Web search — ENHANCED v51: Force search for product/link requests! ──
+    # ── Web search - ENHANCED v51: Force search for product/link requests! ──
     search_query = should_search(text)
     search_results = []
     is_product_search = False  # Track if this is a product/service search
 
-    # v51: Detect product/service/link requests → FORCE web search!
+    # v51: Detect product/service/link requests -> FORCE web search!
     if not search_query:
         text_lower = text.lower()
         for trigger in _PRODUCT_LINK_TRIGGERS:
@@ -1879,16 +1879,16 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                             + "\n".join(search_parts)
                             + "\n\n⛔ КРИТИЧЕСКИ ВАЖНО:"
                             + "\n1. Используй ТОЛЬКО ссылки из результатов поиска выше! Буквально копируй URL!"
-                            + "\n2. НЕ придумывай ссылки — если ссылки нет в результатах, НЕ пиши её!"
-                            + "\n3. НЕ меняй путь URL — копируй ССЫЛКУ ТОЧНО как в результатах!"
-                            + "\n4. Если результатов недостаточно — скажи что нашла не всё и предложи поискать ещё"
+                            + "\n2. НЕ придумывай ссылки - если ссылки нет в результатах, НЕ пиши её!"
+                            + "\n3. НЕ меняй путь URL - копируй ССЫЛКУ ТОЧНО как в результатах!"
+                            + "\n4. Если результатов недостаточно - скажи что нашла не всё и предложи поискать ещё"
                             + "\n5. НЕ заменяй реальные ссылки на @chasnastya!"
-                            + "\n6. НЕ добавляй выдуманные пути типа /catalog/product/12345 — это ВСЕГДА выдумка!"
+                            + "\n6. НЕ добавляй выдуманные пути типа /catalog/product/12345 - это ВСЕГДА выдумка!"
                             + "\n7. Каждый товар/услугу сопровождай ТОЧНОЙ ссылкой из результатов поиска"
                         )
                     else:
                         system_prompt += f"\n\n🔍 НАСТЯ НАШЛА В ИНТЕРНЕТЕ (ОБЯЗАТЕЛЬНО используй эти данные и URL в ответе!):\n" + "\n".join(search_parts) + "\n\n⚠️ ВАЖНО: Включи ВСЕ найденные URL в свой ответ! НЕ заменяй их на @chasnastya!"
-                logger.info(f"Web search for user {user_id}: '{search_query}' → {len(search_results)} results (product={is_product_search})")
+                logger.info(f"Web search for user {user_id}: '{search_query}' -> {len(search_results)} results (product={is_product_search})")
             elif is_product_search:
                 # v51: If product search found nothing, tell AI to be honest
                 system_prompt += (
@@ -1899,7 +1899,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
             logger.warning(f"Web search error: {e}")
 
     # ── Partner links context ──
-    # Nastya gives partner links naturally in conversation — not as ads, but as personal recommendations
+    # Nastya gives partner links naturally in conversation - not as ads, but as personal recommendations
     try:
         partner_context = nastya_partner_manager.generate_partner_context(text, max_shops=4)
         if partner_context:
@@ -1936,7 +1936,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         _send_typing_delay(message, delay_seconds=5.0)
     )
 
-    # Call AI — use LOCAL-ONLY routing for group comments (saves cloud balance!)
+    # Call AI - use LOCAL-ONLY routing for group comments (saves cloud balance!)
     try:
         route_type = "comment" if is_group else "chat"
         result = await ai_router.chat(
@@ -1966,7 +1966,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         ])
         logger.info(f"Filtered political content in response for user {user_id}")
 
-    # ── POST-PROCESS: Channel awareness — ONLY when specifically about channel ──
+    # ── POST-PROCESS: Channel awareness - ONLY when specifically about channel ──
     channel_keywords_in_user = ["канал", "подписк", "ссылк на канал", "насти канал", "твой канал"]
     if any(k in text.lower() for k in channel_keywords_in_user):
         # Only add channel link if the user was explicitly asking about the channel
@@ -1986,7 +1986,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     response_text = _enforce_news_links(response_text, _current_news_items)
 
     # ── POST-PROCESS: Web search links ──
-    # v51: ENHANCED — detect and remove hallucinated commercial URLs!
+    # v51: ENHANCED - detect and remove hallucinated commercial URLs!
     search_result_urls = set()
     for r in search_results:
         url = r.get('url', '')
@@ -2062,7 +2062,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         "chat_id": message.chat.id,
     }
 
-    # Send response — SMART SPLITTING
+    # Send response - SMART SPLITTING
     try:
         full_response = response_text + channel_invite
         parts = _smart_split_message(full_response, max_len=4096)
@@ -2100,9 +2100,9 @@ async def _maybe_ask_stars_check(user_id: int, msg_count: int, db, message: Mess
 
 
 def _enforce_news_links(response_text: str, news_items: list) -> str:
-    """Post-process AI response to add news links — ONLY when specifically relevant.
+    """Post-process AI response to add news links - ONLY when specifically relevant.
     
-    v50: Fixed — don't skip adding links just because t.me/ is in the response.
+    v50: Fixed - don't skip adding links just because t.me/ is in the response.
     The channel link t.me/chasnastya is NOT a news link.
     """
     if not news_items or not response_text:
@@ -2113,7 +2113,7 @@ def _enforce_news_links(response_text: str, news_items: list) -> str:
     # v50: Only skip if the response already has real external links (not just channel link)
     _channel_url = f"t.me/{CHANNEL_USERNAME.replace('@', '')}" if CHANNEL_USERNAME else "t.me/chasnastya"
     external_links = re.findall(r'https?://\S+', response_text)
-    # Filter out the channel link — it's not a news/product link
+    # Filter out the channel link - it's not a news/product link
     real_external_links = [l for l in external_links if _channel_url not in l.lower()]
     if real_external_links:
         return response_text  # Already has real links
@@ -2288,7 +2288,7 @@ def _remove_hallucinated_urls(text: str, search_result_urls: set, is_product_sea
         text = re.sub(r'\s*(?:Ссылк[аиу]:?\s*)$', '', text, flags=re.IGNORECASE | re.MULTILINE)
         text = re.sub(r'\s*🔗\s*$', '', text, flags=re.MULTILINE)
         text = re.sub(r'\[\s*\]', '', text)  # Empty brackets
-        text = re.sub(r'—\s*$', '', text, flags=re.MULTILINE)  # Trailing dashes
+        text = re.sub(r'-\s*$', '', text, flags=re.MULTILINE)  # Trailing dashes
         text = re.sub(r'\n{3,}', '\n\n', text)
 
     return text.strip()
@@ -2375,7 +2375,7 @@ def _clean_response(text: str) -> str:
                 is_fake = True
                 break
         if is_fake:
-            # Remove the fake URL — AI hallucinated it
+            # Remove the fake URL - AI hallucinated it
             text = text.replace(url, "")
             # Clean up any trailing "Ссылка:", "🔗", etc. after removed URL
             text = re.sub(r'\s*(?:Ссылк[аиу]:?|🔗)\s*$', '', text, flags=re.IGNORECASE)
@@ -2383,7 +2383,7 @@ def _clean_response(text: str) -> str:
             logger.info(f"Removed hallucinated URL: {url[:50]}")
 
     # ── Replace @chasnastya when AI used it as a PRODUCT link replacement ──
-    # If AI wrote "Ссылка: @chasnastya" or "🔗 @chasnastya" after a product — remove it
+    # If AI wrote "Ссылка: @chasnastya" or "🔗 @chasnastya" after a product - remove it
     # (the channel link should only appear when specifically asked about the channel)
     # But KEEP @chasnastya when it's a natural mention or channel reference
     text = re.sub(r'\s*(?:Ссылк[аиу]:?\s*)?@chasnastya\s*(?=$)', '', text, flags=re.IGNORECASE)
@@ -2423,7 +2423,7 @@ async def callback_donate(callback: CallbackQuery, db=None, ai_router=None) -> N
 
 
 # ════════════════════════════════════════════════════════════
-#  PROACTIVE MESSAGES — NEWS AWARE + TIME AWARE + EMOTIONAL
+#  PROACTIVE MESSAGES - NEWS AWARE + TIME AWARE + EMOTIONAL
 # ════════════════════════════════════════════════════════════
 
 async def check_and_send_proactive(bot, db, ai_router) -> None:
@@ -2497,10 +2497,10 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
 
 
 # ════════════════════════════════════════════════════════════
-#  POLL ANSWER HANDLER — react when someone votes in polls!
+#  POLL ANSWER HANDLER - react when someone votes in polls!
 # ════════════════════════════════════════════════════════════
 
 @router.poll_answer()
 async def handle_poll_answer(poll_answer: PollAnswer, db=None, ai_router=None) -> None:
-    """React when someone votes in a channel poll — Nastya is interested!"""
+    """React when someone votes in a channel poll - Nastya is interested!"""
     logger.info(f"Poll vote: user={poll_answer.user.id}, options={poll_answer.option_ids}")

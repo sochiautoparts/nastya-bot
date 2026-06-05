@@ -1,15 +1,15 @@
-"""Nastya News Engine 5.2 — AI-ONLY COMMENTS + SOCHIAUTOPARTS PRIMARY + EXPANDED SOURCES!
+"""Nastya News Engine 5.2 - AI-ONLY COMMENTS + SOCHIAUTOPARTS PRIMARY + EXPANDED SOURCES!
 
 v5.2 KEY CHANGES:
-  - sochiautoparts.ru/rss.xml — PRIMARY auto news source!
+  - sochiautoparts.ru/rss.xml - PRIMARY auto news source!
   - auto category = HIGHEST priority for Nastya's channel!
   - Added more auto sources: kolesa.ru, auto.mail.ru
   - Added more general sources: iz.ru, dzen.ru
   - Added tech: vc.ru, sports: euro-football.ru
   - Removed vesti.ru (404)
-  - AI-GENERATED Nastya commentary for news — ALWAYS AI, NO templates!
+  - AI-GENERATED Nastya commentary for news - ALWAYS AI, NO templates!
   - Each news item gets a unique, personality-rich comment from AI
-  - NO MORE template-based fallbacks — AI only! If AI fails, use generic comment
+  - NO MORE template-based fallbacks - AI only! If AI fails, use generic comment
   - News sources: ТОЛЬКО русскоязычные! Англоязычные УБРАНЫ!
   - AI commentary for channel posts is handled by channel.py
 
@@ -17,7 +17,7 @@ Architecture:
   - Fetches RSS feeds from configured sources using feedparser (robust)
   - Falls back to XML parsing if feedparser fails
   - Extracts titles, summaries, and categories
-  - AI-generated Nastya commentary — ALWAYS unique, personal, lively!
+  - AI-generated Nastya commentary - ALWAYS unique, personal, lively!
   - Generic comment only when ALL AI providers fail (no more templates!)
   - Stores in DB + JSON file for channel posting + conversation context
   - Runs periodically as background task
@@ -47,7 +47,7 @@ except ImportError:
     HAS_FEEDPARSER = False
     from xml.etree import ElementTree
 
-# JSON file for news cache — bot can read this directly
+# JSON file for news cache - bot can read this directly
 NEWS_JSON_PATH = Path("data/news_cache.json")
 
 
@@ -129,16 +129,16 @@ def _parse_rss(xml_text: str, source_name: str, category: str = "general") -> Li
 # ── News Fetcher ────────────────────────────────────────────
 
 # Category priority for picking interesting news (higher = more interesting for Nastya)
-# v53: auto = HIGHEST priority (sochiautoparts.ru — PRIMARY source!)
+# v53: auto = HIGHEST priority (sochiautoparts.ru - PRIMARY source!)
 CATEGORY_PRIORITY = {
-    "auto": 10,           # 🚗 sochiautoparts.ru — ОСНОВНОЙ источник!
-    "food": 7,            # Рецепты и еда — Настя любит готовить!
-    "events": 6,          # Мероприятия — Настя хочет везде!
-    "lifestyle": 5,       # Стиль и красота — Настина тема!
+    "auto": 10,           # 🚗 sochiautoparts.ru - ОСНОВНОЙ источник!
+    "food": 7,            # Рецепты и еда - Настя любит готовить!
+    "events": 6,          # Мероприятия - Настя хочет везде!
+    "lifestyle": 5,       # Стиль и красота - Настина тема!
     "entertainment": 5,
     "gaming": 4,
     "internet": 4,
-    "sports": 3,          # Спорт — Настя тоже следит!
+    "sports": 3,          # Спорт - Настя тоже следит!
     "tech": 3,
     "science": 3,
     "world": 2,
@@ -147,7 +147,7 @@ CATEGORY_PRIORITY = {
 
 # Keywords that make news more interesting for Nastya
 INTERESTING_KEYWORDS = [
-    # Автомобильные (приоритет — sochiautoparts.ru!)
+    # Автомобильные (приоритет - sochiautoparts.ru!)
     "авто", "машин", "автомобил", "запчаст", "ремонт авто", "двигател",
     "масл", "фильтр", "тормоз", "кузов", "шин", "колёс", "колес",
     "Toyota", "Honda", "Nissan", "Mitsubishi", "Kia", "Hyundai",
@@ -164,7 +164,7 @@ INTERESTING_KEYWORDS = [
     "айфон", "Apple", "телефон",
 ]
 
-# Keywords that make news POLITICAL — Nastya AVOIDS these!
+# Keywords that make news POLITICAL - Nastya AVOIDS these!
 POLITICAL_KEYWORDS = [
     # Politicians & political figures
     "путин", "зеленск", "байден", "трамп", "навальн", "оппозиц",
@@ -208,9 +208,9 @@ POLITICAL_KEYWORDS = [
 def _score_news_interest(item: Dict) -> float:
     """Score how interesting a news item is for Nastya (0-1).
 
-    Political/religious/war news gets score 0 — Nastya is apolitical!
+    Political/religious/war news gets score 0 - Nastya is apolitical!
     """
-    # Check if news is political — Nastya avoids these!
+    # Check if news is political - Nastya avoids these!
     text = (item.get("title", "") + " " + item.get("summary", "")).lower()
     for kw in POLITICAL_KEYWORDS:
         if kw.lower() in text:
@@ -266,7 +266,7 @@ async def fetch_all_news() -> List[Dict]:
     for item in all_items:
         item.pop("_interest_score", None)
 
-    # Filter out political/religious/war news — Nastya is APOLITICAL!
+    # Filter out political/religious/war news - Nastya is APOLITICAL!
     final_items = []
     for item in all_items:
         text = (item.get("title", "") + " " + item.get("summary", "")).lower()
@@ -309,7 +309,7 @@ async def store_news_items(db, items: List[Dict]) -> int:
     return new_count
 
 
-# v51: REMOVED all template-based commentary — AI ONLY!
+# v51: REMOVED all template-based commentary - AI ONLY!
 # Templates were: COMMENTARY_TEMPLATES and PERSONALITY_COMMENTARY
 # Now AI generates ALL comments. If AI fails, we use a generic comment.
 
@@ -323,7 +323,7 @@ _GENERIC_FALLBACK_COMMENTS = [
 
 
 async def generate_ai_commentary(title: str, summary: str = "", category: str = "general", ai_router=None) -> str:
-    """Generate Nastya's commentary using AI — unique and personal!
+    """Generate Nastya's commentary using AI - unique and personal!
 
     v4.0: AI-generated comments instead of templates.
     Falls back to templates only if AI is unavailable.
@@ -331,24 +331,24 @@ async def generate_ai_commentary(title: str, summary: str = "", category: str = 
     if ai_router:
         try:
             category_context = {
-                "auto": "Это автомобильная новость — Настя разбирается в автомобилях, фанат BMW! Делись экспертным мнением.",
-                "tech": "Это технологическая новость — Настя интересуется гаджетами и технологиями.",
-                "science": "Это научная новость — Настя любит науку и удивительные факты.",
-                "gaming": "Это игровая новость — Настя играет в игры и следит за индустрией.",
-                "food": "Это кулинарная новость — Настя обожает готовить и пробовать новое!",
-                "events": "Это анонс мероприятия — Настя хочет everywhere и делится находками!",
-                "lifestyle": "Это лайфстал-новость — Настя разбирается в моде, красоте и стиле!",
-                "sports": "Это спортивная новость — Настя следит за спортом!",
+                "auto": "Это автомобильная новость - Настя разбирается в автомобилях, фанат BMW! Делись экспертным мнением.",
+                "tech": "Это технологическая новость - Настя интересуется гаджетами и технологиями.",
+                "science": "Это научная новость - Настя любит науку и удивительные факты.",
+                "gaming": "Это игровая новость - Настя играет в игры и следит за индустрией.",
+                "food": "Это кулинарная новость - Настя обожает готовить и пробовать новое!",
+                "events": "Это анонс мероприятия - Настя хочет everywhere и делится находками!",
+                "lifestyle": "Это лайфстал-новость - Настя разбирается в моде, красоте и стиле!",
+                "sports": "Это спортивная новость - Настя следит за спортом!",
             }.get(category, "")
 
-            # ── DATE CONTEXT — Настя знает текущую дату! ──
+            # ── DATE CONTEXT - Настя знает текущую дату! ──
             _now = datetime.now(ZoneInfo("Europe/Moscow"))
             _days_ru = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
             _months_ru = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]
             _date_context = (
                 f"Сейчас {_days_ru[_now.weekday()]}, {_now.day} {_months_ru[_now.month - 1]} "
                 f"{_now.year} года, время {_now.strftime('%H:%M')} МСК. "
-                f"Учитывай текущую дату — не пиши про прошлые годы как про текущие!"
+                f"Учитывай текущую дату - не пиши про прошлые годы как про текущие!"
             )
 
             prompt_parts = [f"Новость: {title}"]
@@ -362,13 +362,13 @@ async def generate_ai_commentary(title: str, summary: str = "", category: str = 
             result = await ai_router.chat(
                 prompt=prompt,
                 system_prompt=(
-                    "Ты Настя — москвичка, 23 года, блогер. "
+                    "Ты Настя - москвичка, 23 года, блогер. "
                     "Напиши КОРОТКИЙ комментарий к этой новости от себя, от первого лица. "
                     f"{category_context} "
                     f"{_date_context} "
                     "1-2 предложения, живо и эмоционально. "
                     "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
-                    "Без markdown, без буллетов. Не пиши 'Настя' — пиши 'я'. "
+                    "Без markdown, без буллетов. Не пиши 'Настя' - пиши 'я'. "
                     "НЕ добавляй ссылки."
                 ),
                 max_tokens=150,
@@ -395,7 +395,7 @@ async def generate_ai_commentary(title: str, summary: str = "", category: str = 
     return random.choice(_GENERIC_FALLBACK_COMMENTS)
 
 
-# v51: generate_template_commentary REMOVED — AI ONLY!
+# v51: generate_template_commentary REMOVED - AI ONLY!
 
 
 # ── JSON Cache File ─────────────────────────────────────────
@@ -455,14 +455,14 @@ def load_news_from_json() -> List[Dict]:
     return []
 
 
-# ── Main News Cycle — AI-POWERED! ──────────────────────────────
+# ── Main News Cycle - AI-POWERED! ──────────────────────────────
 
 async def run_news_cycle(db, ai_router=None) -> int:
-    """Full news cycle: fetch → store → generate AI comments.
+    """Full news cycle: fetch -> store -> generate AI comments.
 
-    v4.0: AI-GENERATED commentary — unique, personal, lively!
-    - RSS fetch → SQLite + JSON file
-    - AI-generated commentary — unique per news item!
+    v4.0: AI-GENERATED commentary - unique, personal, lively!
+    - RSS fetch -> SQLite + JSON file
+    - AI-generated commentary - unique per news item!
     - Template-based fallback only if AI is unavailable
     """
     logger.info("News cycle: fetching RSS feeds...")
@@ -500,7 +500,7 @@ async def run_news_cycle(db, ai_router=None) -> int:
                 })
 
         for item in uncommented:
-            # AI-generated commentary — unique and personal!
+            # AI-generated commentary - unique and personal!
             comment = await generate_ai_commentary(
                 title=item["title"],
                 summary=item.get("summary", ""),
@@ -530,7 +530,7 @@ async def run_news_cycle(db, ai_router=None) -> int:
 def format_news_for_context(news_items: List[Dict]) -> str:
     """Format recent news for injection into system prompt.
 
-    v3.0: Short — only 2 headlines with links.
+    v3.0: Short - only 2 headlines with links.
     Bot can use this to reference news naturally in chat.
     """
     if not news_items:

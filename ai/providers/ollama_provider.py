@@ -1,12 +1,12 @@
-"""Ollama Local Provider — v26.0 (NO QWEN).
+"""Ollama Local Provider - v26.0 (NO QWEN).
 
 Architecture v26.0:
   - phi4-mini:3.8b as FAST text model (best quality/speed on CPU)
   - moondream for VISION (2-3x faster than qwen3-vl on CPU!)
-  - Semaphore(2) — allows 2 concurrent inferences
+  - Semaphore(2) - allows 2 concurrent inferences
   - Smart model selection: vision model NEVER used for plain text
   - Reduced timeouts: 90s text, 15s vision + Pollinations fallback
-  - Health check caching — no more spam every 30s
+  - Health check caching - no more spam every 30s
 """
 import logging
 import asyncio
@@ -24,7 +24,7 @@ OLLAMA_BASE_URL = "http://localhost:11434"
 
 # Model priority for TEXT (fastest first)
 TEXT_MODELS = ["phi4-mini:3.8b"]
-# Model for VISION — moondream is 2-3x faster than qwen3-vl on CPU!
+# Model for VISION - moondream is 2-3x faster than qwen3-vl on CPU!
 VISION_MODELS = ["moondream"]
 
 VISION_MODEL_PREFIXES = ["moondream", "llava", "minicpm-v", "phi4-mini-vl"]
@@ -39,7 +39,7 @@ _HEALTH_CACHE_TTL = 120  # Cache health check for 120 seconds
 
 
 class OllamaProvider(BaseProvider):
-    """Ollama local provider — v26.0 (NO QWEN).
+    """Ollama local provider - v26.0 (NO QWEN).
 
     phi4-mini for text, moondream for vision.
     Never uses vision model for plain text.
@@ -76,7 +76,7 @@ class OllamaProvider(BaseProvider):
                 self._installed_models = [m.get("name", "").lower() for m in data.get("models", [])]
                 logger.info(f"Ollama server running. Installed models: {self._installed_models}")
 
-                # Select TEXT model — phi4-mini only, NEVER vision model for text!
+                # Select TEXT model - phi4-mini only, NEVER vision model for text!
                 for model in TEXT_MODELS:
                     if self._is_model_installed(model):
                         self._text_model = model
@@ -84,7 +84,7 @@ class OllamaProvider(BaseProvider):
                         break
                 
                 if not self._text_model:
-                    # Last resort — use any installed model
+                    # Last resort - use any installed model
                     if self._installed_models:
                         self._text_model = self._installed_models[0]
                         logger.warning(f"Ollama: no preferred text model, using {self._text_model}")
@@ -119,7 +119,7 @@ class OllamaProvider(BaseProvider):
 
         except httpx.ConnectError:
             logger.warning("Ollama server not running. Skipping.")
-            self._available = True  # Try anyway — errors handled in generate()
+            self._available = True  # Try anyway - errors handled in generate()
         except Exception as e:
             logger.warning(f"Ollama health check failed: {e}")
             self._available = True  # Try anyway
@@ -129,7 +129,7 @@ class OllamaProvider(BaseProvider):
         logger.info(f"Ollama provider: {status}{vision} | text={self._text_model} | vision={self._vision_model}")
 
     def is_available(self) -> bool:
-        return True  # Always try — errors handled in generate()
+        return True  # Always try - errors handled in generate()
 
     async def _warm_up(self) -> None:
         """Warm up the text model."""
@@ -232,7 +232,7 @@ class OllamaProvider(BaseProvider):
         return any(m.startswith(prefix) for m in self._installed_models)
 
     async def health_check(self) -> bool:
-        """Check if Ollama server is still responding — with caching."""
+        """Check if Ollama server is still responding - with caching."""
         global _last_health_check, _last_health_status
         
         now = time.time()
@@ -254,7 +254,7 @@ class OllamaProvider(BaseProvider):
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         """Generate text via local Ollama instance.
 
-        v7.0: CRITICAL FIX — vision model NEVER used for plain text!
+        v7.0: CRITICAL FIX - vision model NEVER used for plain text!
         Text always goes to phi4-mini.
         Vision goes to moondream.
         """
@@ -282,7 +282,7 @@ class OllamaProvider(BaseProvider):
             model_to_use = self._vision_model or "moondream"
             models_to_try = [model_to_use]
             request_timeout = 180.0  # Vision needs more time
-            logger.info(f"Ollama: VISION request → {model_to_use}")
+            logger.info(f"Ollama: VISION request -> {model_to_use}")
         else:
             model_to_use = self._text_model or "phi4-mini:3.8b"
             # NEVER add vision model to text models!
@@ -292,7 +292,7 @@ class OllamaProvider(BaseProvider):
                 if self._is_model_installed("phi4-mini:3.8b"):
                     models_to_try = ["phi4-mini:3.8b"]
             request_timeout = 90.0  # Text should be faster
-            logger.info(f"Ollama: TEXT request → {model_to_use}")
+            logger.info(f"Ollama: TEXT request -> {model_to_use}")
 
         # Warm up text model on first request
         if not self._warm and self._text_model:
@@ -342,7 +342,7 @@ class OllamaProvider(BaseProvider):
                 },
             }
 
-            # Use semaphore instead of lock — allows 2 concurrent requests
+            # Use semaphore instead of lock - allows 2 concurrent requests
             async with _ollama_semaphore:
                 try:
                     response = await self._client.post(

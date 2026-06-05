@@ -1,8 +1,8 @@
-"""GitHub Models Provider — free AI models via GitHub Marketplace.
+"""GitHub Models Provider - free AI models via GitHub Marketplace.
 
 Uses GH_MODELS_TOKEN for authentication.
 Free tier: GitHub Models provides access to GPT-4o-mini, DeepSeek, Llama, etc.
-Rate limited but free — great as reliable fallback.
+Rate limited but free - great as reliable fallback.
 Supports vision via GPT-4o-mini.
 
 v4.0: DeepSeek as PRIMARY model! DeepSeek-V3 first for best quality,
@@ -24,7 +24,7 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 logger = logging.getLogger(__name__)
 
 TEXT_MODELS = {
-    "default": "DeepSeek-V3-0324",           # DeepSeek V3 — best for Russian, primary!
+    "default": "DeepSeek-V3-0324",           # DeepSeek V3 - best for Russian, primary!
     "fast": "DeepSeek-V3-0324",               # Same DeepSeek for fast
     "reasoning": "DeepSeek-R1-0528",          # DeepSeek R1 for complex reasoning
 }
@@ -40,12 +40,12 @@ FALLBACK_MODELS = [
 
 
 class GitHubModelsProvider(BaseProvider):
-    """GitHub Models provider — free, reliable, uses GH_MODELS_TOKEN.
+    """GitHub Models provider - free, reliable, uses GH_MODELS_TOKEN.
 
     GitHub Models provides free access to various AI models
     through the Azure AI inference API.
 
-    v4.0: DeepSeek as primary model — best quality for Russian language,
+    v4.0: DeepSeek as primary model - best quality for Russian language,
           excellent conversation skills, free on GitHub Models.
 
     NOTE: Requires PAT with 'models' permission.
@@ -147,14 +147,14 @@ class GitHubModelsProvider(BaseProvider):
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
                 if status == 401 or status == 403:
-                    # Auth failure — PAT doesn't have 'models' permission
+                    # Auth failure - PAT doesn't have 'models' permission
                     self._auth_failed = True
                     logger.error(
                         f"GitHub Models auth failed (HTTP {status}). "
                         f"PAT needs 'models' permission! Create a fine-grained PAT at "
                         f"https://github.com/settings/tokens?type=beta with 'GitHub Models' enabled."
                     )
-                    raise ProviderError(self.name, f"Auth failed (HTTP {status}) — PAT needs 'models' permission", retryable=False)
+                    raise ProviderError(self.name, f"Auth failed (HTTP {status}) - PAT needs 'models' permission", retryable=False)
                 if status == 404:
                     logger.warning(f"GitHub model {try_model} not found, trying fallback")
                     last_error = ProviderError(self.name, f"Model {try_model} not found", retryable=True)

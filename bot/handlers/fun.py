@@ -1,4 +1,4 @@
-"""Nastya Fun Handler — minimal, mostly just /fact for entertainment."""
+"""Nastya Fun Handler - minimal, mostly just /fact for entertainment."""
 import logging
 from aiogram import Router, F
 from aiogram.filters import Command

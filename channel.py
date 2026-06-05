@@ -1,15 +1,15 @@
-"""Nastya Channel Manager 14.0 — AI-POWERED NEWS + DATE AWARE + BMW FAN + FILM BUFF!
+"""Nastya Channel Manager 14.0 - AI-POWERED NEWS + DATE AWARE + BMW FAN + FILM BUFF!
 
 v14.0 KEY CHANGES:
   - DATE AWARENESS: All AI prompts now include current date/time context!
-  - Настя знает какой сейчас год — больше никаких постов с 2025!
-  - BMW M3 (убран model year — это модельный год, не текущий год)
-  - AI-POWERED news commentary — ALWAYS AI, NO templates!
+  - Настя знает какой сейчас год - больше никаких постов с 2025!
+  - BMW M3 (убран model year - это модельный год, не текущий год)
+  - AI-POWERED news commentary - ALWAYS AI, NO templates!
   - Film recommendation posts in channel!
   - BMW enthusiasm in auto posts!
   - Nastya comments ACTIVELY in groups she's a member of
   - EXPANDED categories: food, events, lifestyle, sports, films
-  - More diverse content — not just auto!
+  - More diverse content - not just auto!
 """
 import logging
 import random
@@ -121,7 +121,7 @@ def _validate_post_text(text: str) -> bool:
     return True
 
 
-# ── Channel Post Templates — lively, engaging, NOT boring ──
+# ── Channel Post Templates - lively, engaging, NOT boring ──
 
 NEWS_POST_TEMPLATES = [
     "💅 {comment}\n\n📖 {title}\n{summary}",
@@ -143,36 +143,36 @@ NEWS_POST_TEMPLATES = [
     "Запчасти в деле! {comment}\n\n{title}\n{summary}",
 ]
 
-# ── EXPANDED personality posts — DIVERSE, SUBSTANTIVE, not just shoes! ──
-# Each post has: emotion + opinion/fact + question — NOT just "Офигеть!"
+# ── EXPANDED personality posts - DIVERSE, SUBSTANTIVE, not just shoes! ──
+# Each post has: emotion + opinion/fact + question - NOT just "Офигеть!"
 
 PERSONAL_POSTS = [
-    # Morning — with opinion and question
+    # Morning - with opinion and question
     "Утро! Кофе или ещё спать? Настя выбирает спать, честно! Кто со мной? 😴☕",
     "Доброе утро! Кто уже проснулся? Настя ещё нет и не собирается! А вы ранняя пташка или сова? 🥱",
-    "Кофе — лучшее изобретение человечества! Точняк, без него Настя не человек! Сколько чашек уже выпили? ☕✨",
+    "Кофе - лучшее изобретение человечества! Точняк, без него Настя не человек! Сколько чашек уже выпили? ☕✨",
     "Утренний совет от Насти: не вставайте. Просто не вставайте. Кто ослушался? 🛏️💅",
-    # Day — with engagement
+    # Day - with engagement
     "Настя скучает... Напишите мне! Чем занимаетесь? Настя тут одна страдает от безделья 🥺💕",
-    "Чем занимаетесь? Настя ленится и не стесняется! Реально, лень — это искусство! А вы что делаете? 😴💅",
+    "Чем занимаетесь? Настя ленится и не стесняется! Реально, лень - это искусство! А вы что делаете? 😴💅",
     "Дневной вопрос: а вы уже обедали? Настя голодная и не может решить что заказать! Суши или пиццу? 🍽️",
     "Кто сегодня работает? Настя типа тоже... ну, лежит и скроллит ленту! Это считается? 📱💅",
-    # Evening — with opinions
+    # Evening - with opinions
     "Вечер! Сериал или шопинг онлайн? Настя выбирает оба! А вы что предпочитаете? 🤔📺",
     "Кто тоже не хочет завтра на работу/учёбу? Настя точно не хочет! Реально, кто придумал понедельники? 🥱",
     "Вечерний муд: Настя хочет суши. И точка. Кто знает хорошее место? Подскажите! 🍣💅",
     "Вечерние мысли: почему сериалы лучше реальной жизни? Настя требует ответы! 🤔📺",
-    # Night — with philosophy
+    # Night - with philosophy
     "Не спится... Кто тут? Настя смотрит в потолок и думает о жизни! О чём думаете? 🌙",
-    "Ночной дожор — это нормально, да? Настя сейчас заказала бы пиццу! Кто тоже хочет? 🍕🌙",
+    "Ночной дожор - это нормально, да? Настя сейчас заказала бы пиццу! Кто тоже хочет? 🍕🌙",
     "Настя не может уснуть... Сериалы виноваты! Кто тоже страдает от бессонницы? 📺😤",
-    "Ночная философия: если Настя не видела луну — она существует? Реально, кто ночью гуляет? 🌙🤔",
-    # Event reactions — SUBSTANTIVE with questions
+    "Ночная философия: если Настя не видела луну - она существует? Реально, кто ночью гуляет? 🌙🤔",
+    # Event reactions - SUBSTANTIVE with questions
     "Прикинь, что в мире творится! Настя в шоке! Что вы об этом думаете? Делитесь в комментах! 😱🌍",
     "Офигеть, вы видели что сегодня произошло?! Настя не верит! Кто в курсе? Пишите! 😤📰",
     "Жесть, какие события! Настя следит за всем и не понимает! Ваше мнение? 👀🔥",
     "Капец, сегодня день! Настя даже не успела всё прочитать! Что самое важное пропустила? 📱",
-    # Personality — varied topics with engagement
+    # Personality - varied topics with engagement
     "Котятки, Настя тут подумала... А вы тоже принимаете решения за 2 секунды а потом жалеете? 🤔💅",
     "Не могу решить: суши или пиццу? Голосуйте! Настя реально не может выбрать уже полчаса! 🍣🍕",
     "Только что вернулась с маникюра... Обожаю этот цвет! Какой цвет щас в тренде? Подскажите! 💅✨",
@@ -183,43 +183,43 @@ PERSONAL_POSTS = [
     "Срочно! Какой цвет круче: розовый или красный? Настя не может выбрать! Голосуйте! 💖❤️",
     "Настя нашла милого котика в интернете... Всё, я пропала! У кого есть котики? Покажите! 🐱💕",
     "Ребята, а вы верите в гороскопы? Настя иногда заглядывает... Точняк, совпадает иногда! Ваш знак? ♊💅",
-    "Блин, я тут подумала — а кто вообще придумал понедельники? Настя требует отмены! Кто за? 😤📅",
+    "Блин, я тут подумала - а кто вообще придумал понедельники? Настя требует отмены! Кто за? 😤📅",
     "Настя требует внимания! Кто тут? Давайте болтать! О чём хотите поговорить? 🙋‍♀️✨",
     "Секрет: Настя иногда разговаривает с котом... А вы с кем разговариваете когда одни? 🐱💬",
     "Короче, я решила что сегодня день шопинга! Кто со мной? Онлайн или офлайн? 🛍️💅",
     "Настя только что заказала себе вкусняшку... И не жалею! А вы что заказали недавно? 🍣💕",
-    # Technology & science — with opinions
+    # Technology & science - with opinions
     "Настя тут прочитала про нейросети... Они нас заменят?! Реально страшно! Кто уже пробовал ChatGPT? 😱💻",
-    "Прикинь, ИИ уже картины рисует! Настя тоже так может... ну, почти! Как думаете, ИИ — угроза? 🎨🤖",
-    "Технологии — это магия! Настя в этом уверена! Какая технология вас больше всего впечатлила? 💻✨",
-    # News & events — with engagement
+    "Прикинь, ИИ уже картины рисует! Настя тоже так может... ну, почти! Как думаете, ИИ - угроза? 🎨🤖",
+    "Технологии - это магия! Настя в этом уверена! Какая технология вас больше всего впечатлила? 💻✨",
+    # News & events - with engagement
     "Настя следит за новостями! Вы тоже? Что думаете про последние события? Давайте обсудим! 📰🤔",
     "Ой, только что прочитала новость! Настя в шоке! Пишите в комменты, обсудим! 👀🔥",
     "Котятки, вы в курсе что происходит? Настя в курсе и делится! Подписывайтесь чтобы не пропустить! 📰💅",
     # Sports & active
-    "Настя решила заняться спортом... завтра! Кто тоже откладывает на завтра? Лень — это образ жизни! 😤🏃‍♀️",
+    "Настя решила заняться спортом... завтра! Кто тоже откладывает на завтра? Лень - это образ жизни! 😤🏃‍♀️",
     # Psychology & deep
     "А вы тоже думаете о смысле жизни в 3 часа ночи? Настя да! Реально, зачем мы всё усложняем? 🌙🤔",
     "Психология говорит: Настя всегда права. Наука не ошибается! А вы с этим согласны? 💅🧠",
-    "Интересный факт: люди, которые поздно ложатся, креативнее. Настя — сова! А вы сова или жаворонок? 🦉✨",
-    # Cooking & food — with questions
-    "Секрет Насти: лучшая еда — это чужая еда. Доставка, я люблю тебя! Что заказываете? 🍕💕",
+    "Интересный факт: люди, которые поздно ложатся, креативнее. Настя - сова! А вы сова или жаворонок? 🦉✨",
+    # Cooking & food - with questions
+    "Секрет Насти: лучшая еда - это чужая еда. Доставка, я люблю тебя! Что заказываете? 🍕💕",
     "Настя открыла для себя матча... Теперь я эстет! Кто тоже подсел? Или лучше обычный кофе? 🍵✨",
-    # Travel — with engagement
+    # Travel - with engagement
     "Настя хочет на море! Прям щас! Кто со мной? Реально, надо сбежать от города! 🏖️✈️",
     "Стамбул, Дубай, Бали... Настя хочет везде! Куда вы хотите поехать? Подскажите крутые места! 🌍💅",
-    # BMW & Auto — Настя фанат!
-    "Прикинь, BMW M4 Competition — это просто произведение искусства! Настя влюблена! 🏎️💖 Кто тоже фанат баварцев?",
-    "Рядная шестёрка BMW — лучший звук в мире! Настя может слушать часами! 🏎️🔥 А вы какую марку обожаете?",
-    "Настя ездит на M3 серого цвета — самая модная тачка! 🏎️💅 А вы на чём ездите?",
-    # Films & Cinema — Настя киноманка!
+    # BMW & Auto - Настя фанат!
+    "Прикинь, BMW M4 Competition - это просто произведение искусства! Настя влюблена! 🏎️💖 Кто тоже фанат баварцев?",
+    "Рядная шестёрка BMW - лучший звук в мире! Настя может слушать часами! 🏎️🔥 А вы какую марку обожаете?",
+    "Настя ездит на M3 серого цвета - самая модная тачка! 🏎️💅 А вы на чём ездите?",
+    # Films & Cinema - Настя киноманка!
     "Настя пересмотрела 'Интерстеллар' в 10-й раз... И каждый раз плачу! 🎬😭 Какие фильмы вас так пробивают?",
-    "Кто смотрит корейское кино? Настя подсела! 'Паразиты' — шедевр! 🎬🔥 Рекомендуйте!",
-    "Подборка от Насти: если хотите испугаться — смотрите скандинавские триллеры! Жесть! 🎬😱",
-    "Аниме — это не мультики! Настя готова спорить! Какие аниме посоветуете? 🎬✨",
+    "Кто смотрит корейское кино? Настя подсела! 'Паразиты' - шедевр! 🎬🔥 Рекомендуйте!",
+    "Подборка от Насти: если хотите испугаться - смотрите скандинавские триллеры! Жесть! 🎬😱",
+    "Аниме - это не мультики! Настя готова спорить! Какие аниме посоветуете? 🎬✨",
 ]
 
-# ── Knowledge posts — inject interesting facts! ──
+# ── Knowledge posts - inject interesting facts! ──
 
 KNOWLEDGE_POST_TEMPLATES = [
     "Прикинь, Настя только узнала! {fact} 🤯",
@@ -232,10 +232,10 @@ KNOWLEDGE_POST_TEMPLATES = [
     "Знание дня! {fact} Настя в шоке! 💡🤯",
 ]
 
-# ── Quiz/poll posts — now using REAL Telegram polls! ──
+# ── Quiz/poll posts - now using REAL Telegram polls! ──
 
 QUIZ_POSTS = [
-    "Котятки, опрос! 📊\n\nНастя или Алиса — кто лучше? 💅🤖\n\nПишите в комменты!",
+    "Котятки, опрос! 📊\n\nНастя или Алиса - кто лучше? 💅🤖\n\nПишите в комменты!",
     "Срочно! 🚨\n\nСуши или пицца? Настя не может решить! 🍣🍕\n\nГолосуйте!",
     "Опрос дня! 📊\n\nКакой знак зодиака самый капризный? ♊😤\n\nНастя точно знает ответ!",
     "Котятки, важный вопрос! 🤔\n\nШопинг онлайн или в магазине? 🛍️🏬\n\nНастя за онлайн!",
@@ -245,14 +245,14 @@ QUIZ_POSTS = [
     "Кто круче? 🤔\n\nКотики или собачки? Настя за котиков! 🐱🐶\n\nГолосуйте!",
 ]
 
-# ── Knowledge quiz posts — with REAL correct answers! ──
+# ── Knowledge quiz posts - with REAL correct answers! ──
 
 KNOWLEDGE_QUIZZES = [
     {
         "question": "Какой знак зодиака самый разговорчивый? ♊",
         "options": ["Овен 🔥", "Близнецы ♊", "Скорпион 🦂", "Телец ♉"],
         "correct": 1,
-        "explanation": "Близнецы — самый разговорчивый знак! Настя тоже болтушка! 💅✨",
+        "explanation": "Близнецы - самый разговорчивый знак! Настя тоже болтушка! 💅✨",
     },
     {
         "question": "Сколько слов в день говорит средняя женщина? 🗣️",
@@ -264,7 +264,7 @@ KNOWLEDGE_QUIZZES = [
         "question": "Какая машина самая продаваемая в мире? 🚗",
         "options": ["Lada 🇷🇺", "Toyota Corolla 🇯🇵", "Volkswagen Golf 🇩🇪", "Honda Civic 🇯🇵"],
         "correct": 1,
-        "explanation": "Toyota Corolla — больше 50 миллионов продано! Настя знает авто! 🚗💅",
+        "explanation": "Toyota Corolla - больше 50 миллионов продано! Настя знает авто! 🚗💅",
     },
     {
         "question": "Сколько процентов жизни котики спят? 🐱",
@@ -276,13 +276,13 @@ KNOWLEDGE_QUIZZES = [
         "question": "Какой город на двух континентах? 🌍",
         "options": ["Москва 🇷🇺", "Дубай 🇦🇪", "Стамбул 🇹🇷", "Сочи 🇷🇺"],
         "correct": 2,
-        "explanation": "Стамбул — единственный город на двух континентах! Настя хочет туда! ✈️💅",
+        "explanation": "Стамбул - единственный город на двух континентах! Настя хочет туда! ✈️💅",
     },
     {
         "question": "Что дороже: мёд или золото? (вес к весу) 🍯",
         "options": ["Золото, конечно! 🥇", "Мёд! 🍯", "Одинаково! ⚖️", "Настя не знает! 💅"],
         "correct": 1,
-        "explanation": "Мёд 3000-летней давности — ценнее золота для археологов! Но Настя за шоколадку! 🍫",
+        "explanation": "Мёд 3000-летней давности - ценнее золота для археологов! Но Настя за шоколадку! 🍫",
     },
     {
         "question": "Сколько серий в самом длинном сериале? 📺",
@@ -294,15 +294,15 @@ KNOWLEDGE_QUIZZES = [
         "question": "Какая скорость интернета 5G? 📶",
         "options": ["100 Мбит/с", "1 Гбит/с", "10 Гбит/с", "100 Гбит/с"],
         "correct": 2,
-        "explanation": "До 10 Гбит/с — в 100 раз быстрее 4G! Но батарея садится быстрее! 📱⚡",
+        "explanation": "До 10 Гбит/с - в 100 раз быстрее 4G! Но батарея садится быстрее! 📱⚡",
     },
 ]
 
-# ── Event reaction posts — react to what's happening! ──
+# ── Event reaction posts - react to what's happening! ──
 
 EVENT_REACTION_POSTS = [
     "Вы видели что происходит в мире?! Настя в шоке! Давайте обсудим в комментах, что думаете? 😱🔥",
-    "Офигеть, какие новости! Настя не может молчать — это надо обсудить! Пишите что думаете! 😤📰",
+    "Офигеть, какие новости! Настя не может молчать - это надо обсудить! Пишите что думаете! 😤📰",
     "Капец, сегодня день был! Настя следит за всем и не верит! Кто ещё в курсе? 👀✨",
     "Точняк, это надо обсудить! Мир меняется на глазах! Что вы об этом думаете? 🤔💬",
     "Жесть, мир с ума сошёл! Настя в курсе и требует обсуждения! Делитесь мнением! 😤🌍",
@@ -315,7 +315,7 @@ EVENT_REACTION_POSTS = [
 PROMO_POSTS = [
     "Кстати, со мной можно поболтать лично! Жми кнопку ниже 👇💅",
     "Хочешь обсудить? Настя на связи! Кнопка внизу 👀✨",
-    "Настя не только постит — она и болтает! Попробуй! 💅💬",
+    "Настя не только постит - она и болтает! Попробуй! 💅💬",
 ]
 
 
@@ -338,11 +338,11 @@ def _get_time_posts() -> List[str]:
 
 def format_news_post(title: str, comment: str, link: str = "", category: str = "general",
                        summary: str = "") -> str:
-    """Format a news item as a channel post — Nastya writes from herself.
+    """Format a news item as a channel post - Nastya writes from herself.
     
     Links in channel: ONLY for products, services, news, events, recipes.
     Channel link t.me/chasnastya added to EVERY post.
-    Source links (article origins) are NOT included — Nastya writes from herself.
+    Source links (article origins) are NOT included - Nastya writes from herself.
     """
     template = random.choice(NEWS_POST_TEMPLATES)
     # Truncate summary for post readability
@@ -380,14 +380,14 @@ def format_news_post(title: str, comment: str, link: str = "", category: str = "
 
 
 def format_personality_post(text: str) -> str:
-    """Format a personality post for the channel — adds channel link."""
+    """Format a personality post for the channel - adds channel link."""
     if "@chasnastya" not in text and "chasnastya" not in text:
         text += f"\n\n@chasnastya"
     return text
 
 
 def format_knowledge_post(fact: str) -> str:
-    """Format a knowledge fact as a channel post — adds channel link."""
+    """Format a knowledge fact as a channel post - adds channel link."""
     template = random.choice(KNOWLEDGE_POST_TEMPLATES)
     post = template.format(fact=fact)
     # Channel link in every post
@@ -400,13 +400,13 @@ def format_knowledge_post(fact: str) -> str:
 async def post_news_to_channel(bot: Bot, db, news_items: List[Dict]) -> int:
     """Post unposted news items to channel. Returns count of posts made.
     
-    Political/religious/war news is FILTERED OUT — Nastya is APOLITICAL!
+    Political/religious/war news is FILTERED OUT - Nastya is APOLITICAL!
     """
     if not CHANNEL_ID:
         logger.debug("No CHANNEL_ID configured, skipping channel post")
         return 0
 
-    # Political filter keywords — Nastya does NOT post political content!
+    # Political filter keywords - Nastya does NOT post political content!
     political_keywords = [
         # Politicians & political figures
         "путин", "зеленск", "байден", "трамп", "навальн", "оппозиц",
@@ -476,11 +476,11 @@ async def post_news_to_channel(bot: Bot, db, news_items: List[Dict]) -> int:
             # ── Final safety validation ──
             # Catch SSE artifacts, API errors, and other garbage before posting
             if not _validate_post_text(post_text):
-                logger.warning(f"Skipping news post — validation failed: {item['title'][:50]}...")
+                logger.warning(f"Skipping news post - validation failed: {item['title'][:50]}...")
                 await db.mark_news_posted(item["id"])
                 continue
 
-            # v29: Deep link с ID поста — бот будет знать о чём речь!
+            # v29: Deep link с ID поста - бот будет знать о чём речь!
             post_id_for_link = item.get("id", 0)
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(
@@ -530,7 +530,7 @@ async def post_personality_to_channel(bot: Bot, db, post_text: str) -> bool:
 
         # ── Final safety validation ──
         if not _validate_post_text(formatted):
-            logger.warning("Skipping personality post — validation failed")
+            logger.warning("Skipping personality post - validation failed")
             return False
 
         # v29: Deep link для personality постов
@@ -574,7 +574,7 @@ async def post_knowledge_to_channel(bot: Bot, db, fact: str) -> bool:
 
     # ── Final safety validation ──
     if not _validate_post_text(post_text):
-        logger.warning("Skipping knowledge post — validation failed")
+        logger.warning("Skipping knowledge post - validation failed")
         return False
 
     try:
@@ -638,7 +638,7 @@ async def post_real_poll_to_channel(bot: Bot, db) -> bool:
             explanation = random.choice([
                 f"Правильный ответ: {options[correct_index]}! Настя знает всё! 💅✨",
                 f"Точняк, это {options[correct_index]}! Настя не ошибается! 💅",
-                f"Кайф, ты знал? {options[correct_index]} — правильный ответ! 💋",
+                f"Кайф, ты знал? {options[correct_index]} - правильный ответ! 💋",
             ])
 
             await bot.send_poll(
@@ -652,7 +652,7 @@ async def post_real_poll_to_channel(bot: Bot, db) -> bool:
                 explanation=explanation,
             )
         else:
-            # Regular poll — anonymous for channels (non-anonymous not allowed in channels)
+            # Regular poll - anonymous for channels (non-anonymous not allowed in channels)
             await bot.send_poll(
                 chat_id=CHANNEL_ID,
                 question=question,
@@ -730,9 +730,9 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
 
             category_context = ""
             if category == "auto":
-                category_context = "Это автомобильная новость — расскажи подробно и экспертно! Настя разбирается в автомобилях, фанат BMW!"
+                category_context = "Это автомобильная новость - расскажи подробно и экспертно! Настя разбирается в автомобилях, фанат BMW!"
 
-            # ── DATE CONTEXT — Настя знает какой сейчас год! ──
+            # ── DATE CONTEXT - Настя знает какой сейчас год! ──
             import datetime
             from zoneinfo import ZoneInfo
             _now = datetime.datetime.now(ZoneInfo("Europe/Moscow"))
@@ -749,23 +749,23 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
             result = await ai_router.chat(
                 prompt=prompt,
                 system_prompt=(
-                    "Ты Настя — москвичка, 23 года, блогер, ведёшь Telegram канал @chasnastya. "
-                    "Ты пишешь пост для своего Telegram канала ОТ СЕБЯ — от первого лица, "
+                    "Ты Настя - москвичка, 23 года, блогер, ведёшь Telegram канал @chasnastya. "
+                    "Ты пишешь пост для своего Telegram канала ОТ СЕБЯ - от первого лица, "
                     "как живой человек, а не как бот или ИИ-помощник. "
                     "Пиши 'я думаю', 'мне кажется', 'я прочитала', 'я нашла'. "
                     f"{category_context}"
-                    f"{_date_context} Учитывай текущую дату — не пиши про прошлые годы как про текущие! "
+                    f"{_date_context} Учитывай текущую дату - не пиши про прошлые годы как про текущие! "
                     "Напиши осмысленный, развёрнутый пост об этой новости. "
                     "4-6 предложений, живо и эмоционально, со своим мнением. "
                     "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
                     "Без markdown, без буллетов, без заголовков. "
-                    "Не пиши 'Настя' в начале — говори от первого лица. "
-                    "НЕ добавляй ссылки на источник — ты пишешь от себя. "
+                    "Не пиши 'Настя' в начале - говори от первого лица. "
+                    "НЕ добавляй ссылки на источник - ты пишешь от себя. "
                     "Ссылки допускаются ТОЛЬКО на конкретные товары, услуги, мероприятия. "
-                    "НЕ вставляй ссылку на свой канал — она добавится автоматически."
+                    "НЕ вставляй ссылку на свой канал - она добавится автоматически."
                 ),
                 max_tokens=300,
-                priority="low",  # Background priority — don't block user chat
+                priority="low",  # Background priority - don't block user chat
             )
 
             if result and result.text:
@@ -817,7 +817,7 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
     # Validate before posting
     if not _validate_post_text(post_text):
         logger.warning(f"AI news post validation failed: {title[:50]}...")
-        # v51: Skip post if validation fails — no template-based fallback
+        # v51: Skip post if validation fails - no template-based fallback
         return False
 
     if _is_recent_post(post_text):
@@ -878,7 +878,7 @@ async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
     max_posts = 3
     roll = random.random()
 
-    # ── AI-powered news posts (50% chance) — v44: SUBSTANTIVE! ──
+    # ── AI-powered news posts (50% chance) - v44: SUBSTANTIVE! ──
     if roll < 0.50:
         try:
             unposted = await db.get_unposted_news(limit=5)
@@ -894,18 +894,18 @@ async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
                     if await post_ai_news_to_channel(bot, db, ai_router, news_item):
                         posted += 1
                     else:
-                        # AI failed — fall back to template
+                        # AI failed - fall back to template
                         posted += await post_news_to_channel(bot, db, [news_item])
                 else:
-                    # No AI router — template-based
+                    # No AI router - template-based
                     posted += await post_news_to_channel(bot, db, [news_item])
         except Exception as e:
             logger.error(f"Channel news cycle error: {e}")
 
-    # Personality posts (20% chance) — v35: ВСЕГДА шаблоны, БЕЗ AI!
+    # Personality posts (20% chance) - v35: ВСЕГДА шаблоны, БЕЗ AI!
     if posted < max_posts and (roll >= 0.45 or posted == 0):
         try:
-            # v35: Только шаблоны — AI НЕ используется для постов
+            # v35: Только шаблоны - AI НЕ используется для постов
             # Это быстрее (мгновенно), надёжнее (нет мусора), не грузит модель
             time_posts = _get_time_posts()
             post_text = random.choice(time_posts)
@@ -915,10 +915,10 @@ async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
         except Exception as e:
             logger.error(f"Channel personality cycle error: {e}")
 
-    # Knowledge posts (20% chance) — MORE FACTS!
+    # Knowledge posts (20% chance) - MORE FACTS!
     if posted < max_posts and random.random() < 0.50:
         try:
-            # Pick a random topic and fact — avoid only fashion/shoes!
+            # Pick a random topic and fact - avoid only fashion/shoes!
             # Weight topics: more tech, science, psychology, fun_facts, auto
             weighted_topics = [
                 "tech", "fun_facts", "psychology", "auto", "science" if "science" in KNOWLEDGE_TOPICS else "fun_facts",
@@ -935,7 +935,7 @@ async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
         except Exception as e:
             logger.error(f"Channel knowledge cycle error: {e}")
 
-    # Event reaction posts (10% chance) — INCLUDE NEWS LINKS!
+    # Event reaction posts (10% chance) - INCLUDE NEWS LINKS!
     if posted < max_posts and random.random() < 0.25:
         try:
             # Try to get a news item with link for event reaction
@@ -958,12 +958,12 @@ async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
                     post_text += f"\n💬 {comment}"
                 post_text += f"\n\n🔗 <a href=\"{link}\">Читать</a>"
 
-                # NOTE: No @chasnastya signature — post is already IN the channel!
+                # NOTE: No @chasnastya signature - post is already IN the channel!
 
                 if not _is_recent_post(post_text):
                     # ── Final safety validation ──
                     if not _validate_post_text(post_text):
-                        logger.warning("Skipping event reaction post — validation failed")
+                        logger.warning("Skipping event reaction post - validation failed")
                     else:
                         try:
                             # v29: Deep link с ID новости
@@ -991,14 +991,14 @@ async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
                         except Exception as e:
                             logger.error(f"Channel event reaction post error: {e}")
             else:
-                # No news with link — use template (still substantive)
+                # No news with link - use template (still substantive)
                 reaction = random.choice(EVENT_REACTION_POSTS)
                 if await post_personality_to_channel(bot, db, reaction):
                     posted += 1
         except Exception as e:
             logger.error(f"Channel event reaction error: {e}")
 
-    # Quiz posts (5% chance) — now text only, real polls are separate
+    # Quiz posts (5% chance) - now text only, real polls are separate
     if posted < max_posts and random.random() < 0.10:
         try:
             quiz = random.choice(QUIZ_POSTS)
@@ -1007,7 +1007,7 @@ async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
         except Exception as e:
             logger.error(f"Channel quiz cycle error: {e}")
 
-    # REAL Telegram polls (10% chance) — interactive with vote buttons!
+    # REAL Telegram polls (10% chance) - interactive with vote buttons!
     if posted < max_posts and random.random() < 0.30:
         try:
             if await post_real_poll_to_channel(bot, db):
@@ -1016,7 +1016,7 @@ async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
         except Exception as e:
             logger.error(f"Channel real poll cycle error: {e}")
 
-    # Knowledge quizzes with correct answers (8% chance) — more engaging!
+    # Knowledge quizzes with correct answers (8% chance) - more engaging!
     if posted < max_posts and random.random() < 0.20:
         try:
             quiz = random.choice(KNOWLEDGE_QUIZZES)
@@ -1043,13 +1043,13 @@ async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
         except Exception as e:
             logger.error(f"Channel knowledge quiz error: {e}")
 
-    # Promo posts (3% chance — rare, not spammy)
+    # Promo posts (3% chance - rare, not spammy)
     if posted < max_posts and random.random() < 0.03:
         try:
             promo = random.choice(PROMO_POSTS)
             # ── Final safety validation (even promo posts need it) ──
             if not _validate_post_text(promo):
-                logger.warning("Skipping promo post — validation failed")
+                logger.warning("Skipping promo post - validation failed")
             else:
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(
@@ -1083,18 +1083,18 @@ async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
 # ── Channel Invite in Conversations ─────────────────────────
 
 CHANNEL_INVITE_PHRASES = [
-    "Кстати, у меня есть канал! Загляни — не пожалеешь! 💅✨",
+    "Кстати, у меня есть канал! Загляни - не пожалеешь! 💅✨",
     "Я там пост написала, заходи посмотри! 👀",
     "Подписывайся на мой канал, я там самое интересное нахожу! 💋",
-    "Хочешь знать что я думаю про всё? Мой канал — туда! 💅",
+    "Хочешь знать что я думаю про всё? Мой канал - туда! 💅",
     "А ты подписан на мой канал? Там весело! 🎀",
     "Заходи ко мне на канал, я сегодня злая и интересная! 😤✨",
-    "Кстати, мой канал @chasnastya — там я настоящая! 💅",
+    "Кстати, мой канал @chasnastya - там я настоящая! 💅",
     "Мой канал живёт! Подпишись, а? 🥺✨",
     "Точняк, подписывайся на @chasnastya! Там кайф! 💅✨",
-    "Офигеть, у меня канал есть! @chasnastya — заходи! 💅🔥",
+    "Офигеть, у меня канал есть! @chasnastya - заходи! 💅🔥",
     "Я про это в @chasnastya написала! Заходи читай! 📰💅",
-    "Подписывайся на @chasnastya — я там новости и факты постю! 📺✨",
+    "Подписывайся на @chasnastya - я там новости и факты постю! 📺✨",
 ]
 
 CHANNEL_DISCUSSION_PHRASES = [

@@ -1,12 +1,12 @@
-"""OpenRouter AI Provider — access to free models via single API.
+"""OpenRouter AI Provider - access to free models via single API.
 
 OpenRouter provides access to hundreds of models through one endpoint.
 Free tier includes many models: Gemma 4, Nemotron, Llama, Hermes, Qwen, etc.
-OpenAI-compatible API — just change base_url.
+OpenAI-compatible API - just change base_url.
 
 Rate limits: 50 free requests/day (or 1000/day with $10+ credit on account).
 
-v3.1: Updated free model lists (March 2026) — removed dead models
+v3.1: Updated free model lists (March 2026) - removed dead models
        (llama-4-scout, qwen2.5-vl-72b, mistral-small-3.1), added new ones.
        Vision confirmed: gemma-4-31b-it, gemma-4-26b-a4b-it, nemotron-nano-12b-v2-vl.
 """
@@ -19,42 +19,42 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
-# Free models on OpenRouter — ordered by quality for Russian conversation
+# Free models on OpenRouter - ordered by quality for Russian conversation
 # Rate limit: 50 free requests/day (or 1000/day with $10+ credit)
 TEXT_MODELS = {
-    "default": "google/gemma-4-31b-it:free",                    # Gemma 4 31B — best free for Russian (262k ctx)
+    "default": "google/gemma-4-31b-it:free",                    # Gemma 4 31B - best free for Russian (262k ctx)
     "fast": "nvidia/nemotron-nano-9b-v2:free",                   # Fast, lightweight (128k ctx)
     "reasoning": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",  # Reasoning model (256k ctx)
     "coding": "qwen/qwen3-coder:free",                           # Code specialist (1M ctx, 262k out)
     "large": "nvidia/nemotron-3-super-120b-a12b:free",           # Largest context (1M ctx, 262k out)
 }
 
-# Fallback free models — ordered by quality for Russian conversation
+# Fallback free models - ordered by quality for Russian conversation
 # Only models confirmed to exist on free tier (March 2026)
 FALLBACK_MODELS = [
-    "google/gemma-4-31b-it:free",                                # Gemma 4 31B — best free for Russian
-    "nvidia/nemotron-3-super-120b-a12b:free",                    # 120B MoE, 1M ctx — huge context
-    "meta-llama/llama-3.3-70b-instruct:free",                   # Llama 70B — solid Russian
-    "nousresearch/hermes-3-llama-3.1-405b:free",                # Hermes 405B — powerful
-    "qwen/qwen3-next-80b-a3b-instruct:free",                    # Qwen 80B MoE — good Russian
-    "moonshotai/kimi-k2.6:free",                                 # Kimi K2.6 — strong multilingual
-    "openai/gpt-oss-120b:free",                                  # GPT-OSS 120B — capable
-    "z-ai/glm-4.5-air:free",                                     # GLM 4.5 Air — good Russian
-    "google/gemma-4-26b-a4b-it:free",                            # Gemma 4 26B MoE — backup
-    "nvidia/nemotron-nano-9b-v2:free",                           # Nano 9B — fast last resort
+    "google/gemma-4-31b-it:free",                                # Gemma 4 31B - best free for Russian
+    "nvidia/nemotron-3-super-120b-a12b:free",                    # 120B MoE, 1M ctx - huge context
+    "meta-llama/llama-3.3-70b-instruct:free",                   # Llama 70B - solid Russian
+    "nousresearch/hermes-3-llama-3.1-405b:free",                # Hermes 405B - powerful
+    "qwen/qwen3-next-80b-a3b-instruct:free",                    # Qwen 80B MoE - good Russian
+    "moonshotai/kimi-k2.6:free",                                 # Kimi K2.6 - strong multilingual
+    "openai/gpt-oss-120b:free",                                  # GPT-OSS 120B - capable
+    "z-ai/glm-4.5-air:free",                                     # GLM 4.5 Air - good Russian
+    "google/gemma-4-26b-a4b-it:free",                            # Gemma 4 26B MoE - backup
+    "nvidia/nemotron-nano-9b-v2:free",                           # Nano 9B - fast last resort
 ]
 
-# Vision-capable free models — only confirmed vision support on free tier (March 2026)
+# Vision-capable free models - only confirmed vision support on free tier (March 2026)
 # NOTE: llama-4-scout, qwen2.5-vl-72b, mistral-small-3.1 NO LONGER exist on free tier
 VISION_MODELS = [
-    "google/gemma-4-31b-it:free",             # Gemma 4 31B — excellent vision + text (262k ctx)
-    "google/gemma-4-26b-a4b-it:free",         # Gemma 4 26B MoE — backup vision (262k ctx)
-    "nvidia/nemotron-nano-12b-v2-vl:free",    # Nemotron VL — dedicated vision model (128k ctx, 128k out)
+    "google/gemma-4-31b-it:free",             # Gemma 4 31B - excellent vision + text (262k ctx)
+    "google/gemma-4-26b-a4b-it:free",         # Gemma 4 26B MoE - backup vision (262k ctx)
+    "nvidia/nemotron-nano-12b-v2-vl:free",    # Nemotron VL - dedicated vision model (128k ctx, 128k out)
 ]
 
 
 class OpenRouterProvider(BaseProvider):
-    """OpenRouter provider — access to many free models via single API.
+    """OpenRouter provider - access to many free models via single API.
 
     OpenRouter gives us many free models through one endpoint.
     This is the most reliable fallback because even if some models

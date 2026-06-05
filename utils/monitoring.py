@@ -26,7 +26,7 @@ def monitor(func):
 
 
 async def check_model_health(ai_router) -> dict:
-    """Проверка здоровья AI провайдеров — Pollinations + Local."""
+    """Проверка здоровья AI провайдеров - Pollinations + Local."""
     if not ai_router:
         return {"status": "down", "error": "No ai_router"}
 

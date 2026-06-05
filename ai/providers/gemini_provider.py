@@ -1,4 +1,4 @@
-"""Gemini AI Provider — Google's Gemini via OpenAI-compatible API.
+"""Gemini AI Provider - Google's Gemini via OpenAI-compatible API.
 
 Free tier at https://aistudio.google.com
 Models: gemini-2.0-flash, gemini-2.5-flash-preview-05-20

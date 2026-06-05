@@ -1,16 +1,16 @@
-"""LlamaCppProvider v5.0 — SINGLE-MODEL llama-cpp-python provider (FASTER!)
+"""LlamaCppProvider v5.0 - SINGLE-MODEL llama-cpp-python provider (FASTER!)
 
 v5.0 FASTER LOCAL MODEL:
   - n_ctx=4096, n_batch=512 (faster batch processing!)
-  - max_tokens=300 (was 384 — faster generation)
-  - Smart history: up to 4 messages (was 6 — less context = faster)
-  - System prompt: up to 600 chars (was 800 — tighter context)
+  - max_tokens=300 (was 384 - faster generation)
+  - Smart history: up to 4 messages (was 6 - less context = faster)
+  - System prompt: up to 600 chars (was 800 - tighter context)
   - Each message: up to 300 chars
   - User message: up to 1200 chars
-  - Total chars safety limit: 8000 (was 12000 — faster processing)
-  - timeout=45.0 (was 65.0 — fail faster)
+  - Total chars safety limit: 8000 (was 12000 - faster processing)
+  - timeout=45.0 (was 65.0 - fail faster)
   - /no_think prefix for Qwen models
-  - stop=["<think"] — BLOCKS Qwen3 thinking mode
+  - stop=["<think"] - BLOCKS Qwen3 thinking mode
   - asyncio.Semaphore(1) for serialized generation
   - asyncio.to_thread() for non-blocking generation
 """
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Model loading defaults
 DEFAULT_MODEL_CONFIG = {
-    "n_ctx": 4096,       # v4: Was 2048 — too small, caused overflow errors!
+    "n_ctx": 4096,       # v4: Was 2048 - too small, caused overflow errors!
     "n_batch": 512,      # v5: Faster batch processing (was default 512)
     "n_threads": 4,
     "n_gpu_layers": 0,
@@ -40,7 +40,7 @@ DEFAULT_MODEL_CONFIG = {
 
 # Generation defaults
 DEFAULT_GEN_CONFIG = {
-    "max_tokens": 300,       # v5: Was 384 — faster generation
+    "max_tokens": 300,       # v5: Was 384 - faster generation
     "temperature": 0.82,
     "top_p": 0.92,
     "top_k": 50,
@@ -51,20 +51,20 @@ DEFAULT_GEN_CONFIG = {
 }
 
 # ── Context window limits for local model ──
-# Qwen3-4B with n_ctx=4096 — much more room!
+# Qwen3-4B with n_ctx=4096 - much more room!
 # Rough estimate: 1 token ≈ 4 chars for Russian text
-LOCAL_MAX_SYSTEM_CHARS = 600    # v5: Was 800 — tighter context for speed
-LOCAL_MAX_HISTORY_MSGS = 4     # v5: Was 6 — less history = faster
-LOCAL_MAX_MSG_CHARS = 300      # v4: Was 200 — longer messages
-LOCAL_MAX_USER_CHARS = 1200    # v4: Was 800 — longer user messages
-LOCAL_MAX_TOTAL_CHARS = 8000   # v5: Was 12000 — faster processing (~2000 tokens)
+LOCAL_MAX_SYSTEM_CHARS = 600    # v5: Was 800 - tighter context for speed
+LOCAL_MAX_HISTORY_MSGS = 4     # v5: Was 6 - less history = faster
+LOCAL_MAX_MSG_CHARS = 300      # v4: Was 200 - longer messages
+LOCAL_MAX_USER_CHARS = 1200    # v4: Was 800 - longer user messages
+LOCAL_MAX_TOTAL_CHARS = 8000   # v5: Was 12000 - faster processing (~2000 tokens)
 
 
 class LlamaCppProvider(BaseProvider):
     """Single-model llama-cpp-python provider.
 
     Qwen3-4B-Instruct as LOCAL FALLBACK when Pollinations is unavailable.
-    Only ONE model loaded at a time — minimal RAM usage.
+    Only ONE model loaded at a time - minimal RAM usage.
     """
 
     name: str = "llama_cpp"
@@ -140,7 +140,7 @@ class LlamaCppProvider(BaseProvider):
             raise ProviderError(self.name, f"Failed to load model: {e}", retryable=False)
 
     async def _warm_up(self) -> None:
-        """Warm up model — first request is always slower."""
+        """Warm up model - first request is always slower."""
         if not self._llm:
             return
 
@@ -151,7 +151,7 @@ class LlamaCppProvider(BaseProvider):
             await asyncio.to_thread(
                 self._llm.create_chat_completion,
                 messages=[
-                    {"role": "system", "content": "Ты Настя — девушка из Москвы."},
+                    {"role": "system", "content": "Ты Настя - девушка из Москвы."},
                     {"role": "user", "content": warmup_msg},
                 ],
                 max_tokens=10,
@@ -195,7 +195,7 @@ class LlamaCppProvider(BaseProvider):
         messages_history = kwargs.get("messages")
 
         # ── Aggressive truncation for local model context window ──
-        # Truncate system prompt — local model doesn't need the full prompt
+        # Truncate system prompt - local model doesn't need the full prompt
         if len(system_prompt) > LOCAL_MAX_SYSTEM_CHARS:
             # Keep the first part which usually has the persona definition
             system_prompt = system_prompt[:LOCAL_MAX_SYSTEM_CHARS].rsplit('.', 1)[0] + '.'

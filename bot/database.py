@@ -1,4 +1,4 @@
-"""Nastya Bot 2.0 — Database. SQLite with WAL mode.
+"""Nastya Bot 2.0 - Database. SQLite with WAL mode.
 
 Tables:
   - users: user profiles with gender, mood, message count
@@ -110,7 +110,7 @@ MOODS = [
 
 
 class Database:
-    """Database with shared persistent connection — fast & concurrent-safe!
+    """Database with shared persistent connection - fast & concurrent-safe!
 
     Architecture:
     - One aiosqlite connection shared across all operations
@@ -170,7 +170,7 @@ class Database:
                     )
                 await conn.commit()
 
-            # Migrations — add columns if not exist
+            # Migrations - add columns if not exist
             for col_def in [
                 "ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'unknown'",
                 "ALTER TABLE users ADD COLUMN last_mood TEXT DEFAULT 'капризная'",
@@ -454,7 +454,7 @@ class Database:
                     await conn.commit()
                     return True
                 except Exception:
-                    # Duplicate link — skip
+                    # Duplicate link - skip
                     return False
         except Exception as e:
             logger.error(f"add_news_item error: {e}")

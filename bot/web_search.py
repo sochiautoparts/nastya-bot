@@ -1,10 +1,10 @@
-"""Nastya Web Search v2.0 — MULTI-ENGINE SEARCH with fallbacks!
+"""Nastya Web Search v2.0 - MULTI-ENGINE SEARCH with fallbacks!
 
 v2.0: ROBUST search with multiple engines:
-  1. DuckDuckGo HTML (primary) — works most of the time
-  2. Yandex HTML search (fallback #1) — Russian-focused, better for RU queries
-  3. SearXNG public instances (fallback #2) — meta search engine
-  4. DuckDuckGo API (fallback #3) — instant answers only
+  1. DuckDuckGo HTML (primary) - works most of the time
+  2. Yandex HTML search (fallback #1) - Russian-focused, better for RU queries
+  3. SearXNG public instances (fallback #2) - meta search engine
+  4. DuckDuckGo API (fallback #3) - instant answers only
 
 This ensures /find ALWAYS returns results even if one engine is blocked.
 
@@ -54,10 +54,10 @@ async def search_web(query: str, num_results: int = 3) -> List[Dict]:
     """Search the web using multiple search engines with fallbacks.
 
     Engine order:
-      1. DuckDuckGo HTML — primary, fast
-      2. Yandex HTML — Russian-focused, excellent for RU queries
-      3. SearXNG public instance — meta search
-      4. DuckDuckGo API — instant answers only (weak)
+      1. DuckDuckGo HTML - primary, fast
+      2. Yandex HTML - Russian-focused, excellent for RU queries
+      3. SearXNG public instance - meta search
+      4. DuckDuckGo API - instant answers only (weak)
 
     Returns list of dicts with: title, snippet, url
     """
@@ -345,7 +345,7 @@ async def _search_searxng(query: str, num_results: int) -> List[Dict]:
 # ══════════════════════════════════════════════════════════════
 
 async def _search_ddg_api(query: str, num_results: int) -> List[Dict]:
-    """Search using DuckDuckGo instant answer API (weakest — only for definitions)."""
+    """Search using DuckDuckGo instant answer API (weakest - only for definitions)."""
     results = []
 
     async with httpx.AsyncClient(
@@ -396,12 +396,12 @@ def should_search(text: str) -> Optional[str]:
     Returns the search query if search is needed, None otherwise.
     Only searches when the topic is clearly about factual/news content.
 
-    v33: Убраны триггеры "что за" и "расскажи про" — это эмоциональные
+    v33: Убраны триггеры "что за" и "расскажи про" - это эмоциональные
     выражения, не поисковые запросы. "Что за бред" не должно искать "бред"!
     """
     text_lower = text.lower()
 
-    # v33: ИСКЛЮЧЕНИЯ — эмоциональные выражения которые НЕ должны вызывать поиск
+    # v33: ИСКЛЮЧЕНИЯ - эмоциональные выражения которые НЕ должны вызывать поиск
     emotional_expressions = [
         "что за бред", "что за фигня", "что за хрень", "что за хуйня",
         "че за бред", "че за фигня", "какой бред", "полный бред",
@@ -439,7 +439,7 @@ def should_search(text: str) -> Optional[str]:
                 return query[:100]
             return text[:100]
 
-    # Question detection — search for factual questions
+    # Question detection - search for factual questions
     question_patterns = [
         r"кто (?:создал|изобрёл|написал|построил|основал)",
         r"когда (?:состоялся|произошёл|начался|закончился|изобрели)",
@@ -453,7 +453,7 @@ def should_search(text: str) -> Optional[str]:
         if re.search(pattern, text_lower):
             return text[:100]
 
-    # Event/news discussion triggers — lower threshold
+    # Event/news discussion triggers - lower threshold
     news_triggers = [
         "в новости", "в новостях", "прочитала что", "говорят что",
         "в интернете пишут", "сегодня произошло", "недавно было",
@@ -490,13 +490,13 @@ def format_search_results_for_prompt(results: List[Dict], query: str) -> str:
         url = result.get("url", "")
         entry = f"{i}. {title}"
         if snippet:
-            entry += f" — {snippet[:200]}"
+            entry += f" - {snippet[:200]}"
         if url:
             entry += f" [Ссылка: {url}]"
         lines.append(entry)
 
     lines.append(
-        "⛔ Когда обсуждаешь эту информацию — ОБЯЗАТЕЛЬНО добавь ссылку на источник! "
+        "⛔ Когда обсуждаешь эту информацию - ОБЯЗАТЕЛЬНО добавь ссылку на источник! "
         "НЕТ ССЫЛКИ = НАРУШЕНИЕ! Пиши URL из результатов выше!"
     )
 
@@ -523,7 +523,7 @@ POLL_TOPICS = [
     },
     {
         "question": "Срочно! Суши или пицца? 🍣🍕",
-        "options": ["Суши! 🍣", "Пицца! 🍕", "И то и другое! 😍", "Настя не выбирает — Настя хочет всё! 💅"],
+        "options": ["Суши! 🍣", "Пицца! 🍕", "И то и другое! 😍", "Настя не выбирает - Настя хочет всё! 💅"],
     },
     {
         "question": "Кто лучше: Настя или Алиса? 💅🤖",
@@ -539,7 +539,7 @@ POLL_TOPICS = [
     },
     {
         "question": "Шопинг онлайн или в магазине? 🛍️",
-        "options": ["Онлайн! 📱", "В магазине! 🏬", "И то и другое! 💅", "Настя не шопинг — Настя искусство! ✨"],
+        "options": ["Онлайн! 📱", "В магазине! 🏬", "И то и другое! 💅", "Настя не шопинг - Настя искусство! ✨"],
     },
     {
         "question": "Котики или собачки? 🐱🐶",
@@ -563,7 +563,7 @@ POLL_TOPICS = [
     },
     {
         "question": "Лучший завтрак? 🍳",
-        "options": ["Кофе и всё! ☕", "Панкейки! 🥞", "Смузи! 🥤", "Кровать — лучший завтрак! 🛏️"],
+        "options": ["Кофе и всё! ☕", "Панкейки! 🥞", "Смузи! 🥤", "Кровать - лучший завтрак! 🛏️"],
     },
     {
         "question": "Какой мессенджер лучше? 📱",
@@ -611,6 +611,6 @@ POLL_TOPICS = [
     },
     {
         "question": "Настя идёт в спортзал... Шутка! Но если бы? 💪",
-        "options": ["Йога! 🧘‍♀️", "Бег! 🏃‍♀️", "Плавание! 🏊‍♀️", "Лежать — тоже спорт! 😴"],
+        "options": ["Йога! 🧘‍♀️", "Бег! 🏃‍♀️", "Плавание! 🏊‍♀️", "Лежать - тоже спорт! 😴"],
     },
 ]

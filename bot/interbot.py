@@ -1,6 +1,6 @@
-"""Inter-Bot Communication System v2.0 — GitHub-based state sync.
+"""Inter-Bot Communication System v2.0 - GitHub-based state sync.
 
-Настя ↔ Ася — межботовое взаимодействие через GitHub-hosted interbot_state.json.
+Настя ↔ Ася - межботовое взаимодействие через GitHub-hosted interbot_state.json.
 
 Architecture:
   - Each bot has interbot_state.json in its own repo
@@ -35,7 +35,7 @@ NASTYA_API_URL = f"https://api.github.com/repos/{NASTYA_REPO}/contents/{INTERBOT
 
 # Local cache
 LOCAL_CACHE = Path("data/interbot_state.json")
-REFRESH_INTERVAL = 30  # Check for updates every 30 seconds — faster reviews!
+REFRESH_INTERVAL = 30  # Check for updates every 30 seconds - faster reviews!
 
 
 class InterbotManager:
@@ -99,7 +99,7 @@ class InterbotManager:
     async def _push_state(self) -> bool:
         """Push own state to GitHub via Contents API."""
         if not self._gh_pat:
-            logger.warning("No GitHub PAT — cannot push interbot state")
+            logger.warning("No GitHub PAT - cannot push interbot state")
             return False
 
         self._own_state["last_updated"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -226,14 +226,14 @@ class InterbotManager:
                 "Критерии:\n"
                 "- approved: новость интересная, актуальная, про автомобили, без политики\n"
                 "- rejected: новость скучная, не про авто, политическая, устаревшая, дубликат\n"
-                "- improved: новость хорошая, но нужно улучшить текст — дай улучшенную версию\n"
-                "Важно: канал @sochiautoparts — АВТОМОБИЛЬНЫЙ, только про машины и автопром!"
+                "- improved: новость хорошая, но нужно улучшить текст - дай улучшенную версию\n"
+                "Важно: канал @sochiautoparts - АВТОМОБИЛЬНЫЙ, только про машины и автопром!"
             )
             
             result = await self._ai_router.chat(
                 prompt=prompt,
                 system_prompt=(
-                    "Ты Настя — блогер и редактор. Ты помогаешь Асе отбирать новости для её автоканала. "
+                    "Ты Настя - блогер и редактор. Ты помогаешь Асе отбирать новости для её автоканала. "
                     "Отвечай ТОЛЬКО JSON, без другого текста."
                 ),
                 max_tokens=400,
@@ -289,7 +289,7 @@ class InterbotManager:
         return review
 
     async def run_review_cycle(self):
-        """Run a full review cycle: check pending → review → push."""
+        """Run a full review cycle: check pending -> review -> push."""
         unreviewed = await self.check_pending_reviews()
         if not unreviewed:
             return 0

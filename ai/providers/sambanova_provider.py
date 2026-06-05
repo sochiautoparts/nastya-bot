@@ -1,4 +1,4 @@
-"""SambaNova AI Provider — fast inference via OpenAI-compatible API.
+"""SambaNova AI Provider - fast inference via OpenAI-compatible API.
 
 Ported from ai-mega-bot.
 Free tier available at https://cloud.sambanova.ai

@@ -1,8 +1,8 @@
-"""Nastya Discovery Engine — auto-discovers interesting content for channel & chat.
+"""Nastya Discovery Engine - auto-discovers interesting content for channel & chat.
 
-v3.0: DYNAMIC YEAR — no more hardcoded 2025! + Date context in AI prompts!
+v3.0: DYNAMIC YEAR - no more hardcoded 2025! + Date context in AI prompts!
   - All search queries use dynamic current year
-  - AI prompts include current date/time — Настя knows what year it is!
+  - AI prompts include current date/time - Настя knows what year it is!
   - Better AI prompts for engaging, personal posts
   - search_products uses multi-engine search (always finds results)
   - More diverse discovery topics including automotive news
@@ -42,10 +42,10 @@ logger = logging.getLogger(__name__)
 # ── Dynamic year for search queries ──
 _YEAR = datetime.datetime.now(ZoneInfo("Europe/Moscow")).year
 
-# ── Discovery Topics — diverse content categories ──
+# ── Discovery Topics - diverse content categories ──
 
 DISCOVERY_TOPICS = [
-    # 🚗 Automotive news (sochiautoparts.ru — source!)
+    # 🚗 Automotive news (sochiautoparts.ru - source!)
     {"query": f"автомобильные новости ремонт запчасти {_YEAR}", "category": "auto",
      "post_type": "auto", "weight": 3},
     {"query": f"BMW новости модели M3 M4 M5 {_YEAR}", "category": "auto",
@@ -105,7 +105,7 @@ DISCOVERY_TOPICS = [
      "post_type": "events", "weight": 1},
     {"query": "бесплатные мероприятия выходные Россия", "category": "events",
      "post_type": "events", "weight": 1},
-    # Events — city-specific (v56)
+    # Events - city-specific (v56)
     {"query": f"мероприятия Сочи Красная Поляна афиша {_YEAR}", "category": "events",
      "post_type": "events", "weight": 2},
     {"query": "афиша Москва сегодня концерт выставка", "category": "events",
@@ -175,10 +175,10 @@ CATEGORY_TEMPLATES = {
     "auto": [
         "🏎️ Автомобильные новости от Насти!\n\n{content}\n\nНастя фанат BMW и разбирается в тачках! 💅🏎️",
         "Автоновости! Настя в курсе!\n\n{content}\n\nНастя следит за авто! 🚗✨",
-        "Настя про авто!\n\n{content}\n\nНастя не только шопинг — она и под капот заглянет! 🏎️💅",
+        "Настя про авто!\n\n{content}\n\nНастя не только шопинг - она и под капот заглянет! 🏎️💅",
     ],
     "films": [
-        "🎬 Подборка от Насти!\n\n{content}\n\nНастя киноманка — доверяй её вкусу! 💅🎬",
+        "🎬 Подборка от Насти!\n\n{content}\n\nНастя киноманка - доверяй её вкусу! 💅🎬",
         "Кино от Насти!\n\n{content}\n\nПриятного просмотра! 🍿✨",
         "Настя рекомендует!\n\n{content}\n\nВсе эти фильмы Настя смотрела! 💅🎬",
     ],
@@ -257,7 +257,7 @@ async def discover_content(ai_router) -> Optional[Dict]:
     ai_content = ""
     if ai_router:
         try:
-            # ── DATE CONTEXT — Настя знает какой сейчас год! ──
+            # ── DATE CONTEXT - Настя знает какой сейчас год! ──
             _now = datetime.datetime.now(ZoneInfo("Europe/Moscow"))
             _days_ru = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
             _months_ru = ["января", "февраля", "марта", "апреля", "мая", "июня",
@@ -265,13 +265,13 @@ async def discover_content(ai_router) -> Optional[Dict]:
             _date_context = (
                 f"Сейчас {_days_ru[_now.weekday()]}, {_now.day} {_months_ru[_now.month - 1]} "
                 f"{_now.year} года, время {_now.strftime('%H:%M')} МСК. "
-                f"Учитывай текущую дату — не пиши про прошлые годы как про текущие! "
+                f"Учитывай текущую дату - не пиши про прошлые годы как про текущие! "
             )
 
             category_prompts = {
-                "auto": "Напиши интересный пост про автомобили. Если это совет — дай конкретные рекомендации. Если новость — поделись мнением. Настя — фанат BMW, обожает баварские тачки! Если речь про BMW — прояви энтузиазм! 5-8 предложений. Без markdown.",
-                "films": "Напиши подборку 5-7 фильмов с краткими описаниями. Настя — киноманка, знает режиссёров и тренды. Пиши конкретные названия, годы, почему стоит смотреть. 6-10 предложений. Без markdown, без буллетов.",
-                "recipe": "Напиши подробный рецепт в живом стиле. Включи ингредиенты и пошаговое приготовление. 6-10 предложений. Без markdown, без буллетов — сплошной текст.",
+                "auto": "Напиши интересный пост про автомобили. Если это совет - дай конкретные рекомендации. Если новость - поделись мнением. Настя - фанат BMW, обожает баварские тачки! Если речь про BMW - прояви энтузиазм! 5-8 предложений. Без markdown.",
+                "films": "Напиши подборку 5-7 фильмов с краткими описаниями. Настя - киноманка, знает режиссёров и тренды. Пиши конкретные названия, годы, почему стоит смотреть. 6-10 предложений. Без markdown, без буллетов.",
+                "recipe": "Напиши подробный рецепт в живом стиле. Включи ингредиенты и пошаговое приготовление. 6-10 предложений. Без markdown, без буллетов - сплошной текст.",
                 "numerology": "Расскажи про значение чисел в нумерологии интересно и доступно. Дай конкретные примеры. 5-8 предложений. Без markdown.",
                 "astrology": "Напиши гороскоп или астрологический прогноз на сегодня/неделю. Живо, с эмоциями, для всех знаков кратко. 6-10 предложений. Без markdown.",
                 "events": "Расскажи про интересные мероприятия и события. Дай конкретные даты и места если есть. 5-8 предложений. Без markdown.",
@@ -286,19 +286,19 @@ async def discover_content(ai_router) -> Optional[Dict]:
             result = await ai_router.chat(
                 prompt=f"Найдена информация: {title}. {snippet}.{extra_info}\n\n{category_prompt}",
                 system_prompt=(
-                    "Ты Настя — москвичка, 23 года, блогер, ведёшь Telegram канал @chasnastya. "
+                    "Ты Настя - москвичка, 23 года, блогер, ведёшь Telegram канал @chasnastya. "
                     "Пишешь пост для своего канала ОТ СЕБЯ, от первого лица. "
                     f"{_date_context}"
-                    "Говоришь от первого лица — 'я думаю', 'мне кажется', 'я нашла', 'прикинь'. "
-                    "Живо, эмоционально, как живой человек — не как журналист или бот. "
+                    "Говоришь от первого лица - 'я думаю', 'мне кажется', 'я нашла', 'прикинь'. "
+                    "Живо, эмоционально, как живой человек - не как журналист или бот. "
                     "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто', 'точняк', 'блин'. "
-                    "Пиши развёрнуто и познавательно — это важно! Давай конкретные факты и детали. "
-                    "Без markdown, без буллетов, без заголовков — сплошной текст. "
-                    "Не пиши 'Настя' в начале — говори от первого лица. "
-                    "НЕ добавляй ссылки на источник — ты пишешь от себя. "
+                    "Пиши развёрнуто и познавательно - это важно! Давай конкретные факты и детали. "
+                    "Без markdown, без буллетов, без заголовков - сплошной текст. "
+                    "Не пиши 'Настя' в начале - говори от первого лица. "
+                    "НЕ добавляй ссылки на источник - ты пишешь от себя. "
                     "Ссылки допускаются ТОЛЬКО на конкретные товары, услуги, мероприятия, рецепты. "
-                    "НЕ вставляй ссылку на свой канал — она добавится автоматически. "
-                    "Ты фанат BMW и киноманка — если тема подходит, проявляй страсть!"
+                    "НЕ вставляй ссылку на свой канал - она добавится автоматически. "
+                    "Ты фанат BMW и киноманка - если тема подходит, проявляй страсть!"
                 ),
                 max_tokens=500,
                 priority="low",
@@ -349,7 +349,7 @@ async def post_discovery_to_channel(bot: Bot, db, ai_router, discovery: Dict) ->
 
     post_text = template.format(content=content)
 
-    # Channel link in EVERY post (instead of source link — Nastya writes from herself)
+    # Channel link in EVERY post (instead of source link - Nastya writes from herself)
     post_text += f"\n\n@chasnastya"
 
     # Add category hashtag
@@ -449,7 +449,7 @@ async def get_discovery_for_chat(ai_router) -> Optional[str]:
             result = await ai_router.chat(
                 prompt=f"Настя нашла интересное: {title}. {snippet}. Расскажи коротко и живо, 2-3 предложения. Источник: {url}",
                 system_prompt=(
-                    "Ты Настя — москвичка, 23 года, блогер. Делишься находкой с собеседником. "
+                    "Ты Настя - москвичка, 23 года, блогер. Делишься находкой с собеседником. "
                     "Коротко, живо, эмоционально. Обязательно добавь ссылку. "
                     "Без markdown, без буллетов."
                 ),
@@ -471,7 +471,7 @@ async def get_discovery_for_chat(ai_router) -> Optional[str]:
 
 
 async def run_discovery_cycle(bot: Bot, db, ai_router) -> int:
-    """Run a full discovery cycle: search → AI post → channel.
+    """Run a full discovery cycle: search -> AI post -> channel.
 
     Returns number of posts made.
     """
@@ -492,7 +492,7 @@ async def run_discovery_cycle(bot: Bot, db, ai_router) -> int:
     return posted
 
 
-# ── Product Search — find products, services, best prices ──
+# ── Product Search - find products, services, best prices ──
 
 async def search_products(query: str, num_results: int = 5) -> List[Dict]:
     """Search for products, services, and prices.

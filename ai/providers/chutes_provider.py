@@ -1,4 +1,4 @@
-"""Chutes.ai — FREE, unlimited, no API key. DeepSeek V3 + vision.
+"""Chutes.ai - FREE, unlimited, no API key. DeepSeek V3 + vision.
 
 v5.0 FIXED:
   - Proper vision message format
@@ -24,7 +24,7 @@ VISION_MODEL = "deepseek-ai/deepseek-vl2"
 
 
 class ChutesProvider(BaseProvider):
-    """Chutes.ai provider — free, no API key required, supports vision."""
+    """Chutes.ai provider - free, no API key required, supports vision."""
 
     name: str = "chutes"
     supports_vision: bool = True

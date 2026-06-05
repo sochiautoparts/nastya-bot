@@ -1,4 +1,4 @@
-"""HuggingFace Inference API Provider — free tier models, API token optional.
+"""HuggingFace Inference API Provider - free tier models, API token optional.
 
 v4.0 FIXED:
   - Proper API key handling (works with or without key)
@@ -16,7 +16,7 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
-# Primary models to try in order — using HF Inference API (serverless)
+# Primary models to try in order - using HF Inference API (serverless)
 TEXT_MODELS = {
     "default": "Qwen/Qwen2.5-72B-Instruct",
     "fast": "mistralai/Mistral-7B-Instruct-v0.3",
@@ -36,11 +36,11 @@ VISION_MODEL = "Qwen/Qwen2.5-VL-72B-Instruct"
 
 
 class HuggingFaceProvider(BaseProvider):
-    """HuggingFace Inference API provider — free tier, many models.
+    """HuggingFace Inference API provider - free tier, many models.
 
     Uses the OpenAI-compatible endpoint for maximum compatibility.
     Falls back to the native Inference API if OpenAI-compat fails.
-    API key is OPTIONAL — works without one (with lower rate limits).
+    API key is OPTIONAL - works without one (with lower rate limits).
     """
 
     name: str = "huggingface"
@@ -162,7 +162,7 @@ class HuggingFaceProvider(BaseProvider):
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
                 if status == 401:
-                    # Auth error — skip to native API
+                    # Auth error - skip to native API
                     logger.warning(f"HF OpenAI-compat auth error for {try_model}, trying native API")
                 elif status == 404:
                     # Model not found on OpenAI-compat, try native API

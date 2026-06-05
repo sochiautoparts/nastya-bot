@@ -1,17 +1,17 @@
-"""OllamaClusterProvider v35.0 — SMART MODEL AUTO-DETECTION + RSS-first.
+"""OllamaClusterProvider v35.0 - SMART MODEL AUTO-DETECTION + RSS-first.
 
 КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ v35:
   - Новости теперь через RSS-парсер + шаблоны, БЕЗ AI!
-  - Ollama свободен для чата — не тратит время на news commentary
-  - Уменьшен num_ctx до 1536 — быстрее на CPU
-  - Уменьшен num_predict до 100-150 — Настины ответы короткие
+  - Ollama свободен для чата - не тратит время на news commentary
+  - Уменьшен num_ctx до 1536 - быстрее на CPU
+  - Уменьшен num_predict до 100-150 - Настины ответы короткие
   - Добавлены top_p и repeat_penalty против повторов
-  - THINKING OFF для всех моделей — экономия токенов
+  - THINKING OFF для всех моделей - экономия токенов
   - vikhr-1B полностью игнорируется (даже если установлен)
 
 МОДЕЛИ (по приоритету):
-  1. qwen2.5:1.5b — быстрый, отличный русский (0.9GB)
-  2. qwen3:4b-instruct — умный, медленнее, thinking mode (2.5GB)
+  1. qwen2.5:1.5b - быстрый, отличный русский (0.9GB)
+  2. qwen3:4b-instruct - умный, медленнее, thinking mode (2.5GB)
   3. НЕ ИСПОЛЬЗУЕМ: vikhr-1B (генерирует бред на русском)
 """
 
@@ -27,8 +27,8 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
-# ── Приоритет моделей (лучшая → худшая для русского на CPU) ──
-# vikhr-1B исключён — генерирует бред
+# ── Приоритет моделей (лучшая -> худшая для русского на CPU) ──
+# vikhr-1B исключён - генерирует бред
 MODEL_PRIORITY = [
     "qwen2.5:1.5b",          # Лучший баланс: быстрый + хороший русский
     "qwen3:4b-instruct",      # Умнее, медленнее, thinking mode
@@ -47,19 +47,19 @@ BANNED_MODELS = [
 # Параметры для каждой модели (индивидуальные!)
 MODEL_CONFIGS = {
     "qwen2.5:1.5b": {
-        "num_predict": 100,      # Короткие ответы Насти — 1-2 предложения
+        "num_predict": 100,      # Короткие ответы Насти - 1-2 предложения
         "num_ctx": 1536,         # Меньше контекст = быстрее генерация
-        "timeout": 20.0,         # Быстрая модель — 20с хватит
+        "timeout": 20.0,         # Быстрая модель - 20с хватит
         "think": False,          # Нет thinking mode
         "temperature": 0.85,     # Чуть выше = разнообразнее
         "top_p": 0.9,           # Nucleus sampling для качества
         "repeat_penalty": 1.1,   # Чтобы не повторялась
     },
     "qwen3:4b-instruct": {
-        "num_predict": 150,      # Отключён thinking — можно меньше
+        "num_predict": 150,      # Отключён thinking - можно меньше
         "num_ctx": 1536,         # Меньше = быстрее на CPU
-        "timeout": 45.0,         # 4B на CPU — медленнее
-        "think": False,          # ВЫКЛЮЧАЕМ thinking — он жрёт токены!
+        "timeout": 45.0,         # 4B на CPU - медленнее
+        "think": False,          # ВЫКЛЮЧАЕМ thinking - он жрёт токены!
         "temperature": 0.8,
         "top_p": 0.9,
         "repeat_penalty": 1.1,
@@ -108,7 +108,7 @@ def _is_model_banned(model_name: str) -> bool:
 
 
 class OllamaClusterProvider(BaseProvider):
-    """Провайдер для Ollama — v34.0 SMART AUTO-DETECTION.
+    """Провайдер для Ollama - v34.0 SMART AUTO-DETECTION.
 
     v34 КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ:
     - Автоопределение лучшей модели из установленных
@@ -160,11 +160,11 @@ class OllamaClusterProvider(BaseProvider):
                     self._installed_models = [m.get("name", "").lower() for m in data.get("models", [])]
                     logger.info(f"Ollama detected at {self.ollama_url}. Models: {self._installed_models}")
         except Exception:
-            logger.warning("Ollama not available at startup — will try later")
+            logger.warning("Ollama not available at startup - will try later")
 
         if not self._active_url:
             self._active_url = self.ollama_url
-            logger.warning(f"Defaulting to {self._active_url} — may not be available yet")
+            logger.warning(f"Defaulting to {self._active_url} - may not be available yet")
 
         # Создаём постоянный HTTP клиент
         self._client = httpx.AsyncClient(
@@ -187,9 +187,9 @@ class OllamaClusterProvider(BaseProvider):
 
         Логика:
           1. Фильтруем запрещённые модели (vikhr)
-          2. Ищем лучшую модель по приоритету → primary
-          3. Ищем вторую лучшую → reserve
-          4. Если ничего нет — используем defaults
+          2. Ищем лучшую модель по приоритету -> primary
+          3. Ищем вторую лучшую -> reserve
+          4. Если ничего нет - используем defaults
         """
         # Фильтруем запрещённые модели
         good_models = [m for m in self._installed_models if not _is_model_banned(m)]
@@ -217,7 +217,7 @@ class OllamaClusterProvider(BaseProvider):
                         reserve_found = installed
                     break
 
-        # Если не нашли через приоритет — берём любые доступные
+        # Если не нашли через приоритет - берём любые доступные
         if not primary_found and good_models:
             primary_found = good_models[0]
         if not reserve_found and len(good_models) > 1:
@@ -253,11 +253,11 @@ class OllamaClusterProvider(BaseProvider):
             logger.warning("No reserve model available!")
 
     def is_available(self) -> bool:
-        """Всегда пробуем — ошибки обрабатываются в generate()."""
+        """Всегда пробуем - ошибки обрабатываются в generate()."""
         return True
 
     async def health_check(self) -> bool:
-        """Проверка здоровья Ollama — с кэшированием."""
+        """Проверка здоровья Ollama - с кэшированием."""
         now = time.time()
         if now - self._last_health_check < self._HEALTH_CACHE_TTL:
             return self._last_health_status
@@ -273,7 +273,7 @@ class OllamaClusterProvider(BaseProvider):
         return self._last_health_status
 
     async def _warm_up(self) -> None:
-        """Прогрев основной модели — загрузка в память."""
+        """Прогрев основной модели - загрузка в память."""
         if self._warm or not self._primary_model:
             return
         try:
@@ -367,7 +367,7 @@ class OllamaClusterProvider(BaseProvider):
         messages_history = kwargs.get("messages")
         priority = kwargs.get("priority", PRIORITY_HIGH)
 
-        # Ограничение истории — 4 сообщения для скорости
+        # Ограничение истории - 4 сообщения для скорости
         if messages_history and len(messages_history) > 4:
             logger.info(f"Trimming history: {len(messages_history)} -> 4")
             messages_history = messages_history[-4:]

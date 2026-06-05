@@ -1,9 +1,9 @@
-"""Groq Provider — FREE, ultra-fast inference via LPU hardware.
+"""Groq Provider - FREE, ultra-fast inference via LPU hardware.
 
-Groq provides the fastest AI inference available — perfect for real-time chat.
+Groq provides the fastest AI inference available - perfect for real-time chat.
 Free tier: ~30 RPM, generous daily limits.
 Models: Llama 3.3 70B, Llama 4 Scout, Mixtral, Gemma 2, Qwen 3.
-OpenAI-compatible API — just change base_url.
+OpenAI-compatible API - just change base_url.
 """
 import logging
 from typing import Any, Dict, List, Optional
@@ -14,7 +14,7 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
-# Models — free tier, ordered by quality for Russian conversation
+# Models - free tier, ordered by quality for Russian conversation
 TEXT_MODELS = {
     "default": "llama-3.3-70b-versatile",       # Best free model, great Russian
     "fast": "llama-3.1-8b-instant",              # Ultra-fast for simple responses
@@ -30,10 +30,10 @@ FALLBACK_MODELS = [
 
 
 class GroqProvider(BaseProvider):
-    """Groq provider — fastest free inference, OpenAI-compatible.
+    """Groq provider - fastest free inference, OpenAI-compatible.
 
     Groq's LPU hardware delivers ~100ms response times.
-    Excellent for real-time chat — users get instant responses.
+    Excellent for real-time chat - users get instant responses.
     Free tier is generous enough for a Telegram bot.
     """
 

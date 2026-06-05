@@ -1,4 +1,4 @@
-"""Nastya Donation Handler — Stars payments with ACTIVE Pay buttons."""
+"""Nastya Donation Handler - Stars payments with ACTIVE Pay buttons."""
 import logging
 import random
 from aiogram import Router, F
@@ -16,7 +16,7 @@ async def process_pre_checkout(pre_checkout: PreCheckoutQuery, db=None, ai_route
 
 @router.message(F.successful_payment)
 async def process_payment(message: Message, db=None, ai_router=None) -> None:
-    """Handle successful Stars payment — Nastya is happy!"""
+    """Handle successful Stars payment - Nastya is happy!"""
     payment = message.successful_payment
     amount = payment.total_amount
     charge_id = payment.telegram_payment_charge_id

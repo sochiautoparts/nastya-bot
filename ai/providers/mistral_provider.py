@@ -1,4 +1,4 @@
-"""Mistral AI Provider — fast European AI via OpenAI-compatible API.
+"""Mistral AI Provider - fast European AI via OpenAI-compatible API.
 
 Ported from ai-mega-bot.
 Free tier at https://console.mistral.ai

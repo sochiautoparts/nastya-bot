@@ -1,4 +1,4 @@
-"""Nastya Admin Handler — admin commands for monitoring + news + channel."""
+"""Nastya Admin Handler - admin commands for monitoring + news + channel."""
 import logging
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -150,7 +150,7 @@ async def cmd_post_channel(message: Message, db=None, ai_router=None) -> None:
 
 @router.message(Command("testnews"))
 async def cmd_test_news(message: Message, db=None, ai_router=None) -> None:
-    """Test news commentary generation — AI-powered!"""
+    """Test news commentary generation - AI-powered!"""
     if message.from_user.id not in ADMIN_IDS:
         return
 

@@ -1,12 +1,12 @@
 """Partner Links System for Nastya Bot v3.0.
 
-Nastya is a lifestyle blogger — she recommends products naturally in conversation.
+Nastya is a lifestyle blogger - she recommends products naturally in conversation.
 Partner links are integrated into her responses when relevant topics come up.
 
 v3.0 KEY CHANGES:
 - Downloads admitad_ads.json from remote GitHub URL (updateable file!)
 - Auto-refreshes every 6 hours
-- Uses goto_link EXACTLY as provided — NO subid additions!
+- Uses goto_link EXACTLY as provided - NO subid additions!
 - Regional filtering by allowed_regions
 - For article searches, modifies ulp parameter in goto_link
 - Proper formatting: "Name (category description): goto_link"
@@ -178,7 +178,7 @@ class NastyaPartnerManager:
     """Manages partner links for Nastya Bot v3.0.
 
     Downloads admitad_ads.json from remote URL.
-    Uses goto_link EXACTLY as-is — NO subid additions!
+    Uses goto_link EXACTLY as-is - NO subid additions!
     Nastya weaves partner links into her conversation style naturally.
     """
 
@@ -189,7 +189,7 @@ class NastyaPartnerManager:
         self._last_load_time: float = 0
 
     async def load_admitad_async(self) -> int:
-        """Load admitad programs — try remote first, then local cache."""
+        """Load admitad programs - try remote first, then local cache."""
         count = await self._load_from_remote()
         if count > 0:
             return count
@@ -229,7 +229,7 @@ class NastyaPartnerManager:
                     return count
                 except Exception as e:
                     logger.error(f"Error loading local admitad cache: {e}")
-        logger.info("No admitad_ads.json found — using direct shop links only")
+        logger.info("No admitad_ads.json found - using direct shop links only")
         self._loaded = True
         return 0
 
@@ -242,7 +242,7 @@ class NastyaPartnerManager:
             path = Path("admitad_ads.json")
 
         if not path.exists():
-            logger.info(f"No admitad_ads.json found — using direct shop links only")
+            logger.info(f"No admitad_ads.json found - using direct shop links only")
             self._loaded = True
             return 0
         try:
@@ -371,7 +371,7 @@ class NastyaPartnerManager:
         """Generate partner context for AI system prompt.
 
         v3: Uses goto_link from admitad_ads.json EXACTLY as-is!
-        No subid additions — the link is ready to use!
+        No subid additions - the link is ready to use!
         """
         self.ensure_loaded()
 
@@ -393,7 +393,7 @@ class NastyaPartnerManager:
         cat_labels = [c for c in categories] if categories else ["разное"]
         lines = [
             f"Партнёрские ссылки для темы: {', '.join(cat_labels)}",
-            "Вставь эти ссылки ЕСТЕСТВЕННО в ответ — как личная рекомендация! Не как рекламу!",
+            "Вставь эти ссылки ЕСТЕСТВЕННО в ответ - как личная рекомендация! Не как рекламу!",
         ]
 
         for p in matches[:max_programs]:
@@ -408,7 +408,7 @@ class NastyaPartnerManager:
             return ""
 
         lines.append("")
-        lines.append("ВАЖНО: Ссылки выше — ПАРТНЁРСКИЕ (goto_link из admitad_ads.json). Используй их КАК ЕСТЬ, ничего не добавляй и не меняй!")
+        lines.append("ВАЖНО: Ссылки выше - ПАРТНЁРСКИЕ (goto_link из admitad_ads.json). Используй их КАК ЕСТЬ, ничего не добавляй и не меняй!")
         lines.append("Эти ссылки можно также естественно использовать в постах канала.")
 
         return "\n".join(lines)
@@ -434,14 +434,14 @@ class NastyaPartnerManager:
                 lines.append(f"- {link}")
 
         lines.append("Настя водит M3 и знает где покупать запчасти! Упомяни это естественно.")
-        lines.append("ВАЖНО: Ссылки — ПАРТНЁРСКИЕ (goto_link из admitad_ads.json). Используй КАК ЕСТЬ!")
+        lines.append("ВАЖНО: Ссылки - ПАРТНЁРСКИЕ (goto_link из admitad_ads.json). Используй КАК ЕСТЬ!")
         return "\n".join(lines)
 
     def get_partner_links_for_post(self, category: str = "", region: str = "RU") -> List[Dict[str, str]]:
         """Get partner links suitable for channel posts.
         
         Returns 1-2 links that Настя can naturally include in her posts.
-        These are the same goto_links from admitad_ads.json — ready to use!
+        These are the same goto_links from admitad_ads.json - ready to use!
         """
         self.ensure_loaded()
         links = []

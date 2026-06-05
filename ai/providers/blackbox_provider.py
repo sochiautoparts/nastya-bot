@@ -1,4 +1,4 @@
-"""Blackbox AI Provider — FREE, no API key needed! Unlimited access.
+"""Blackbox AI Provider - FREE, no API key needed! Unlimited access.
 
 v5.0 FIXED:
   - Better vision message format
@@ -29,7 +29,7 @@ VISION_MODELS = ["blackboxai", "blackboxai-pro", "gpt-4o", "gemini-pro"]
 
 
 class BlackboxProvider(BaseProvider):
-    """Blackbox AI provider — free, no API key required, unlimited."""
+    """Blackbox AI provider - free, no API key required, unlimited."""
 
     name: str = "blackbox"
     supports_streaming: bool = False
@@ -156,7 +156,7 @@ class BlackboxProvider(BaseProvider):
 
     @staticmethod
     def _clean_blackbox_response(text: str) -> str:
-        """Clean up Blackbox response — strip ads, metadata, artifacts."""
+        """Clean up Blackbox response - strip ads, metadata, artifacts."""
         if not text:
             return ""
 

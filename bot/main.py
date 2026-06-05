@@ -1,30 +1,30 @@
-"""Nastya Bot 56.0 — MOSCOW BLOGGER + BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!
+"""Nastya Bot 56.0 - MOSCOW BLOGGER + BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!
 
 Architecture v56.0:
-  - PERSONA: Настя — москвичка, 23 года, блогер, владеет BMW M3 2025 серого цвета!
-  - BMW EXPERT: регламенты, болячки, приколы — Настя знает ВСЁ про баварцев!
+  - PERSONA: Настя - москвичка, 23 года, блогер, владеет BMW M3 2025 серого цвета!
+  - BMW EXPERT: регламенты, болячки, приколы - Настя знает ВСЁ про баварцев!
   - DATE AWARE: Настя знает какой сегодня день и учитывает актуальность!
-  - LOCAL EXPERT: Москва, Питер, Сочи, Красная Поляна — заведения, мероприятия!
+  - LOCAL EXPERT: Москва, Питер, Сочи, Красная Поляна - заведения, мероприятия!
   - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (30 моделей, балансировка нагрузки!)
   - INLINE MODE: Настя работает в любом чате через @asnastya_bot!
-  - VISION: Pollinations vision API — Настя ВИДИТ фото! 14 vision-моделей
-  - IMAGE GEN: Pollinations image API — Настя РИСУЕТ! 🎨
-  - SEARCH: MULTI-ENGINE! DuckDuckGo → Yandex → SearXNG → DDG API fallback!
-  - /find — поиск товаров, услуг, лучших цен — ВСЕГДА находит!
-  - /films — подборка фильмов от Насти! 🎬
-  - /weather — погода в любом городе! 🌤️
-  - /events — мероприятия и афиша! 🎫
-  - /places — заведения и рестораны! 🍽️
-  - /image — Настя нарисует что хочешь! 🎨
+  - VISION: Pollinations vision API - Настя ВИДИТ фото! 14 vision-моделей
+  - IMAGE GEN: Pollinations image API - Настя РИСУЕТ! 🎨
+  - SEARCH: MULTI-ENGINE! DuckDuckGo -> Yandex -> SearXNG -> DDG API fallback!
+  - /find - поиск товаров, услуг, лучших цен - ВСЕГДА находит!
+  - /films - подборка фильмов от Насти! 🎬
+  - /weather - погода в любом городе! 🌤️
+  - /events - мероприятия и афиша! 🎫
+  - /places - заведения и рестораны! 🍽️
+  - /image - Настя нарисует что хочешь! 🎨
   - DISCOVERY: Авто-посты + кино-подборки + рецепты + места + мероприятия!
   - URL: Настя понимает ссылки!
-  - PHOTO SEARCH: фото → распознавание → поиск товаров/цен!
+  - PHOTO SEARCH: фото -> распознавание -> поиск товаров/цен!
   - Новости: 22+ RSS-источника + AI-комментарии (AI ONLY!)
   - Канал: AI-посты на основе новостей, опросы, факты, рецепты
-  - sochiautoparts.ru/rss.xml — источник автомобильных новостей
+  - sochiautoparts.ru/rss.xml - источник автомобильных новостей
   - Channel posts: @chasnastya link format
-  - Group chat: Nastya COMMENTS ACTIVELY in groups — 70% response!
-  - Proactive messaging + discovery sharing — Настя активный собеседник
+  - Group chat: Nastya COMMENTS ACTIVELY in groups - 70% response!
+  - Proactive messaging + discovery sharing - Настя активный собеседник
 """
 import asyncio
 import fcntl
@@ -72,7 +72,7 @@ if not BOT_TOKEN:
 
 
 # ════════════════════════════════════════════════════════════
-#  CONFLICT TRACKER — exit on persistent conflicts
+#  CONFLICT TRACKER - exit on persistent conflicts
 # ════════════════════════════════════════════════════════════
 # If TelegramConflictError persists for >60 seconds, the bot
 # will exit with code 2, triggering the workflow's auto-restart.
@@ -123,7 +123,7 @@ def clear_conflicts():
 class ErrorHandlingMiddleware(BaseMiddleware):
     """Catch and log errors without crashing the bot.
 
-    NEVER sends error messages to users — they should only see Nastya's personality.
+    NEVER sends error messages to users - they should only see Nastya's personality.
     """
 
     async def __call__(self, handler, event: TelegramObject, data: dict):
@@ -207,7 +207,7 @@ class ConflictTrackingMiddleware(BaseMiddleware):
     """
 
     async def __call__(self, handler, event, data: dict):
-        # This middleware is for update processing — conflicts happen
+        # This middleware is for update processing - conflicts happen
         # at the polling level, not here. We clear conflicts on success.
         clear_conflicts()
         return await handler(event, data)
@@ -233,7 +233,7 @@ def acquire_singleton_lock() -> bool:
     """Try to acquire a file lock. Returns True if successful.
 
     If another bot instance is running, the lock will fail and
-    this instance will exit immediately — preventing TelegramConflictError.
+    this instance will exit immediately - preventing TelegramConflictError.
     """
     global _lock_file
     try:
@@ -271,7 +271,7 @@ async def news_scheduler(bot_instance: Bot) -> None:
     """Background task: periodically fetch news and generate Nastya's commentary.
 
     v31: Увеличены задержки между AI-запросами чтобы не блокировать чат.
-    Фоновые задачи не используют AI — RSS + шаблоны.
+    Фоновые задачи не используют AI - RSS + шаблоны.
     """
     from news import run_news_cycle
 
@@ -300,7 +300,7 @@ async def channel_scheduler(bot_instance: Bot) -> None:
     from channel import run_channel_cycle
 
     # Wait for startup + initial news fetch
-    await asyncio.sleep(120)  # v31: 120с вместо 60 — не мешаем пользователю
+    await asyncio.sleep(120)  # v31: 120с вместо 60 - не мешаем пользователю
 
     while True:
         try:
@@ -325,7 +325,7 @@ async def proactive_scheduler(bot_instance: Bot) -> None:
 
     while True:
         try:
-            wait_time = random.randint(1800, 3600)  # 30-60 min — less spammy, but still fun!
+            wait_time = random.randint(1800, 3600)  # 30-60 min - less spammy, but still fun!
             await asyncio.sleep(wait_time)
             if db and ai_router:
                 await check_and_send_proactive(bot_instance, db, ai_router)
@@ -345,7 +345,7 @@ async def discovery_scheduler(bot_instance: Bot) -> None:
     from bot.discover import run_discovery_cycle, get_discovery_for_chat
 
     # Wait for startup
-    await asyncio.sleep(300)  # 5 min — let other systems settle first
+    await asyncio.sleep(300)  # 5 min - let other systems settle first
 
     while True:
         try:
@@ -422,7 +422,7 @@ async def interbot_review_scheduler() -> None:
     from bot.interbot import interbot_manager
 
     # Wait for startup
-    await asyncio.sleep(60)  # 1 min — start reviewing quickly!
+    await asyncio.sleep(60)  # 1 min - start reviewing quickly!
 
     while True:
         try:
@@ -435,7 +435,7 @@ async def interbot_review_scheduler() -> None:
         except Exception as e:
             logger.error(f"Interbot review scheduler error: {e}")
 
-        await asyncio.sleep(120)  # Every 2 minutes — fast enough to review before timeout
+        await asyncio.sleep(120)  # Every 2 minutes - fast enough to review before timeout
 
 
 async def conflict_monitor() -> None:
@@ -474,7 +474,7 @@ async def conflict_monitor() -> None:
 async def health_watchdog() -> None:
     """Background task: monitor bot health.
 
-    v36: No more Ollama — model is loaded in-process via llama-cpp-python.
+    v36: No more Ollama - model is loaded in-process via llama-cpp-python.
     Only checks Telegram API health now.
     """
     await asyncio.sleep(30)  # Give startup time to settle
@@ -484,7 +484,7 @@ async def health_watchdog() -> None:
         try:
             await asyncio.sleep(_HEALTH_CHECK_INTERVAL)
 
-            # ── Check 1: Model health (non-critical — Pollinations handles chat) ──
+            # ── Check 1: Model health (non-critical - Pollinations handles chat) ──
             if ai_router and ai_router._pollinations:
                 try:
                     model_ok = ai_router._pollinations.is_available()
@@ -537,7 +537,7 @@ async def on_startup(**kwargs) -> None:
     logger.info("=== Nastya Bot 56.0 Starting (BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
-    # before start_polling() — no need to do it here again
+    # before start_polling() - no need to do it here again
 
     db = Database(DB_PATH)
     await db.init()
@@ -581,7 +581,7 @@ async def on_startup(**kwargs) -> None:
         asyncio.create_task(health_watchdog())
         asyncio.create_task(interbot_review_scheduler())
 
-        # Startup notification — Nastya-style, NO technical info
+        # Startup notification - Nastya-style, NO technical info
         for admin_id in ADMIN_IDS:
             if admin_id:
                 try:
@@ -646,7 +646,7 @@ def setup_dispatcher() -> Dispatcher:
 
 
 # ════════════════════════════════════════════════════════════
-#  TAKEOVER — resolve TelegramConflictError
+#  TAKEOVER - resolve TelegramConflictError
 # ════════════════════════════════════════════════════════════
 
 async def force_takeover(bot_instance: Bot) -> bool:
@@ -657,7 +657,7 @@ async def force_takeover(bot_instance: Bot) -> bool:
     1. aiogram's Bot.get_updates() creates a NEW aiohttp session internally
     2. Even with timeout=0, it sends a getUpdates HTTP request to Telegram
     3. When aiogram's polling loop starts later, it creates ANOTHER session
-    4. For a brief moment, BOTH sessions are calling getUpdates → Conflict!
+    4. For a brief moment, BOTH sessions are calling getUpdates -> Conflict!
 
     FIX: Use a DEDICATED httpx client (NOT aiogram's Bot) for the takeover
     test. This way aiogram's internal session is NEVER opened before
@@ -671,7 +671,7 @@ async def force_takeover(bot_instance: Bot) -> bool:
     logger.info(f"=== Starting takeover (up to {MAX_ATTEMPTS} attempts) ===")
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        # Step 1: Delete webhook — this kicks the old instance's long-poll
+        # Step 1: Delete webhook - this kicks the old instance's long-poll
         # and forces it to return with a Conflict error
         try:
             await bot_instance.delete_webhook(drop_pending_updates=True)
@@ -680,7 +680,7 @@ async def force_takeover(bot_instance: Bot) -> bool:
             logger.warning(f"[Takeover {attempt}] delete_webhook failed: {e}")
 
         # Step 2: Wait for old instance to die
-        # Progressive delay: 3s → 5s → 8s → 12s → 15s
+        # Progressive delay: 3s -> 5s -> 8s -> 12s -> 15s
         if attempt <= 2:
             wait = 5
         elif attempt <= 4:
@@ -697,7 +697,7 @@ async def force_takeover(bot_instance: Bot) -> bool:
         # persistent TelegramConflictError.
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
-                # Call getUpdates directly via HTTP — no aiogram involvement
+                # Call getUpdates directly via HTTP - no aiogram involvement
                 resp = await client.get(
                     f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates",
                     params={"limit": 1, "timeout": 5},
@@ -706,13 +706,13 @@ async def force_takeover(bot_instance: Bot) -> bool:
 
                 if data.get("ok"):
                     logger.info(
-                        f"[Takeover {attempt}] getUpdates SUCCESS via httpx — "
+                        f"[Takeover {attempt}] getUpdates SUCCESS via httpx - "
                         f"we are the sole instance!"
                     )
                     return True
                 elif data.get("error_code") == 409:
                     logger.warning(
-                        f"[Takeover {attempt}] Conflict — old instance still alive, retrying..."
+                        f"[Takeover {attempt}] Conflict - old instance still alive, retrying..."
                     )
                     # Delete webhook AGAIN to keep kicking the old instance
                     try:
@@ -723,16 +723,16 @@ async def force_takeover(bot_instance: Bot) -> bool:
                     logger.warning(
                         f"[Takeover {attempt}] Telegram error: {data.get('description', 'unknown')}"
                     )
-                    # Non-conflict error — might be network issue. Try polling anyway.
+                    # Non-conflict error - might be network issue. Try polling anyway.
                     return True
 
         except httpx.TimeoutException:
-            # Timeout is OK — it means the long-poll is working (no conflict!)
-            logger.info(f"[Takeover {attempt}] Timeout (means no conflict!) — SUCCESS!")
+            # Timeout is OK - it means the long-poll is working (no conflict!)
+            logger.info(f"[Takeover {attempt}] Timeout (means no conflict!) - SUCCESS!")
             return True
         except Exception as e:
             logger.warning(f"[Takeover {attempt}] httpx test error: {e}")
-            # Network issue — try polling anyway
+            # Network issue - try polling anyway
             return True
 
     logger.error("FAILED to take over after all attempts!")
@@ -746,7 +746,7 @@ async def main():
     def handle_signal(signum, frame):
         sig_name = signal.Signals(signum).name
         logger.info(f"Received {sig_name}, initiating clean shutdown...")
-        # Don't call sys.exit here — just set the flag
+        # Don't call sys.exit here - just set the flag
         # The polling loop will catch it
 
     signal.signal(signal.SIGTERM, handle_signal)
@@ -757,7 +757,7 @@ async def main():
     # but there's a race: old process may still be alive when new one starts.
     # We handle this with aggressive takeover below.
     if not acquire_singleton_lock():
-        # Lock file exists — but in GitHub Actions, the old process
+        # Lock file exists - but in GitHub Actions, the old process
         # may have been killed without releasing the lock.
         # Force-remove stale lock and try again.
         logger.warning("Stale lock detected, force-removing...")
@@ -776,7 +776,7 @@ async def main():
     )
 
     # ═══════════════════════════════════════════════════════
-    #  SMART TAKEOVER — resolve TelegramConflictError
+    #  SMART TAKEOVER - resolve TelegramConflictError
     # ═══════════════════════════════════════════════════════
     takeover_ok = await force_takeover(takeover_bot)
 

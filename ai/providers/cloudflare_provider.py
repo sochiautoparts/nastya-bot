@@ -1,4 +1,4 @@
-"""Cloudflare Workers AI Provider — serverless AI via OpenAI-compatible API.
+"""Cloudflare Workers AI Provider - serverless AI via OpenAI-compatible API.
 
 Requires: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
 Free tier: 10,000 neurons/day (enough for thousands of chat requests)
@@ -17,7 +17,7 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
-# Model chain — try in order, fall back to next on failure
+# Model chain - try in order, fall back to next on failure
 # Updated with latest Cloudflare Workers AI models (June 2025)
 TEXT_MODELS = {
     "default": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
@@ -26,7 +26,7 @@ TEXT_MODELS = {
     "code": "@cf/qwen/qwen2.5-coder-32b-instruct",
 }
 
-# Fallback models to try if default fails — ordered by reliability
+# Fallback models to try if default fails - ordered by reliability
 FALLBACK_MODELS = [
     "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "@cf/meta/llama-4-scout-17b-16e-instruct",
@@ -42,7 +42,7 @@ VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct"
 class CloudflareProvider(BaseProvider):
     """Cloudflare Workers AI provider using httpx.
 
-    PRIMARY provider — free, reliable, many models, vision support.
+    PRIMARY provider - free, reliable, many models, vision support.
     v3.0: Updated model list with latest Cloudflare models.
     """
 
@@ -82,7 +82,7 @@ class CloudflareProvider(BaseProvider):
         if not self.account_id:
             raise ProviderError(self.name, "No account ID configured", retryable=False)
 
-        image_base64 = kwargs.get("image_base64")  # Read, don't pop — allow fallback
+        image_base64 = kwargs.get("image_base64")  # Read, don't pop - allow fallback
         model_key: str = kwargs.get("model_key", "default")
         model: str = kwargs.get("model", TEXT_MODELS.get(model_key, TEXT_MODELS["default"]))
         system_prompt: str = kwargs.get("system_prompt", "")
@@ -182,11 +182,11 @@ class CloudflareProvider(BaseProvider):
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
                 if status == 404:
-                    # Model not found — try next model
+                    # Model not found - try next model
                     logger.warning(f"CF model {try_model} not found, trying fallback")
                     continue
                 if status in (429, 503):
-                    # Rate limited or overloaded — try next model
+                    # Rate limited or overloaded - try next model
                     last_error = ProviderError(self.name, f"HTTP {status} for {try_model}", retryable=True)
                     continue
                 last_error = ProviderError(self.name, f"HTTP {status}: {exc.response.text[:200]}", retryable=status in (500, 502, 504))

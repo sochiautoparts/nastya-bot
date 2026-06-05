@@ -1,4 +1,4 @@
-"""Base AI Provider — unified interface for all providers.
+"""Base AI Provider - unified interface for all providers.
 
 Ported from ai-mega-bot with fixes:
   - _build_messages uses 'messages' kwarg (matching how router passes history)
@@ -153,7 +153,7 @@ class BaseProvider:
                 merged[-1]["content"] = f"{prev_content}\n{new_content}"
             else:
                 merged.append(msg)
-        # Ensure alternating roles: system → (user|assistant)* with no consecutive same-role
+        # Ensure alternating roles: system -> (user|assistant)* with no consecutive same-role
         # If still have consecutive same-role after merge (shouldn't happen), skip extras
         result = merged
 

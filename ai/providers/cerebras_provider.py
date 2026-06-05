@@ -1,4 +1,4 @@
-"""Cerebras AI Provider — ultra-fast inference via OpenAI-compatible API.
+"""Cerebras AI Provider - ultra-fast inference via OpenAI-compatible API.
 
 Ported from ai-mega-bot.
 Free tier: 1 million tokens/day, 50 RPM, no credit card required.

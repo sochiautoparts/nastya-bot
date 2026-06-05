@@ -1,30 +1,31 @@
-"""AI Router v61.0 — POLLINATIONS-ONLY ROUTING (no local model, cloud-first everything)!
+"""AI Router v61.0 - POLLINATIONS-ONLY ROUTING (no local model, cloud-first everything)!
 
-АРХИТЕКТУРА v61 — POLLINATIONS-ONLY SMART ROUTING:
-  Всё через Pollinations — локальная модель УДАЛЕНА!
-  Provider's weighted round-robin handles model selection internally.
+АРХИТЕКТУРА v61 - POLLINATIONS-ONLY SMART ROUTING:
+  Всё через Pollinations - локальная модель УДАЛЕНА!
+  Provider weighted round-robin handles model selection internally.
 
-  CHAT route → Pollinations (provider's weighted round-robin handles model selection)
-    - Simple tasks → REASONING_CHAT (fast models, no reasoning)
-    - Complex tasks → REASONING_COMPLEX (better models, slight reasoning)
-    - Cloud-only tasks → REASONING_COMPLEX
+  CHAT route -> Pollinations (provider weighted round-robin handles model selection)
+    - Simple tasks -> REASONING_CHAT (fast models, no reasoning)
+    - Complex tasks -> REASONING_COMPLEX (better models, slight reasoning)
+    - Cloud-only tasks -> REASONING_COMPLEX
 
-  FUNCTION route → Pollinations (best quality models)
+  FUNCTION route -> Pollinations (best quality models)
     - REASONING_COMPLEX for high-quality public content
 
-  COMMENT route → Pollinations (fast/cheap models) — NO MORE LOCAL-ONLY
-    - REASONING_CHAT — fast models for casual group comments
-    - If Pollinations fails → static fallback
+  COMMENT route -> Pollinations (fast/cheap models) - NO MORE LOCAL-ONLY
+    - REASONING_CHAT - fast models for casual group comments
+    - If Pollinations fails -> static fallback
 
-  BACKGROUND route → Pollinations (cloud-first for quality posts)
-    - REASONING_CHAT — balanced quality for background tasks
-    - If Pollinations fails → skip (not critical)
+  BACKGROUND route -> Pollinations (cloud-first for quality posts)
+    - REASONING_CHAT - balanced quality for background tasks
+    - If Pollinations fails -> skip (not critical)
 
-  VISION → Pollinations vision models
+  VISION -> Pollinations vision models
     - 20+ vision-capable models
-    - If Pollinations fails → fallback message
+    - If Pollinations fails -> fallback message
 
-  When Pollinations raises ProviderError → static fallback (bot ALWAYS responds)
+  When Pollinations raises ProviderError -> static fallback (bot ALWAYS responds)
+"""
 
 import logging
 import random
@@ -52,7 +53,7 @@ FALLBACK_RESPONSES = [
     "Ой, мысли улетели! Повтори для Насти? 💭",
 ]
 
-# ── Task complexity detection for routing ──
+# -- Task complexity detection for routing --
 # Keywords that indicate a SIMPLE task (fast models sufficient)
 _SIMPLE_TASK_KEYWORDS = [
     "привет", "как дела", "пока", "спасибо", "ок", "ладно",
@@ -127,27 +128,27 @@ def _classify_task_complexity(prompt: str, messages: Optional[List[Dict]] = None
 
 
 class AIRouter:
-    """AI Router v61.0 — POLLINATIONS-ONLY ROUTING: all routes through Pollinations.
+    """AI Router v61.0 - POLLINATIONS-ONLY ROUTING: all routes through Pollinations.
 
     Strategy v61: Every route goes through PollinationsProvider.
-    The provider's weighted round-robin handles model selection internally.
-    No local model — Pollinations IS the provider.
+    The providers weighted round-robin handles model selection internally.
+    No local model - Pollinations IS the provider.
 
     Route for CHAT (route_type="chat", default):
-        Pollinations (fast models for simple, quality models for complex) → static fallback
+        Pollinations (fast models for simple, quality models for complex) -> static fallback
 
     Route for FUNCTION (route_type="function"):
-        Pollinations (best quality models) → static fallback
+        Pollinations (best quality models) -> static fallback
 
     Route for COMMENT (route_type="comment"):
-        Pollinations (fast/cheap models) → static fallback
-        No more local-only — Pollinations handles comments too!
+        Pollinations (fast/cheap models) -> static fallback
+        No more local-only - Pollinations handles comments too!
 
     Route for VISION tasks (photos):
-        Pollinations vision (20+ vision models) → fallback message
+        Pollinations vision (20+ vision models) -> fallback message
 
     Route for BACKGROUND tasks (news, channel):
-        Pollinations → skip (not critical)
+        Pollinations -> skip (not critical)
     """
 
     def __init__(self, db=None):
@@ -160,7 +161,7 @@ class AIRouter:
         self._last_cloud_success: float = 0
 
     async def init(self) -> None:
-        """Initialize PollinationsProvider — the ONLY provider."""
+        """Initialize PollinationsProvider - the ONLY provider."""
         try:
             self._pollinations = PollinationsProvider(
                 api_key=POLLINATIONS_API_KEY,
@@ -197,12 +198,12 @@ class AIRouter:
 
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
-        """Route chat based on route_type — ALL through Pollinations.
+        """Route chat based on route_type - ALL through Pollinations.
 
         route_type (kwarg):
-            "chat" (default) — Pollinations with complexity-based reasoning effort
-            "function" — Pollinations with REASONING_COMPLEX (best quality for posts)
-            "comment" — Pollinations with REASONING_CHAT (fast models for comments)
+            "chat" (default) - Pollinations with complexity-based reasoning effort
+            "function" - Pollinations with REASONING_COMPLEX (best quality for posts)
+            "comment" - Pollinations with REASONING_CHAT (fast models for comments)
 
         Both routes receive FULL context (web search, partner links, etc.)
         The system_prompt already contains all enriched context from chat.py.
@@ -218,11 +219,11 @@ class AIRouter:
     async def vision(self, prompt: str, image_data: bytes,
                      image_format: str = "jpeg", system_prompt: str = "",
                      **kwargs) -> AIResponse:
-        """Route vision request: Pollinations vision (multi-model) → fallback."""
+        """Route vision request: Pollinations vision (multi-model) -> fallback."""
         self._total_requests += 1
         self._vision_requests += 1
 
-        # ── Pollinations Vision — SOLE provider ──
+        # -- Pollinations Vision - SOLE provider --
         if self._pollinations and self._pollinations.is_available():
             try:
                 result = await self._pollinations.generate_vision(
@@ -250,9 +251,9 @@ class AIRouter:
             except Exception as e:
                 logger.warning(f"Pollinations vision unexpected error: {e}")
 
-        # ── No fallback for vision — local model can't see images ──
+        # -- No fallback for vision - local model can't see images --
         self._total_fallbacks += 1
-        logger.warning("Vision failed — Pollinations unavailable")
+        logger.warning("Vision failed - Pollinations unavailable")
         return AIResponse(
             text="Ой, Настя не может разглядеть фотку... Попробуй ещё раз? 📸💅",
             provider="fallback",
@@ -266,28 +267,28 @@ class AIRouter:
         """Chat route: ALL through Pollinations with complexity-based reasoning.
 
         route_type:
-            "chat" — Pollinations (complexity-based reasoning: simple→none, complex→low)
-            "function" — Pollinations (REASONING_COMPLEX for best quality)
-            "comment" — Pollinations (REASONING_CHAT for fast responses)
+            "chat" - Pollinations (complexity-based reasoning: simple->none, complex->low)
+            "function" - Pollinations (REASONING_COMPLEX for best quality)
+            "comment" - Pollinations (REASONING_CHAT for fast responses)
         """
         route_type = kwargs.get("route_type", "chat")
 
         # Determine reasoning effort based on route_type and complexity
         if route_type == "comment":
-            # Comments → fast models (REASONING_CHAT)
+            # Comments -> fast models (REASONING_CHAT)
             reasoning = REASONING_CHAT
         elif route_type == "function":
-            # Functions/posts → best quality (REASONING_COMPLEX)
+            # Functions/posts -> best quality (REASONING_COMPLEX)
             reasoning = REASONING_COMPLEX
         else:
-            # Normal chat → complexity-based routing
+            # Normal chat -> complexity-based routing
             complexity = _classify_task_complexity(prompt, messages)
             if complexity in ("cloud_only", "complex"):
                 reasoning = REASONING_COMPLEX
             else:
                 reasoning = REASONING_CHAT
 
-        # ── Pollinations — SOLE provider ──
+        # -- Pollinations - SOLE provider --
         if self._pollinations and self._pollinations.is_available():
             try:
                 result = await self._pollinations.generate(
@@ -324,7 +325,7 @@ class AIRouter:
             except Exception as e:
                 logger.warning(f"Pollinations unexpected error: {e}")
 
-        # ── Static fallback — bot ALWAYS responds ──
+        # -- Static fallback - bot ALWAYS responds --
         self._total_fallbacks += 1
         logger.error("Pollinations unavailable! Using static fallback.")
         return AIResponse(
@@ -336,12 +337,12 @@ class AIRouter:
 
     async def _route_background(self, prompt: str, system_prompt: str,
                                 messages: Optional[List[Dict]], **kwargs) -> AIResponse:
-        """Background route: Pollinations → skip (not critical).
+        """Background route: Pollinations -> skip (not critical).
 
-        Background tasks (news, channel posts) need quality but aren't critical.
+        Background tasks (news, channel posts) need quality but are not critical.
         If Pollinations fails, we skip rather than use a fallback message.
         """
-        # ── Pollinations — SOLE provider for background ──
+        # -- Pollinations - SOLE provider for background --
         if self._pollinations and self._pollinations.is_available():
             try:
                 result = await self._pollinations.generate(
@@ -367,7 +368,7 @@ class AIRouter:
             except Exception as e:
                 logger.warning(f"Pollinations bg unexpected: {e}")
 
-        # ── Background failed — not critical ──
+        # -- Background failed - not critical --
         self._total_fallbacks += 1
         logger.warning("Background task failed (Pollinations unavailable). Skipping.")
         return AIResponse(
@@ -440,7 +441,7 @@ class AIRouter:
         text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
         text = re.sub(r'\*([^*]+)\*', r'\1', text)
         text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-        text = re.sub(r'^\s*[-•]\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^\s*[--]\s+', '', text, flags=re.MULTILINE)
 
         # Clean up whitespace
         text = re.sub(r'\n{3,}', '\n\n', text)
@@ -453,7 +454,7 @@ class AIRouter:
 
     def get_status(self) -> Dict[str, Any]:
         status = {}
-        # Pollinations status — SOLE provider
+        # Pollinations status - SOLE provider
         status["pollinations"] = {
             "available": self._pollinations is not None and self._pollinations.is_available(),
             "role": "SOLE PROVIDER (chat + function + comment + vision + background)",
