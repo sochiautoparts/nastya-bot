@@ -126,6 +126,7 @@ jobs:
           # Local model — DISABLED (Pollinations-only, restorable)
           ENABLE_LOCAL_MODEL: "false"
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           CHANNEL_USERNAME: ${{ secrets.CHANNEL_USERNAME }}
           DB_PATH: data/nastya.db
