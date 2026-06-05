@@ -39,7 +39,7 @@ from ai.providers.pollinations_provider import (
 )
 from ai.voice import transcribe_voice_ogg
 from bot.config import (
-    POLLINATIONS_API_KEY, POLLINATIONS_API_KEY_2, POLLINATIONS_API_KEY_3, POLLINATIONS_MAX_TOKENS,
+    POLLINATIONS_API_KEY, POLLINATIONS_API_KEY_2, POLLINATIONS_MAX_TOKENS,
 )
 
 logger = logging.getLogger(__name__)
@@ -94,9 +94,9 @@ def _classify_task_complexity(prompt: str, messages: Optional[List[Dict]] = None
     """Classify task complexity to choose reasoning effort level.
 
     Returns:
-        "simple" — fast models sufficient (REASONING_CHAT)
-        "complex" — better models recommended (REASONING_COMPLEX)
-        "cloud_only" — must use cloud (vision, etc.) (REASONING_COMPLEX)
+        "simple" - fast models sufficient (REASONING_CHAT)
+        "complex" - better models recommended (REASONING_COMPLEX)
+        "cloud_only" - must use cloud (vision, etc.) (REASONING_COMPLEX)
     """
     prompt_lower = prompt.lower().strip()
 
@@ -165,7 +165,6 @@ class AIRouter:
             self._pollinations = PollinationsProvider(
                 api_key=POLLINATIONS_API_KEY,
                 api_key_2=POLLINATIONS_API_KEY_2,
-                api_key_3=POLLINATIONS_API_KEY_3,
                 timeout=45.0,
             )
             await self._pollinations.init()
@@ -183,7 +182,7 @@ class AIRouter:
 
         logger.info(
             f"AI Router v61.0 POLLINATIONS-ONLY initialized: "
-            f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + vision, triple-key=KEY1+KEY2+KEY3), "
+            f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + vision, dual-key=KEY1+KEY2), "
             f"strategy=chat:POLLINATIONS/function:POLLINATIONS/comment:POLLINATIONS, "
             f"max_tokens={POLLINATIONS_MAX_TOKENS}"
         )
@@ -471,6 +470,6 @@ class AIRouter:
             "total_fallbacks": self._total_fallbacks,
             "pollinations_requests": self._pollinations_requests,
             "vision_requests": self._vision_requests,
-            "strategy": "POLLINATIONS-ONLY (chat:complexity-routed, function:COMPLEX, comment:CHAT, background:CHAT)",
+            "strategy": "POLLINATIONS-ONLY dual-key (chat:complexity-routed, function:COMPLEX, comment:CHAT, background:CHAT)",
         }
         return status

@@ -1,10 +1,10 @@
-name: Nastya Bot — POLLINATIONS-ONLY v61
+name: Nastya Bot — POLLINATIONS-ONLY v62
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v61.0 — POLLINATIONS-ONLY
+# Nastya Bot v62.0 — POLLINATIONS-ONLY
 #
 #   - Pollinations.ai (44+ models, weighted round-robin) — ALL routes
-#   - TRIPLE API KEY FAILOVER: KEY1 → KEY2 → KEY3 → static fallback
+#   - DUAL API KEY FAILOVER: KEY1 → KEY2 → static fallback
 #   - ALL ROUTING: Pollinations → static fallback
 #     - Chat → Pollinations (weighted models)
 #     - Posts & functions → Pollinations (best quality models)
@@ -109,7 +109,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v61
+          key: nastya-db-v62
           restore-keys: |
             nastya-db-
 
@@ -120,10 +120,9 @@ jobs:
           OWNER_ID: ${{ secrets.OWNER_ID }}
           ADMIN_IDS: ${{ secrets.OWNER_ID }}
           BOT_USERNAME: asnastya_bot
-          # Pollinations.ai — TRIPLE KEY FAILOVER
+          # Pollinations.ai — DUAL KEY FAILOVER
           POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
           POLLINATIONS_API_KEY_2: ${{ secrets.POLLINATIONS_API_KEY_2 }}
-          POLLINATIONS_API_KEY_3: ${{ secrets.POLLINATIONS_API_KEY_3 }}
           # Local model — DISABLED (Pollinations-only, restorable)
           ENABLE_LOCAL_MODEL: "false"
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
@@ -134,14 +133,14 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v61.0 POLLINATIONS-ONLY ==="
-          echo "ALL ROUTES: Pollinations.ai (44+ models, triple-key failover)"
+          echo "=== Starting Nastya Bot v62.0 POLLINATIONS-ONLY ==="
+          echo "ALL ROUTES: Pollinations.ai (44+ models, dual-key failover)"
           echo "CHAT: Pollinations → Static fallback"
           echo "POSTS/FUNCTIONS: Pollinations (best quality) → Static fallback"
           echo "COMMENTS: Pollinations (fast models) → Static fallback"
           echo "VISION: Pollinations vision models"
           echo "BACKGROUND: Pollinations for quality posts"
-          echo "STRATEGY: Pollinations-only, triple-key=KEY1+KEY2+KEY3, circuit-break"
+          echo "STRATEGY: Pollinations-only, dual-key=KEY1+KEY2, circuit-break"
           echo "DATE AWARENESS: All prompts include current Moscow date/time"
           echo "PERSONA: Настя — москвичка, владеет BMW M3!"
           echo "INLINE: @asnastya_bot works in any chat!"
@@ -185,7 +184,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v61-${{ github.run_id }}
+          key: nastya-db-v62-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation
