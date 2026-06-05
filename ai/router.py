@@ -268,7 +268,12 @@ class AIRouter:
 
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
-        """Route chat: LOCAL-FIRST for simple, CLOUD for complex."""
+        """Route chat: LOCAL-FIRST for simple, CLOUD for complex.
+        
+        Both local and cloud models receive FULL context (web search, partner links, etc.)
+        The system_prompt already contains all enriched context from chat.py.
+        Local model gets a compact version that fits its context window.
+        """
         self._total_requests += 1
         priority = kwargs.get("priority", "high")
 
@@ -346,17 +351,40 @@ class AIRouter:
                                   messages: Optional[List[Dict]], **kwargs) -> AIResponse:
         """LOCAL-FIRST route: Local → Pollinations → static fallback.
         Used for simple chat tasks to conserve cloud balance.
+        
+        v59: Local model now receives FULL context (web search, partner links, etc.)
+        The system_prompt from chat.py contains web search results and partner links.
+        We extract key info and include it in the local model's prompt.
         """
         # ── 1. LlamaCpp — LOCAL PRIMARY ──
         if self._local and self._local.is_available():
             try:
-                local_system_prompt = (
+                # Build local system prompt with FULL context from chat.py
+                local_base = (
                     "Ты Настя — москвичка, 23 года, блогер, ведёшь канал @chasnastya. "
                     "Владеешь BMW M3 2025 серого цвета. "
                     "Пиши от себя, живо, как в мессенджере. "
                     "Без политики, без markdown. "
                     f"Сейчас {time.strftime('%d.%m.%Y %H:%M')} по Москве."
                 )
+                # Extract web search and partner context from the full system prompt
+                # The full system_prompt contains enriched context from chat.py
+                # We include it in the local model's prompt (it will be truncated if too long)
+                extra_context = ""
+                if system_prompt:
+                    # Extract web search results section
+                    search_match = re.search(r'🔍.*?(?:⚠️|\Z)', system_prompt, re.DOTALL)
+                    if search_match:
+                        extra_context += "\n\n" + search_match.group(0)[:600]
+                    # Extract partner links section
+                    partner_match = re.search(r'Партнёрск.*?(?:естественно\.)', system_prompt, re.DOTALL)
+                    if partner_match:
+                        extra_context += "\n\n" + partner_match.group(0)[:400]
+                    # Extract news context
+                    news_match = re.search(r'Свежие новости:.*?(?:ссылку!|$)', system_prompt)
+                    if news_match:
+                        extra_context += "\n\n" + news_match.group(0)[:300]
+                local_system_prompt = local_base + extra_context
                 result = await self._local.generate(
                     prompt,
                     system_prompt=local_system_prompt,
@@ -458,16 +486,30 @@ class AIRouter:
             except Exception as e:
                 logger.warning(f"Pollinations unexpected error: {e}")
 
-        # ── 2. LlamaCpp — LOCAL FALLBACK ──
+        # ── 2. LlamaCpp — LOCAL FALLBACK (with full context!) ──
         if self._local and self._local.is_available():
             try:
-                local_system_prompt = (
+                # Build local system prompt with FULL context
+                local_base = (
                     "Ты Настя — москвичка, 23 года, блогер, ведёшь канал @chasnastya. "
                     "Владеешь BMW M3 2025 серого цвета. "
                     "Пиши от себя, живо, как в мессенджере. "
                     "Без политики, без markdown. "
                     f"Сейчас {time.strftime('%d.%m.%Y %H:%M')} по Москве."
                 )
+                # Extract web search and partner context from the full system prompt
+                extra_context = ""
+                if system_prompt:
+                    search_match = re.search(r'🔍.*?(?:⚠️|\Z)', system_prompt, re.DOTALL)
+                    if search_match:
+                        extra_context += "\n\n" + search_match.group(0)[:600]
+                    partner_match = re.search(r'Партнёрск.*?(?:естественно\.)', system_prompt, re.DOTALL)
+                    if partner_match:
+                        extra_context += "\n\n" + partner_match.group(0)[:400]
+                    news_match = re.search(r'Свежие новости:.*?(?:ссылку!|$)', system_prompt)
+                    if news_match:
+                        extra_context += "\n\n" + news_match.group(0)[:300]
+                local_system_prompt = local_base + extra_context
                 result = await self._local.generate(
                     prompt,
                     system_prompt=local_system_prompt,

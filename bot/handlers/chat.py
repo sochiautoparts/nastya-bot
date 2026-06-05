@@ -58,6 +58,7 @@ from bot.web_search import (
     search_web, should_search,
     get_search_link_for_response,
 )
+from bot.partners import nastya_partner_manager
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -1879,6 +1880,29 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                 )
         except Exception as e:
             logger.warning(f"Web search error: {e}")
+
+    # ── Partner links context ──
+    # Nastya gives partner links naturally in conversation — not as ads, but as personal recommendations
+    try:
+        partner_context = nastya_partner_manager.generate_partner_context(text, max_shops=4)
+        if partner_context:
+            system_prompt += f"\n\n{partner_context}"
+            logger.info(f"Partner context added for user {user_id}: categories detected")
+    except Exception as e:
+        logger.warning(f"Partner context error: {e}")
+
+    # ── Auto parts specific: if user mentions BMW or auto parts, add direct shop links ──
+    text_lower_for_parts = text.lower()
+    auto_keywords = ["bmw", "бмв", "запчаст", "деталь", "артикул", "масло", "фильтр",
+                     "колодки", "ремонт", "сто ", "обслуживание", "то ", "регламент",
+                     "свечи", "ремень", "прокладк", "подшипник", "амортизатор"]
+    if any(kw in text_lower_for_parts for kw in auto_keywords):
+        try:
+            auto_context = nastya_partner_manager.get_auto_parts_links(text)
+            if auto_context and auto_context not in system_prompt:
+                system_prompt += f"\n\n{auto_context}"
+        except Exception:
+            pass
 
     # Save user message
     prefix = "[Голосовое] " if is_voice else ""
