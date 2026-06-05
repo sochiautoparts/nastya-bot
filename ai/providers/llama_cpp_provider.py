@@ -1,13 +1,14 @@
-"""LlamaCppProvider v4.0 — SINGLE-MODEL llama-cpp-python provider.
+"""LlamaCppProvider v5.0 — SINGLE-MODEL llama-cpp-python provider (FASTER!)
 
-v4.0 LOCAL-FIRST: Primary provider for simple chat, saves cloud balance!
-  - n_ctx=4096 (was 2048 — too small, caused overflow errors)
-  - max_tokens=384 (was 256 — allows fuller responses)
-  - Smart history: up to 6 messages (was 4 with 2048 ctx)
-  - System prompt: up to 800 chars (was 500 — more context for persona)
-  - Each message: up to 300 chars (was 200)
-  - User message: up to 1200 chars (was 800)
-  - Total chars safety limit: 12000 (was 6000)
+v5.0 FASTER LOCAL MODEL:
+  - n_ctx=4096, n_batch=512 (faster batch processing!)
+  - max_tokens=300 (was 384 — faster generation)
+  - Smart history: up to 4 messages (was 6 — less context = faster)
+  - System prompt: up to 600 chars (was 800 — tighter context)
+  - Each message: up to 300 chars
+  - User message: up to 1200 chars
+  - Total chars safety limit: 8000 (was 12000 — faster processing)
+  - timeout=45.0 (was 65.0 — fail faster)
   - /no_think prefix for Qwen models
   - stop=["<think"] — BLOCKS Qwen3 thinking mode
   - asyncio.Semaphore(1) for serialized generation
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 # Model loading defaults
 DEFAULT_MODEL_CONFIG = {
     "n_ctx": 4096,       # v4: Was 2048 — too small, caused overflow errors!
+    "n_batch": 512,      # v5: Faster batch processing (was default 512)
     "n_threads": 4,
     "n_gpu_layers": 0,
     "verbose": False,
@@ -38,7 +40,7 @@ DEFAULT_MODEL_CONFIG = {
 
 # Generation defaults
 DEFAULT_GEN_CONFIG = {
-    "max_tokens": 384,       # v4: Was 256 — allows fuller responses
+    "max_tokens": 300,       # v5: Was 384 — faster generation
     "temperature": 0.82,
     "top_p": 0.92,
     "top_k": 50,
@@ -51,11 +53,11 @@ DEFAULT_GEN_CONFIG = {
 # ── Context window limits for local model ──
 # Qwen3-4B with n_ctx=4096 — much more room!
 # Rough estimate: 1 token ≈ 4 chars for Russian text
-LOCAL_MAX_SYSTEM_CHARS = 800    # v4: Was 500 — more context for persona
-LOCAL_MAX_HISTORY_MSGS = 6     # v4: Was 4 — more history with 4096 ctx
+LOCAL_MAX_SYSTEM_CHARS = 600    # v5: Was 800 — tighter context for speed
+LOCAL_MAX_HISTORY_MSGS = 4     # v5: Was 6 — less history = faster
 LOCAL_MAX_MSG_CHARS = 300      # v4: Was 200 — longer messages
 LOCAL_MAX_USER_CHARS = 1200    # v4: Was 800 — longer user messages
-LOCAL_MAX_TOTAL_CHARS = 12000  # v4: Was 6000 — safety limit (~3000 tokens)
+LOCAL_MAX_TOTAL_CHARS = 8000   # v5: Was 12000 — faster processing (~2000 tokens)
 
 
 class LlamaCppProvider(BaseProvider):
@@ -72,7 +74,7 @@ class LlamaCppProvider(BaseProvider):
     def __init__(
         self,
         model_path: str = "",
-        timeout: float = 65.0,
+        timeout: float = 45.0,
         model_config: Optional[Dict] = None,
         gen_config: Optional[Dict] = None,
     ):

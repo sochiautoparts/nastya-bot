@@ -1,33 +1,29 @@
-"""AI Router v58.0 — LOCAL-FIRST + CLOUD-FOR-COMPLEX + VISION + INLINE + HALLUCINATED LINK FIX!
+"""AI Router v59.0 — SMART ROUTING (CLOUD-FIRST for posts, LOCAL-FIRST for chat, LOCAL-ONLY for comments)!
 
-АРХИТЕКТУРА v58 — LOCAL-FIRST (экономия баланса облачных моделей!):
+АРХИТЕКТУРА v59 — SMART ROUTING (экономия баланса + качество!):
   Баланс обновляется каждый час — экономим!
   
-  ЧАТ (простые сообщения — ЛОКАЛЬНАЯ МОДЕЛЬ ПЕРВИЧНА):
-    1. LlamaCppProvider (Qwen3-4B, n_ctx=4096) — PRIMARY для простого чата!
-       - Экономит баланс облачных моделей
-       - Работает мгновенно (5-12с генерация)
-       - 6 сообщений истории + 800ч системный промпт
-       - stop=["<think"] — блокирует thinking mode Qwen3
-    2. PollinationsProvider v15 (40-MODEL) — для СЛОЖНЫХ задач:
-       - VIN расшифровка, диагностика авто
-       - Развёрнутые ответы (когда просят подробно)
-       - Когда локальная модель не справилась
-       - 40 chat models с load balancing
+  ПОСТЫ И ФУНКЦИИ (generate_channel_post, background tasks) → CLOUD-FIRST:
+    1. PollinationsProvider (40-MODEL) — PRIMARY для постов и функций!
+       - Лучшее качество для публичного контента
+       - Посты в канале должны быть качественными!
+    2. LlamaCppProvider — FALLBACK для постов
     3. Static fallback — бот ВСЕГДА отвечает
 
-  СЛОЖНЫЕ ЗАДАЧИ (облачные модели — ПЕРВИЧНЫ):
-    - VIN, диагностика, ремонт, запчасти → Pollinations
-    - Развёрнутые ответы (пользователь просит подробно) → Pollinations
-    - Простые вопросы, болтовня, короткие ответы → Локальная модель
+  ЧАТ (обычные сообщения — ЛОКАЛЬНАЯ МОДЕЛЬ ПЕРВИЧНА):
+    1. LlamaCppProvider (Qwen3-4B, n_ctx=4096) — PRIMARY для чата!
+       - Экономит баланс облачных моделей
+       - Работает мгновенно (5-12с генерация)
+       - 4 сообщений истории + 600ч системный промпт
+       - stop=["<think"] — блокирует thinking mode Qwen3
+    2. PollinationsProvider v15 (40-MODEL) — FALLBACK для чата
+    3. Static fallback — бот ВСЕГДА отвечает
 
-  INLINE MODE:
-    - Настя отвечает в любом чате через @asnastya_bot!
-
-  ФОН (новости, канал):
-    - Новости: RSS-парсер + AI-комментарии для канала
-    - Локальная модель для AI-комментариев (экономия баланса!)
-    - Облачная для важных/сложных новостей
+  КОММЕНТАРИИ В ГРУППАХ → LOCAL-ONLY:
+    - Только локальная модель — никакого облака!
+    - Комменты — это обычно короткие ответы, не нужны мощные модели
+    - Если локальная не справилась — static fallback
+    - Экономия баланса на casual комментариях!
 
   VISION (фото-понимание):
     - Pollinations vision API — Настя ВИДИТ фото!
@@ -153,21 +149,28 @@ def _classify_task_complexity(prompt: str, messages: Optional[List[Dict]] = None
 
 
 class AIRouter:
-    """AI Router v58.0 — LOCAL-FIRST + Cloud-for-Complex + Vision.
+    """AI Router v59.0 — SMART ROUTING: cloud-first for posts, local-first for chat, local-only for comments.
 
-    Strategy: Balance cloud model budget by using local model for simple tasks.
+    Strategy v59: Route based on USE CASE, not just complexity.
     
-    Route for SIMPLE tasks (greetings, short chat):
-        LOCAL model → Pollinations → static fallback
-    
-    Route for COMPLEX tasks (VIN, diagnostics, long questions):
+    Route for POSTS & FUNCTIONS (route_type="function"):
         Pollinations (40 models) → LOCAL model → static fallback
+        Cloud gives better quality for public content!
+    
+    Route for USER CHAT (route_type="chat", default):
+        LOCAL model → Pollinations → static fallback
+        Saves cloud balance for normal conversation.
+    
+    Route for GROUP COMMENTS (route_type="comment"):
+        LOCAL model only → static fallback
+        No cloud waste on casual comments!
     
     Route for VISION tasks (photos):
         Pollinations vision (16 models) → fallback message
     
     Route for BACKGROUND tasks (news, channel):
-        LOCAL model → Pollinations → skip
+        Pollinations → LOCAL model → skip
+        Posts need cloud quality!
     """
 
     def __init__(self, db=None):
@@ -194,9 +197,10 @@ class AIRouter:
             try:
                 self._local = LlamaCppProvider(
                     model_path=MODEL_PATH,
-                    timeout=65.0,
+                    timeout=45.0,
                     model_config={
                         "n_ctx": max(MODEL_N_CTX, 4096),  # Minimum 4096!
+                        "n_batch": 512,  # Faster batch processing
                         "n_threads": MODEL_N_THREADS,
                         "n_gpu_layers": 0,
                         "verbose": False,
@@ -204,7 +208,7 @@ class AIRouter:
                         "use_mlock": False,
                     },
                     gen_config={
-                        "max_tokens": max(MODEL_MAX_TOKENS, 384),  # Minimum 384!
+                        "max_tokens": max(MODEL_MAX_TOKENS, 300),  # Minimum 300!
                         "temperature": 0.82,
                         "top_p": 0.92,
                         "top_k": 50,
@@ -246,11 +250,11 @@ class AIRouter:
         model_name = self._local._model_name if self._local and self._local._loaded else "none"
 
         logger.info(
-            f"AI Router v58.0 LOCAL-FIRST initialized: "
-            f"local={local_status} (PRIMARY for simple chat, model={model_name}, n_ctx={max(MODEL_N_CTX, 4096)}, ENABLE_LOCAL_MODEL={ENABLE_LOCAL_MODEL}), "
-            f"pollinations={pollinations_status} (COMPLEX tasks + vision, {len(CHAT_MODELS)} models), "
-            f"news=LOCAL+AI (balance conservation!), "
-            f"max_tokens={POLLINATIONS_MAX_TOKENS}(cloud)/{max(MODEL_MAX_TOKENS, 384)}(local), history={MODEL_HISTORY_LIMIT}"
+            f"AI Router v59.0 SMART ROUTING initialized: "
+            f"local={local_status} (model={model_name}, n_ctx={max(MODEL_N_CTX, 4096)}, ENABLE_LOCAL_MODEL={ENABLE_LOCAL_MODEL}), "
+            f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + vision), "
+            f"strategy=chat:LOCAL_FIRST/function:CLOUD_FIRST/comment:LOCAL_ONLY, "
+            f"max_tokens={POLLINATIONS_MAX_TOKENS}(cloud)/{max(MODEL_MAX_TOKENS, 300)}(local), history={MODEL_HISTORY_LIMIT}"
         )
 
     async def close(self) -> None:
@@ -268,7 +272,12 @@ class AIRouter:
 
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
-        """Route chat: LOCAL-FIRST for simple, CLOUD for complex.
+        """Route chat based on route_type: chat (local-first), function (cloud-first), comment (local-only).
+        
+        route_type (kwarg):
+            "chat" (default) — LOCAL-FIRST: Local → Cloud → Fallback. Saves balance.
+            "function" — CLOUD-FIRST: Cloud → Local → Fallback. Better quality for posts.
+            "comment" — LOCAL-ONLY: Local → Static fallback. No cloud waste on casual comments.
         
         Both local and cloud models receive FULL context (web search, partner links, etc.)
         The system_prompt already contains all enriched context from chat.py.
@@ -276,9 +285,10 @@ class AIRouter:
         """
         self._total_requests += 1
         priority = kwargs.get("priority", "high")
+        route_type = kwargs.get("route_type", "chat")
 
         if priority == "high":
-            return await self._route_chat(prompt, system_prompt, messages, **kwargs)
+            return await self._route_chat(prompt, system_prompt, messages, route_type=route_type, **kwargs)
         else:
             return await self._route_background(prompt, system_prompt, messages, **kwargs)
 
@@ -329,23 +339,29 @@ class AIRouter:
         )
 
     async def _route_chat(self, prompt: str, system_prompt: str,
-                          messages: Optional[List[Dict]], **kwargs) -> AIResponse:
-        """Chat route: LOCAL-FIRST with smart complexity detection.
+                          messages: Optional[List[Dict]], route_type: str = "chat", **kwargs) -> AIResponse:
+        """Chat route: dispatch based on route_type.
         
-        Simple tasks → LOCAL model (saves balance!)
-        Complex tasks → Pollinations cloud
+        route_type:
+            "chat" — LOCAL-FIRST: Local → Cloud → Fallback (saves balance for normal chat)
+            "function" — CLOUD-FIRST: Cloud → Local → Fallback (better quality for posts/functions)
+            "comment" — LOCAL-ONLY: Local → Static fallback (no cloud waste on casual comments)
         """
-        complexity = _classify_task_complexity(prompt, messages)
-        
-        if complexity == "simple" and self._local and self._local.is_available():
-            # ── SIMPLE TASK → LOCAL MODEL FIRST (saves cloud balance!) ──
-            return await self._route_local_first(prompt, system_prompt, messages, **kwargs)
-        elif complexity == "cloud_only":
-            # ── VISION/CLOUD-ONLY → Pollinations first ──
+        if route_type == "comment":
+            # ── COMMENTS IN GROUPS → LOCAL ONLY (no cloud waste!) ──
+            return await self._route_local_only(prompt, system_prompt, messages, **kwargs)
+        elif route_type == "function":
+            # ── POSTS & FUNCTIONS → CLOUD FIRST (better quality for public content!) ──
             return await self._route_cloud_first(prompt, system_prompt, messages, **kwargs)
         else:
-            # ── COMPLEX TASK → Pollinations first, local as fallback ──
-            return await self._route_cloud_first(prompt, system_prompt, messages, **kwargs)
+            # ── NORMAL CHAT → LOCAL-FIRST (saves cloud balance!) ──
+            complexity = _classify_task_complexity(prompt, messages)
+            if complexity == "cloud_only":
+                return await self._route_cloud_first(prompt, system_prompt, messages, **kwargs)
+            elif complexity == "complex":
+                return await self._route_cloud_first(prompt, system_prompt, messages, **kwargs)
+            else:
+                return await self._route_local_first(prompt, system_prompt, messages, **kwargs)
 
     async def _route_local_first(self, prompt: str, system_prompt: str,
                                   messages: Optional[List[Dict]], **kwargs) -> AIResponse:
@@ -542,12 +558,93 @@ class AIRouter:
             tokens_used=0,
         )
 
+    async def _route_local_only(self, prompt: str, system_prompt: str,
+                                 messages: Optional[List[Dict]], **kwargs) -> AIResponse:
+        """LOCAL-ONLY route: Local model → static fallback.
+        Used for comments in groups — no cloud waste on casual comments!
+        If local fails, use static fallback (never cloud).
+        """
+        # ── 1. LlamaCpp — LOCAL ONLY (no cloud for comments!) ──
+        if self._local and self._local.is_available():
+            try:
+                # Build local system prompt for group comments
+                local_base = (
+                    "Ты Настя — москвичка, 23 года, блогер. "
+                    "Пиши коротко, живо, как в мессенджере. "
+                    "Без политики, без markdown. "
+                    f"Сейчас {time.strftime('%d.%m.%Y %H:%M')} по Москве."
+                )
+                # Extract any relevant context from system prompt
+                extra_context = ""
+                if system_prompt:
+                    search_match = re.search(r'🔍.*?(?:⚠️|\Z)', system_prompt, re.DOTALL)
+                    if search_match:
+                        extra_context += "\n\n" + search_match.group(0)[:400]
+                local_system_prompt = local_base + extra_context
+                result = await self._local.generate(
+                    prompt,
+                    system_prompt=local_system_prompt,
+                    messages=messages,
+                )
+                if result and result.text:
+                    cleaned = self.clean_ai_response(result.text)
+                    if cleaned:
+                        self._local_requests += 1
+                        return AIResponse(
+                            text=cleaned,
+                            provider=result.provider,
+                            model=result.model,
+                            tokens_used=result.tokens_used,
+                            metadata={**result.metadata, "role": "comment_local_only"},
+                        )
+            except ProviderError as e:
+                logger.warning(f"Local model error (comment): {e}")
+            except Exception as e:
+                logger.warning(f"Unexpected local model error (comment): {e}")
+
+        # ── 2. Static fallback — no cloud for comments! ──
+        self._total_fallbacks += 1
+        logger.warning("Local model unavailable for comment — using static fallback (no cloud waste!).")
+        return AIResponse(
+            text=self.get_fallback_response(),
+            provider="fallback",
+            model="none",
+            tokens_used=0,
+            metadata={"role": "comment_fallback"},
+        )
+
     async def _route_background(self, prompt: str, system_prompt: str,
                                 messages: Optional[List[Dict]], **kwargs) -> AIResponse:
-        """Background route: LOCAL FIRST (saves balance!) → Pollinations → skip.
-        News and channel content should prefer local model.
+        """Background route: CLOUD-FIRST for quality posts! Cloud → Local → skip.
+        v59: Posts and channel content need cloud quality — local as fallback only.
         """
-        # ── 1. LOCAL model — PRIMARY for background (saves balance!) ──
+        # ── 1. Pollinations — CLOUD PRIMARY for background (better quality posts!) ──
+        if self._pollinations and self._pollinations.is_available():
+            try:
+                result = await self._pollinations.generate(
+                    prompt,
+                    system_prompt=system_prompt,
+                    messages=messages,
+                    max_tokens=300,
+                    reasoning_effort=REASONING_CHAT,
+                )
+                if result and result.text:
+                    cleaned = self.clean_ai_response(result.text)
+                    if cleaned:
+                        self._pollinations_requests += 1
+                        return AIResponse(
+                            text=cleaned,
+                            provider=result.provider,
+                            model=result.model,
+                            tokens_used=result.tokens_used,
+                            metadata={**result.metadata, "role": "bg_cloud_primary"},
+                        )
+            except ProviderError as e:
+                logger.warning(f"Pollinations bg error: {e}")
+            except Exception as e:
+                logger.warning(f"Pollinations bg unexpected: {e}")
+
+        # ── 2. LOCAL model — FALLBACK for background ──
         if self._local and self._local.is_available():
             try:
                 # Short system prompt for local model
@@ -570,38 +667,12 @@ class AIRouter:
                             provider=result.provider,
                             model=result.model,
                             tokens_used=result.tokens_used,
-                            metadata={**result.metadata, "role": "bg_local_primary"},
+                            metadata={**result.metadata, "role": "bg_local_fallback"},
                         )
             except ProviderError as e:
                 logger.warning(f"Local bg error: {e}")
             except Exception as e:
                 logger.error(f"Unexpected local bg error: {e}")
-
-        # ── 2. Pollinations (fallback for background) ──
-        if self._pollinations and self._pollinations.is_available():
-            try:
-                result = await self._pollinations.generate(
-                    prompt,
-                    system_prompt=system_prompt,
-                    messages=messages,
-                    max_tokens=300,
-                    reasoning_effort=REASONING_CHAT,
-                )
-                if result and result.text:
-                    cleaned = self.clean_ai_response(result.text)
-                    if cleaned:
-                        self._pollinations_requests += 1
-                        return AIResponse(
-                            text=cleaned,
-                            provider=result.provider,
-                            model=result.model,
-                            tokens_used=result.tokens_used,
-                            metadata={**result.metadata, "role": "bg_cloud_fallback"},
-                        )
-            except ProviderError as e:
-                logger.warning(f"Pollinations bg error: {e}")
-            except Exception as e:
-                logger.warning(f"Pollinations bg unexpected: {e}")
 
         # ── 3. Background failed — not critical ──
         self._total_fallbacks += 1
@@ -720,6 +791,6 @@ class AIRouter:
             "pollinations_requests": self._pollinations_requests,
             "local_fallback_count": self._local_fallback_count,
             "vision_requests": self._vision_requests,
-            "strategy": "LOCAL_FIRST (saves cloud balance!)",
+            "strategy": "SMART_ROUTING (chat:LOCAL_FIRST, function:CLOUD_FIRST, comment:LOCAL_ONLY)",
         }
         return status

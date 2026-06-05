@@ -409,6 +409,7 @@ class NastyaPartnerManager:
 
         lines.append("")
         lines.append("ВАЖНО: Ссылки выше — ПАРТНЁРСКИЕ (goto_link из admitad_ads.json). Используй их КАК ЕСТЬ, ничего не добавляй и не меняй!")
+        lines.append("Эти ссылки можно также естественно использовать в постах канала.")
 
         return "\n".join(lines)
 
@@ -435,6 +436,45 @@ class NastyaPartnerManager:
         lines.append("Настя водит M3 и знает где покупать запчасти! Упомяни это естественно.")
         lines.append("ВАЖНО: Ссылки — ПАРТНЁРСКИЕ (goto_link из admitad_ads.json). Используй КАК ЕСТЬ!")
         return "\n".join(lines)
+
+    def get_partner_links_for_post(self, category: str = "", region: str = "RU") -> List[Dict[str, str]]:
+        """Get partner links suitable for channel posts.
+        
+        Returns 1-2 links that Настя can naturally include in her posts.
+        These are the same goto_links from admitad_ads.json — ready to use!
+        """
+        self.ensure_loaded()
+        links = []
+        
+        # Get programs matching category or random ones
+        programs = []
+        if category:
+            programs = self.get_by_category(category, region)
+        if not programs:
+            # Get random programs for auto-related posts
+            auto_cats = ["autoparts", "tires", "coupons"]
+            for cat in auto_cats:
+                progs = self.get_by_category(cat, region)
+                programs.extend(progs)
+        
+        if not programs:
+            # Just get any programs for the region
+            programs = [p for p in self._admitad_programs if p.has_region(region)]
+        
+        # Pick 1-2 relevant programs
+        import random
+        selected = random.sample(programs, min(2, len(programs))) if programs else []
+        
+        for p in selected:
+            desc = p._get_category_description()
+            links.append({
+                "name": p.name,
+                "url": p.goto_link,  # Ready-to-use link from admitad!
+                "description": desc,
+                "category_name": p.category_name,
+            })
+        
+        return links
 
     def get_by_category(self, category: str, region: str = DEFAULT_REGION) -> List[PartnerProgram]:
         """Get programs in a specific category and region."""

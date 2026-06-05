@@ -1,22 +1,24 @@
-name: Nastya Bot — LOCAL-FIRST v58
+name: Nastya Bot — SMART ROUTING v59
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v58.0 — LOCAL-FIRST (saves cloud balance!)
+# Nastya Bot v59.0 — SMART ROUTING (cloud-first for posts, local-first for chat, local-only for comments)
 #
-#   - LlamaCpp Qwen3-4B (n_ctx=4096) — PRIMARY for simple chat
-#   - Pollinations.ai (40 chat models) — for COMPLEX tasks + vision
-#   - Balance refreshes every hour — use local model to conserve!
-#   - Simple chat → LOCAL model (free, instant)
-#   - Complex tasks (VIN, diagnostics, search) → CLOUD model
+#   - LlamaCpp Qwen3-4B (n_ctx=4096, n_batch=512) — LOCAL for chat & comments
+#   - Pollinations.ai (40 chat models) — CLOUD-FIRST for posts & functions
+#   - SMART ROUTING:
+#     - Chat (normal conversation) → LOCAL-FIRST (saves balance!)
+#     - Posts & functions → CLOUD-FIRST (better quality for public content!)
+#     - Comments in groups → LOCAL-ONLY (no cloud waste on casual comments!)
 #   - Vision (photos) → CLOUD model only
-#   - Background (news, channel) → LOCAL model first
+#   - Background (news, channel) → CLOUD-FIRST for quality posts!
 #   - IMAGE GENERATION — Настя РИСУЕТ! 🎨 (flux model)
 #   - Persona: Настя — москвичка, владеет BMW M3 2025!
 #   - INLINE MODE — Настя работает в любом чате!
 #
-# LOCAL MODEL (Qwen3-4B, n_ctx=4096):
-#   - ENABLED — PRIMARY for simple chat tasks
-#   - Saves cloud balance — use for greetings, short chat, news
+# LOCAL MODEL (Qwen3-4B, n_ctx=4096, n_batch=512):
+#   - ENABLED — PRIMARY for simple chat & comments
+#   - max_tokens=300, timeout=45s — fast generation!
+#   - 4 history msgs, 600ch system prompt — tight & fast
 #
 # NO TESTS — bot starts immediately!
 #
@@ -151,11 +153,17 @@ jobs:
       - name: Create data directory
         run: mkdir -p data
 
+      - name: Download Admitad partner data
+        run: |
+          mkdir -p data
+          curl -sL "https://raw.githubusercontent.com/creastudioai-beep/pr/main/data/admitad_ads.json" \
+            -o data/admitad_ads.json || echo "Failed to download admitad data, will use cached version"
+
       - name: Restore database cache
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v58
+          key: nastya-db-v59
           restore-keys: |
             nastya-db-
 
@@ -173,8 +181,8 @@ jobs:
           MODEL_PATH: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
           MODEL_N_CTX: 4096
           MODEL_N_THREADS: 4
-          MODEL_MAX_TOKENS: 384
-          MODEL_HISTORY_LIMIT: 6
+          MODEL_MAX_TOKENS: 300
+          MODEL_HISTORY_LIMIT: 4
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           CHANNEL_USERNAME: ${{ secrets.CHANNEL_USERNAME }}
@@ -183,18 +191,19 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v58.0 LOCAL-FIRST (saves cloud balance!) ==="
-          echo "PRIMARY: LOCAL Qwen3-4B (n_ctx=4096) for simple chat — FREE!"
-          echo "COMPLEX: Pollinations.ai 40-MODEL for VIN, diagnostics, search"
+          echo "=== Starting Nastya Bot v59.0 SMART ROUTING ==="
+          echo "CHAT: LOCAL-FIRST — Local → Cloud → Fallback (saves balance!)"
+          echo "POSTS/FUNCTIONS: CLOUD-FIRST — Cloud → Local → Fallback (better quality!)"
+          echo "COMMENTS: LOCAL-ONLY — Local → Static fallback (no cloud waste!)"
           echo "VISION: Pollinations vision (16 models) for photos"
-          echo "BACKGROUND: LOCAL model for news comments — saves balance!"
-          echo "STRATEGY: Simple→Local, Complex→Cloud, Vision→Cloud only"
+          echo "BACKGROUND: CLOUD-FIRST for quality posts!"
+          echo "STRATEGY: chat→LOCAL_FIRST, function→CLOUD_FIRST, comment→LOCAL_ONLY"
           echo "PERSONA: Настя — москвичка, владеет BMW M3 2025!"
           echo "INLINE: @asnastya_bot works in any chat!"
           echo "SEARCH: /find — товары и лучшие цены! /search — поиск информации!"
 
-          echo "LOCAL-FIRST: ENABLED — Qwen3-4B (n_ctx=4096) PRIMARY for simple chat!"
-          echo "Config: strategy=LOCAL_FIRST, n_ctx=4096, max_tokens=384(local)/2000(cloud), history=6, vision=cloud_only, background=local_first"
+          echo "SMART ROUTING: ENABLED — Local for chat/comments, Cloud for posts/functions!"
+          echo "Config: strategy=SMART_ROUTING, n_ctx=4096, n_batch=512, max_tokens=300(local)/2000(cloud), history=4, timeout=45s, vision=cloud_only, background=cloud_first, comment=local_only"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -235,7 +244,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v58-${{ github.run_id }}
+          key: nastya-db-v59-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation

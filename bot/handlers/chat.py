@@ -108,6 +108,9 @@ _PRODUCT_SEARCH_PREFIXES = [
 # v42: Per-user message dedup — track ACTIVE AI tasks per user
 _user_processing: dict = {}  # user_id -> asyncio.Task (active AI task) or None
 
+# v59: Max chars for group/supergroup comments — keep it short!
+GROUP_COMMENT_MAX_CHARS = 600
+
 
 def _cleanup_trackers():
     """Remove entries for users inactive for > 24 hours."""
@@ -1919,10 +1922,12 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         _send_typing_delay(message, delay_seconds=5.0)
     )
 
-    # Call AI
+    # Call AI — use LOCAL-ONLY routing for group comments (saves cloud balance!)
     try:
+        route_type = "comment" if is_group else "chat"
         result = await ai_router.chat(
             prompt=text, system_prompt=system_prompt, messages=history_with_current,
+            route_type=route_type,
         )
         response_text = _clean_response(result.text)
 
@@ -1999,16 +2004,16 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         if search_links:
             response_text += "\n\n" + "\n".join(search_links)
 
-    # ── GROUP CHAT: Limit response length ──
-    if is_group and len(response_text) > 600:
+    # ── GROUP CHAT: Limit response length to GROUP_COMMENT_MAX_CHARS ──
+    if is_group and len(response_text) > GROUP_COMMENT_MAX_CHARS:
         # Cut at sentence boundary for group chats
         for sep in ['. ', '! ', '? ', '\n']:
-            idx = response_text[:600].rfind(sep)
+            idx = response_text[:GROUP_COMMENT_MAX_CHARS].rfind(sep)
             if idx > 100:
                 response_text = response_text[:idx + len(sep)].strip()
                 break
         else:
-            response_text = response_text[:600]
+            response_text = response_text[:GROUP_COMMENT_MAX_CHARS]
 
     # ── CHANNEL INVITE CHECK ──
     channel_invite = ""
