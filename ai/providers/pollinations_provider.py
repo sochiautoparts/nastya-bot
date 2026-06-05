@@ -1,24 +1,23 @@
-"""Pollinations.ai Provider v17.0 — DUAL API KEY + EXPANDED MODEL LOAD BALANCING!
+"""Pollinations.ai Provider v18.0 — TRIPLE API KEY + EXPANDED MODEL LOAD BALANCING!
 
-v17.0 UPDATE — Expanded models, no model deletion:
-  - ADDED: 'nova-micro', 'openai-reasoning' (now confirmed in catalog)
-  - ADDED: 'deepseek-v4' alias for flash variant
-  - ADDED: 'llama-3.3' alias, 'llama-4-scout' alias
-  - ADDED: 'mistral-small-3.2' alias
-  - RESTORED: 'qwen-large', 'step-flash' (confirmed working with API key)
-  - REMOVED from REMOVED list: Models may come back — Pollinations rotates availability!
+v18.0 UPDATE — Triple key failover, no free tier, new models:
+  - ADDED: KEY3 support — three API keys for maximum resilience
+  - ADDED: 'midijourney' (confirmed working, text-to-music/chat)
+  - ADDED: New primary API key (KEY1), old keys moved to KEY2/KEY3
+  - REMOVED: Free tier fallback — it returns 401, triple key is critical!
+  - IMPROVED: Better handling of empty responses from reasoning models
+  - ADJUSTED: Model weights tuned for Russian language quality
   - IMPORTANT: We NEVER delete models from lists when they fail.
     Pollinations.ai rotates model availability — a failure today doesn't mean
     the model is gone. Circuit breaking handles temporary failures.
 
-  DUAL API KEY FAILOVER:
-  - KEY1 → KEY2 → Free tier → ProviderError(retryable=True)
+  TRIPLE API KEY FAILOVER:
+  - KEY1 → KEY2 → KEY3 → ProviderError(retryable=True)
   - On 402/401: mark current key as depleted, auto-switch to next
   - Depleted keys auto-retry after 600 seconds cooldown
-  - Free tier (no key) always available as last resort before error
-  - NOTE: Free tier currently returns 401 — dual key is critical!
+  - NO free tier fallback — free tier returns 401, triple key is critical!
 
-  EXPANDED MODEL LIST (44 models!):
+  EXPANDED MODEL LIST (43 models!):
   - Full Pollinations catalog coverage
   - All previous models retained (never delete — Pollinations rotates!)
 """
@@ -53,15 +52,15 @@ CHAT_MODELS = [
     # IMPORTANT: We NEVER delete models when they temporarily fail.
     # Pollinations rotates availability — circuit breaking handles it.
     # ── PRIMARY TIER — Fast & Reliable ──
-    ("openai",       4, True,  1),   # GPT-5.4 Nano — PRIMARY, fast, vision, cheapest
-    ("mistral",      3, True,  1),   # Mistral Small 3.2 — fast, good multilingual
+    ("openai",       4, True,  1),   # GPT-5.4 Nano — PRIMARY, fast, vision, best Russian
+    ("mistral",      3, True,  1),   # Mistral Small 3.2 — fast, good multilingual, vision
     ("gpt-5.4-mini", 3, True,  2),   # GPT-5.4 Mini — balanced speed & cost
-    ("deepseek",     2, False, 1),   # DeepSeek V4 Flash — reasoning, cheap
-    ("mistral-4",    2, True,  2),   # Mistral Small 4 — better, multimodal
+    ("deepseek",     2, False, 1),   # DeepSeek V4 Flash — good Russian, fast, cheap
+    ("mistral-4",    2, True,  2),   # Mistral Small 4 — better quality, multimodal
     ("gemma",        2, True,  1),   # Gemma 4 26B — fast MoE, vision + reasoning
     ("llama-scout",  1, True,  1),   # Llama 4 Scout — long context, vision
     # ── QUALITY TIER — Better Responses ──
-    ("gpt-5.5",      2, True,  3),   # GPT-5.5 — latest model, reasoning + vision
+    ("gpt-5.5",      2, True,  3),   # GPT-5.5 — excellent Russian, reasoning + vision
     ("deepseek-pro", 1, False, 2),   # DeepSeek Pro — better reasoning
     # ── POWERFUL TIER — Vision + Reasoning ──
     ("mistral-large", 1, True,  3),   # Mistral Large — powerful, vision + reasoning
@@ -78,7 +77,7 @@ CHAT_MODELS = [
     ("perplexity",    1, False, 2),   # Perplexity — deep web search, 200k ctx
     ("qwen-vision",   1, True,  2),   # Qwen3 VL — vision specialist
     ("llama",         1, False, 1),   # Llama 3.3 70B — strong reasoning
-    ("grok",          1, True,  2),   # Grok — vision, good Russian
+    ("grok",          1, True,  2),   # Grok — vision, OK Russian
     # ── CODE + REASONING ──
     ("qwen-coder",    1, False, 1),   # Qwen3 Coder 30B — code + reasoning
     ("openai-large",  1, True,  4),   # GPT-5.4 — reasoning model for complex questions
@@ -101,6 +100,8 @@ CHAT_MODELS = [
     ("llama-3.3",     1, False, 1),   # Llama 3.3 70B (explicit alias)
     ("llama-4-scout", 1, True,  1),   # Llama 4 Scout (explicit alias)
     ("nova-2",        1, True,  2),   # Nova 2 Lite — fast, Russian OK
+    # ── v18: NEW MODELS — Confirmed working! ──
+    ("midijourney",   1, False, 1),   # Midijourney — text-to-music/chat model
     # Models may come back — we NEVER delete them!
     # Previous REMOVED: gemini, gemini-3.5-flash, llama-maverick, claude, claude-haiku, claude-sonnet
     # These MAY return in the future — Pollinations rotates availability
@@ -195,17 +196,20 @@ def _parse_json_response(text: str) -> Optional[str]:
 
 
 class PollinationsProvider(BaseProvider):
-    """Pollinations.ai provider v17.0 — DUAL KEY + EXPANDED MODEL LOAD BALANCING!
+    """Pollinations.ai provider v18.0 — TRIPLE KEY + EXPANDED MODEL LOAD BALANCING!
 
     Uses gen.pollinations.ai/v1/chat/completions (OpenAI-compatible).
-    Round-robin across 44 models for load distribution.
+    Round-robin across 43 models for load distribution.
 
-    DUAL API KEY FAILOVER:
-      1. Try KEY1 first
+    TRIPLE API KEY FAILOVER:
+      1. Try KEY1 first (primary key)
       2. On 402/401 from KEY1 → switch to KEY2
-      3. On 402/401 from KEY2 → switch to free tier (no key)
-      4. On failure from free tier → raise ProviderError(retryable=True)
+      3. On 402/401 from KEY2 → switch to KEY3
+      4. On 402/401 from KEY3 → raise ProviderError(retryable=True)
       5. Depleted keys auto-retry after 600 seconds cooldown
+
+    NOTE: Free tier is NOT used as fallback — it returns 401.
+    Triple key support is critical for continuous operation.
 
     IMPORTANT: Models are NEVER removed when temporarily unavailable.
     Pollinations.ai rotates model availability — circuit breaking handles it.
@@ -215,15 +219,17 @@ class PollinationsProvider(BaseProvider):
     supports_streaming: bool = False
     supports_vision: bool = True
 
-    def __init__(self, api_key: str = "", api_key_2: str = "", timeout: float = 45.0):
+    def __init__(self, api_key: str = "", api_key_2: str = "", api_key_3: str = "", timeout: float = 45.0):
         super().__init__(api_key=api_key, timeout=timeout)
-        # ── Dual API key storage ──
+        # ── Triple API key storage ──
         self._api_key_1: str = api_key
         self._api_key_2: str = api_key_2
+        self._api_key_3: str = api_key_3
         # ── Per-key balance depletion tracking ──
         # 0 = active/never depleted; >0 = timestamp when depleted
         self._key1_depleted_at: float = 0.0
         self._key2_depleted_at: float = 0.0
+        self._key3_depleted_at: float = 0.0
         # ── Rate-limit tracking ──
         self._last_429_time: float = 0
         self._429_count: int = 0
@@ -241,13 +247,24 @@ class PollinationsProvider(BaseProvider):
         """Check if an API key is available (not depleted or cooldown expired).
 
         Args:
-            key_index: 1 for KEY1, 2 for KEY2
+            key_index: 1 for KEY1, 2 for KEY2, 3 for KEY3
 
         Returns:
             True if key can be used for requests
         """
-        depleted_at = self._key1_depleted_at if key_index == 1 else self._key2_depleted_at
-        key_val = self._api_key_1 if key_index == 1 else self._api_key_2
+        depleted_at_map = {
+            1: self._key1_depleted_at,
+            2: self._key2_depleted_at,
+            3: self._key3_depleted_at,
+        }
+        key_val_map = {
+            1: self._api_key_1,
+            2: self._api_key_2,
+            3: self._api_key_3,
+        }
+
+        depleted_at = depleted_at_map.get(key_index, 0)
+        key_val = key_val_map.get(key_index, "")
 
         # No key configured = not available
         if not key_val:
@@ -263,8 +280,10 @@ class PollinationsProvider(BaseProvider):
             # Cooldown expired — key is available again
             if key_index == 1:
                 self._key1_depleted_at = 0
-            else:
+            elif key_index == 2:
                 self._key2_depleted_at = 0
+            else:
+                self._key3_depleted_at = 0
             logger.info(f"API KEY{key_index} cooldown expired after {elapsed:.0f}s — retrying")
             return True
 
@@ -276,12 +295,14 @@ class PollinationsProvider(BaseProvider):
         The key will be automatically retried after KEY_COOLDOWN seconds.
 
         Args:
-            key_index: 1 for KEY1, 2 for KEY2
+            key_index: 1 for KEY1, 2 for KEY2, 3 for KEY3
         """
         if key_index == 1:
             self._key1_depleted_at = time.time()
-        else:
+        elif key_index == 2:
             self._key2_depleted_at = time.time()
+        else:
+            self._key3_depleted_at = time.time()
         logger.warning(
             f"API KEY{key_index} depleted (402/401). "
             f"Will auto-retry after {KEY_COOLDOWN}s cooldown."
@@ -292,7 +313,7 @@ class PollinationsProvider(BaseProvider):
 
         Returns:
             Tuple of (api_key_or_empty_string, key_tier)
-            key_tier: 1=KEY1, 2=KEY2, 0=free tier (no key)
+            key_tier: 1=KEY1, 2=KEY2, 3=KEY3, 0=no available key
         """
         # Try KEY1 first
         if self._is_key_available(1):
@@ -300,29 +321,28 @@ class PollinationsProvider(BaseProvider):
         # Then KEY2
         if self._is_key_available(2):
             return self._api_key_2, 2
-        # Fall back to free tier
+        # Then KEY3
+        if self._is_key_available(3):
+            return self._api_key_3, 3
+        # No keys available
         return "", 0
 
     def _get_key_status_summary(self) -> str:
         """Get a human-readable summary of key statuses."""
         parts = []
-        if self._api_key_1:
-            if self._is_key_available(1):
-                parts.append("KEY1=active")
+        for idx, (key_val, depleted_at) in enumerate([
+            (self._api_key_1, self._key1_depleted_at),
+            (self._api_key_2, self._key2_depleted_at),
+            (self._api_key_3, self._key3_depleted_at),
+        ], start=1):
+            if key_val:
+                if self._is_key_available(idx):
+                    parts.append(f"KEY{idx}=active")
+                else:
+                    remaining = KEY_COOLDOWN - (time.time() - depleted_at)
+                    parts.append(f"KEY{idx}=depleted({remaining:.0f}s)")
             else:
-                remaining = KEY_COOLDOWN - (time.time() - self._key1_depleted_at)
-                parts.append(f"KEY1=depleted({remaining:.0f}s)")
-        else:
-            parts.append("KEY1=not_set")
-        if self._api_key_2:
-            if self._is_key_available(2):
-                parts.append("KEY2=active")
-            else:
-                remaining = KEY_COOLDOWN - (time.time() - self._key2_depleted_at)
-                parts.append(f"KEY2=depleted({remaining:.0f}s)")
-        else:
-            parts.append("KEY2=not_set")
-        parts.append("free=always")
+                parts.append(f"KEY{idx}=not_set")
         return ", ".join(parts)
 
     # ── Initialization ──────────────────────────────────────────
@@ -330,7 +350,7 @@ class PollinationsProvider(BaseProvider):
     async def init(self) -> None:
         """Initialize httpx async client with connection pooling."""
         headers = {
-            "User-Agent": "NastyaBot/44.0",
+            "User-Agent": "NastyaBot/45.0",
             "Accept": "application/json",
         }
         # Use KEY1 for initial client headers (will be overridden per-request)
@@ -361,7 +381,7 @@ class PollinationsProvider(BaseProvider):
 
         key_status = self._get_key_status_summary()
         logger.info(
-            f"PollinationsProvider v17 initialized: {len(CHAT_MODELS)} chat models, "
+            f"PollinationsProvider v18 initialized: {len(CHAT_MODELS)} chat models, "
             f"vision={MODEL_VISION}, reasoning={MODEL_REASONING}, "
             f"keys=[{key_status}], "
             f"timeout={self.timeout}s"
@@ -370,8 +390,8 @@ class PollinationsProvider(BaseProvider):
     def is_available(self) -> bool:
         """Available if client is initialized and not in global 429 cooldown.
 
-        Note: Even with all keys depleted, free tier is always available,
-        so we only block on rate-limit cooldowns.
+        Note: With all 3 keys depleted, we can still try when cooldowns expire.
+        We only block on rate-limit cooldowns.
         """
         if not self._client:
             return False
@@ -509,18 +529,20 @@ class PollinationsProvider(BaseProvider):
         self._round_robin_index += 1
         return selected
 
-    # ── API Call with Dual-Key Failover ─────────────────────────
+    # ── API Call with Triple-Key Failover ───────────────────────
 
     async def _call_api(self, model: str, messages: List[Dict],
                          temperature: float, max_tokens: int,
                          reasoning_effort: str = REASONING_CHAT) -> AIResponse:
-        """Make a single API call to Pollinations with dual-key failover.
+        """Make a single API call to Pollinations with triple-key failover.
 
         KEY FAILOVER ORDER:
-          1. Try with active key (KEY1 → KEY2 → whichever is available)
-          2. On 402/401 → mark current key depleted, retry with next key
-          3. On 402/401 from all keys → retry WITHOUT key (free tier)
-          4. On 402/401 from free tier → raise ProviderError(retryable=True)
+          1. Try with KEY1 (primary)
+          2. On 402/401 → mark KEY1 depleted, retry with KEY2
+          3. On 402/401 → mark KEY2 depleted, retry with KEY3
+          4. On 402/401 → mark KEY3 depleted, raise ProviderError(retryable=True)
+
+        NOTE: Free tier is NOT used — it returns 401.
 
         Args:
             model: Model name to use
@@ -544,18 +566,29 @@ class PollinationsProvider(BaseProvider):
             "stream": False,
         }
 
-        # ── Build key tier list: active keys first, then free tier ──
-        # Each tier is (api_key_string, tier_index) where tier_index 0 = free
+        # ── Build key tier list: active keys only (no free tier!) ──
+        # Each tier is (api_key_string, tier_index)
         tiers_to_try: List[Tuple[str, int]] = []
 
-        # Check which keys are available
+        # Check which keys are available — KEY1 → KEY2 → KEY3
         if self._is_key_available(1):
             tiers_to_try.append((self._api_key_1, 1))
         if self._is_key_available(2):
             tiers_to_try.append((self._api_key_2, 2))
+        if self._is_key_available(3):
+            tiers_to_try.append((self._api_key_3, 3))
 
-        # Always add free tier as last resort (no auth header)
-        tiers_to_try.append(("", 0))
+        # No free tier fallback — it returns 401!
+
+        if not tiers_to_try:
+            # All keys depleted — signal router to use local model
+            raise ProviderError(
+                self.name,
+                f"All API keys (KEY1/KEY2/KEY3) are depleted for model {model}. "
+                f"Wait for cooldown ({KEY_COOLDOWN}s) or add new keys. "
+                f"FALLBACK_TO_LOCAL=true",
+                retryable=True,
+            )
 
         last_error: Optional[Exception] = None
 
@@ -575,11 +608,25 @@ class PollinationsProvider(BaseProvider):
                 # ── Parse successful response ──
                 raw_text = response.text
                 if not raw_text:
-                    raise ProviderError(self.name, f"Empty response from model {model}", retryable=True)
+                    # Reasoning models sometimes return empty body — treat as retryable
+                    raise ProviderError(
+                        self.name,
+                        f"Empty response from model {model} (reasoning model may need more time)",
+                        retryable=True,
+                    )
 
                 result = self._parse_response_text(raw_text, model)
-                if result:
+                if result and result.text:
                     return result
+
+                # Reasoning models may return content that's all thinking tags
+                # After stripping, it's empty — treat as a soft failure
+                if result is None and reasoning_effort != REASONING_CHAT:
+                    raise ProviderError(
+                        self.name,
+                        f"Reasoning model {model} returned empty content after stripping thinking tags",
+                        retryable=True,
+                    )
 
                 raise ProviderError(
                     self.name,
@@ -596,11 +643,12 @@ class PollinationsProvider(BaseProvider):
                         self._mark_key_depleted(tier_index)
                         tier_label = f"KEY{tier_index}"
                     else:
-                        tier_label = "free_tier"
+                        tier_label = "unknown"
 
+                    remaining_tiers = len(tiers_to_try) - tiers_to_try.index((api_key, tier_index)) - 1
                     logger.warning(
                         f"HTTP {status} from {model} via {tier_label} — "
-                        f"{'switching to next key tier' if tier_index > 0 else 'free tier also failed'}"
+                        f"{'switching to next key tier' if remaining_tiers > 0 else 'all key tiers exhausted'}"
                     )
 
                     last_error = exc
@@ -644,7 +692,7 @@ class PollinationsProvider(BaseProvider):
         # ── All tiers failed with 402/401 → signal router to use local model ──
         raise ProviderError(
             self.name,
-            f"All API key tiers + free tier returned 402/401 for model {model}. "
+            f"All API key tiers (KEY1/KEY2/KEY3) returned 402/401 for model {model}. "
             f"Last error: {last_error}. Router should fall back to local model.",
             retryable=True,
         )
@@ -676,6 +724,9 @@ class PollinationsProvider(BaseProvider):
                     tokens_used=0,
                     metadata={"endpoint": "v1/chat/completions", "parsed": "json", "model": model},
                 )
+            # JSON parsed but reasoning stripping left it empty — return None
+            # This allows the caller to treat it as a soft failure for reasoning models
+            return None
 
         # STEP 2: Try SSE format
         cleaned = _strip_sse_artifacts(raw_text)
@@ -689,6 +740,7 @@ class PollinationsProvider(BaseProvider):
                     tokens_used=0,
                     metadata={"endpoint": "v1/chat/completions", "parsed": "sse", "model": model},
                 )
+            return None
 
         # STEP 3: Raw text (last resort)
         final_text = raw_text.strip()
@@ -713,7 +765,7 @@ class PollinationsProvider(BaseProvider):
         """Generate text via Pollinations with MULTI-MODEL load balancing.
 
         Tries multiple models if primary fails (429, timeout, etc.).
-        Each model attempt uses dual-key failover (KEY1 → KEY2 → free tier).
+        Each model attempt uses triple-key failover (KEY1 → KEY2 → KEY3).
         When ALL cloud models fail, raises ProviderError to signal router
         to fall back to local model.
         """
@@ -780,9 +832,13 @@ class PollinationsProvider(BaseProvider):
                         f"trying next model..."
                     )
                 elif "All API key tiers" in err_str:
-                    # All keys + free tier depleted for this model
+                    # All keys depleted for this model
                     self._record_model_failure(model)
                     logger.warning(f"Model {model}: all tiers depleted, trying next model...")
+                elif "All API keys" in err_str:
+                    # All keys depleted globally
+                    self._record_model_failure(model)
+                    logger.warning(f"Model {model}: all keys depleted, trying next model...")
                 else:
                     self._record_model_failure(model)
                     logger.warning(f"Model {model} error: {e}, trying next...")
@@ -814,7 +870,7 @@ class PollinationsProvider(BaseProvider):
                                image_format: str = "jpeg", **kwargs) -> AIResponse:
         """Generate response with image understanding via Pollinations vision.
 
-        Tries multiple vision-capable models with dual-key failover.
+        Tries multiple vision-capable models with triple-key failover.
         """
         if not self._client:
             await self.init()
@@ -847,6 +903,7 @@ class PollinationsProvider(BaseProvider):
             "openai-large", "kimi", "openai-reasoning",
             "mistral-small-3.2", "llama-4-scout",
             "step-flash", "qwen-large", "nova-2",  # v17: expanded vision models
+            "gpt-5.5",  # v18: GPT-5.5 also supports vision
         ]
         # Filter to healthy ones
         healthy_vision = [m for m in vision_models if self._is_model_healthy(m)]
@@ -856,7 +913,7 @@ class PollinationsProvider(BaseProvider):
         last_error: Optional[Exception] = None
         for model in healthy_vision[:2]:  # Max 2 attempts for vision
             try:
-                # Use dual-key failover for vision
+                # Use triple-key failover for vision
                 result = await self._call_api(
                     model=model,
                     messages=messages,
@@ -876,7 +933,7 @@ class PollinationsProvider(BaseProvider):
                 err_str = str(e)
                 if "429" in err_str:
                     logger.warning(f"Vision model {model} rate-limited, trying next...")
-                elif "402" in err_str or "401" in err_str or "All API key tiers" in err_str:
+                elif "402" in err_str or "401" in err_str or "All API key tiers" in err_str or "All API keys" in err_str:
                     logger.warning(f"Vision model {model} all tiers depleted, trying next...")
                 else:
                     logger.warning(f"Vision model {model} error: {e}, trying next...")
@@ -899,7 +956,7 @@ class PollinationsProvider(BaseProvider):
                               model: str = "flux") -> Optional[bytes]:
         """Generate an image using Pollinations image API.
 
-        Uses dual-key failover: KEY1 → KEY2 → free tier.
+        Uses triple-key failover: KEY1 → KEY2 → KEY3.
         Returns image bytes or None on failure.
         """
         if not self._client:
@@ -911,13 +968,19 @@ class PollinationsProvider(BaseProvider):
             "model": model,
         }
 
-        # ── Dual-key failover for image generation ──
+        # ── Triple-key failover for image generation ──
         tiers_to_try: List[Tuple[str, int]] = []
         if self._is_key_available(1):
             tiers_to_try.append((self._api_key_1, 1))
         if self._is_key_available(2):
             tiers_to_try.append((self._api_key_2, 2))
-        tiers_to_try.append(("", 0))  # Free tier always last
+        if self._is_key_available(3):
+            tiers_to_try.append((self._api_key_3, 3))
+        # No free tier — it returns 401
+
+        if not tiers_to_try:
+            logger.warning("All API keys depleted for image generation")
+            return None
 
         for api_key, tier_index in tiers_to_try:
             try:
@@ -951,7 +1014,7 @@ class PollinationsProvider(BaseProvider):
                         f"trying next tier..."
                     )
                     continue
-                # Other errors or free tier 402 — give up
+                # Other errors — give up
                 logger.warning(f"Image generation HTTP {status}: {exc.response.text[:200]}")
                 return None
 

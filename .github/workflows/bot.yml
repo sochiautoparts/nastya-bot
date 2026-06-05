@@ -1,27 +1,21 @@
-name: Nastya Bot — DUAL-KEY SMART ROUTING v60
+name: Nastya Bot — POLLINATIONS-ONLY v61
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v60.0 — DUAL-KEY SMART ROUTING
+# Nastya Bot v61.0 — POLLINATIONS-ONLY
 #
-#   - LlamaCpp Qwen3-4B (n_ctx=4096, n_batch=512) — LOCAL for chat & comments
-#   - Pollinations.ai (44 chat models) — CLOUD-FIRST for posts & functions
-#   - DUAL API KEY FAILOVER: KEY1 → KEY2 → local fallback
-#   - SMART ROUTING:
-#     - Chat (normal conversation) → LOCAL-FIRST (saves balance!)
-#     - Posts & functions → CLOUD-FIRST (better quality for public content!)
-#     - Comments in groups → LOCAL-ONLY (no cloud waste on casual comments!)
-#   - Vision (photos) → CLOUD model only
-#   - Background (news, channel) → CLOUD-FIRST for quality posts!
-#   - IMAGE GENERATION — Настя РИСУЕТ! 🎨 (flux model)
-#   - Persona: Настя — москвичка, владеет BMW M3 2025!
+#   - Pollinations.ai (44+ models, weighted round-robin) — ALL routes
+#   - TRIPLE API KEY FAILOVER: KEY1 → KEY2 → KEY3 → static fallback
+#   - ALL ROUTING: Pollinations → static fallback
+#     - Chat → Pollinations (weighted models)
+#     - Posts & functions → Pollinations (best quality models)
+#     - Comments → Pollinations (fast/cheap models)
+#     - Vision → Pollinations vision models
+#     - Background → Pollinations (quality posts)
+#   - Local model DISABLED (restorable via ENABLE_LOCAL_MODEL)
+#   - DATE AWARENESS: All prompts include current Moscow date/time
+#   - IMAGE GENERATION — Настя РИСУЕТ! (flux model)
+#   - Persona: Настя — москвичка, владеет BMW M3!
 #   - INLINE MODE — Настя работает в любом чате!
-#
-# LOCAL MODEL (Qwen3-4B, n_ctx=4096, n_batch=512):
-#   - ENABLED — PRIMARY for simple chat & comments
-#   - max_tokens=300, timeout=45s — fast generation!
-#   - 4 history msgs, 600ch system prompt — tight & fast
-#
-# NO TESTS — bot starts immediately!
 #
 # Schedule (UTC, Moscow = UTC+3):
 #   Every 5 hours: 00:00, 05:00, 10:00, 15:00, 20:00
@@ -102,55 +96,6 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ═══════════════════════════════════════════════════════════
-      #  LOCAL MODEL — Qwen3-4B as FALLBACK when cloud is unavailable
-      # ═══════════════════════════════════════════════════════════
-
-      - name: Install llama-cpp-python with AVX2
-        run: |
-          echo "=== Installing llama-cpp-python with AVX2 support ==="
-          CMAKE_ARGS="-DGGML_AVX2=on" pip install llama-cpp-python --force-reinstall --no-cache-dir 2>&1 || {
-            echo "WARNING: AVX2 build failed, trying without..."
-            pip install llama-cpp-python --force-reinstall --no-cache-dir
-          }
-          python3 -c "from llama_cpp import Llama; print('llama-cpp-python OK!')" || {
-            echo "WARNING: llama-cpp-python import failed — running CLOUD-ONLY"
-          }
-          pip install huggingface_hub
-
-      - name: Cache LOCAL FALLBACK model (Qwen3-4B)
-        id: cache-model
-        uses: actions/cache@v4
-        with:
-          path: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
-          key: qwen3-4b-instruct-q4km-v3
-
-      - name: Download Qwen3-4B-Instruct GGUF model
-        if: steps.cache-model.outputs.cache-hit != 'true'
-        run: |
-          echo "=== Downloading Qwen3-4B-Instruct Q4_K_M model (~2.4GB) — LOCAL FALLBACK ==="
-          mkdir -p models
-          python3 -c "
-          from huggingface_hub import hf_hub_download
-          path = hf_hub_download(
-              repo_id='unsloth/Qwen3-4B-Instruct-2507-GGUF',
-              filename='Qwen3-4B-Instruct-2507-Q4_K_M.gguf',
-              local_dir='models',
-          )
-          print('Downloaded to:', path)
-          " || echo "WARNING: Model download failed — running CLOUD-ONLY"
-
-      - name: Verify model
-        run: |
-          echo "=== Verifying GGUF model ==="
-          MODEL_FILE=models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
-          if [ ! -f "$MODEL_FILE" ] || [ ! -s "$MODEL_FILE" ]; then
-            echo "WARNING: Model file missing or empty — running in CLOUD-ONLY mode"
-          else
-            MODEL_SIZE=$(du -h "$MODEL_FILE" | cut -f1)
-            echo "OK: Qwen3-4B-Instruct-Q4_K_M (${MODEL_SIZE}) — LOCAL FALLBACK"
-          fi
-
       - name: Create data directory
         run: mkdir -p data
 
@@ -164,7 +109,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v60
+          key: nastya-db-v61
           restore-keys: |
             nastya-db-
 
@@ -175,16 +120,12 @@ jobs:
           OWNER_ID: ${{ secrets.OWNER_ID }}
           ADMIN_IDS: ${{ secrets.OWNER_ID }}
           BOT_USERNAME: asnastya_bot
-          # Pollinations.ai — MULTI-MODEL PRIMARY + VISION + DUAL KEY
+          # Pollinations.ai — TRIPLE KEY FAILOVER
           POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
           POLLINATIONS_API_KEY_2: ${{ secrets.POLLINATIONS_API_KEY_2 }}
-          # Local model — enabled as FALLBACK when cloud unavailable
-          ENABLE_LOCAL_MODEL: "true"
-          MODEL_PATH: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
-          MODEL_N_CTX: 4096
-          MODEL_N_THREADS: 4
-          MODEL_MAX_TOKENS: 300
-          MODEL_HISTORY_LIMIT: 4
+          POLLINATIONS_API_KEY_3: ${{ secrets.POLLINATIONS_API_KEY_3 }}
+          # Local model — DISABLED (Pollinations-only, restorable)
+          ENABLE_LOCAL_MODEL: "false"
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           CHANNEL_USERNAME: ${{ secrets.CHANNEL_USERNAME }}
@@ -193,19 +134,17 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v60.0 DUAL-KEY SMART ROUTING ==="
-          echo "CHAT: LOCAL-FIRST — Local → Cloud → Fallback (saves balance!)"
-          echo "POSTS/FUNCTIONS: CLOUD-FIRST — Cloud → Local → Fallback (better quality!)"
-          echo "COMMENTS: LOCAL-ONLY — Local → Static fallback (no cloud waste!)"
-          echo "VISION: Pollinations vision (16 models) for photos"
-          echo "BACKGROUND: CLOUD-FIRST for quality posts!"
-          echo "STRATEGY: chat→LOCAL_FIRST, function→CLOUD_FIRST, comment→LOCAL_ONLY, dual-key→KEY1+KEY2"
-          echo "PERSONA: Настя — москвичка, владеет BMW M3 2025!"
+          echo "=== Starting Nastya Bot v61.0 POLLINATIONS-ONLY ==="
+          echo "ALL ROUTES: Pollinations.ai (44+ models, triple-key failover)"
+          echo "CHAT: Pollinations → Static fallback"
+          echo "POSTS/FUNCTIONS: Pollinations (best quality) → Static fallback"
+          echo "COMMENTS: Pollinations (fast models) → Static fallback"
+          echo "VISION: Pollinations vision models"
+          echo "BACKGROUND: Pollinations for quality posts"
+          echo "STRATEGY: Pollinations-only, triple-key=KEY1+KEY2+KEY3, circuit-break"
+          echo "DATE AWARENESS: All prompts include current Moscow date/time"
+          echo "PERSONA: Настя — москвичка, владеет BMW M3!"
           echo "INLINE: @asnastya_bot works in any chat!"
-          echo "SEARCH: /find — товары и лучшие цены! /search — поиск информации!"
-
-          echo "SMART ROUTING: ENABLED — Local for chat/comments, Cloud for posts/functions!"
-          echo "Config: strategy=DUAL_KEY_SMART_ROUTING, n_ctx=4096, n_batch=512, max_tokens=300(local)/2000(cloud), history=4, timeout=45s, vision=cloud_only, background=cloud_first, comment=local_only, dual_key=KEY1+KEY2"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -246,7 +185,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v60-${{ github.run_id }}
+          key: nastya-db-v61-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation

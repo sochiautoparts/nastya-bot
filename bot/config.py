@@ -62,6 +62,7 @@ BOT_TOKEN: str = _env("BOT_TOKEN")
 # ── Pollinations.ai — MULTI-MODEL AI Provider ─────────────────
 POLLINATIONS_API_KEY: str = _env("POLLINATIONS_API_KEY", "")
 POLLINATIONS_API_KEY_2: str = _env("POLLINATIONS_API_KEY_2", "")
+POLLINATIONS_API_KEY_3: str = _env("POLLINATIONS_API_KEY_3", "")
 # Models pool (configured in pollinations_provider.py)
 POLLINATIONS_TIMEOUT: float = 45.0
 POLLINATIONS_MAX_TOKENS: int = 2000  # Full detailed responses — no limits!

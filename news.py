@@ -29,6 +29,8 @@ import json
 import logging
 import time
 import random
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -339,6 +341,16 @@ async def generate_ai_commentary(title: str, summary: str = "", category: str = 
                 "sports": "Это спортивная новость — Настя следит за спортом!",
             }.get(category, "")
 
+            # ── DATE CONTEXT — Настя знает текущую дату! ──
+            _now = datetime.now(ZoneInfo("Europe/Moscow"))
+            _days_ru = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+            _months_ru = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+            _date_context = (
+                f"Сейчас {_days_ru[_now.weekday()]}, {_now.day} {_months_ru[_now.month - 1]} "
+                f"{_now.year} года, время {_now.strftime('%H:%M')} МСК. "
+                f"Учитывай текущую дату — не пиши про прошлые годы как про текущие!"
+            )
+
             prompt_parts = [f"Новость: {title}"]
             if summary:
                 import re as _re
@@ -353,6 +365,7 @@ async def generate_ai_commentary(title: str, summary: str = "", category: str = 
                     "Ты Настя — москвичка, 23 года, блогер. "
                     "Напиши КОРОТКИЙ комментарий к этой новости от себя, от первого лица. "
                     f"{category_context} "
+                    f"{_date_context} "
                     "1-2 предложения, живо и эмоционально. "
                     "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
                     "Без markdown, без буллетов. Не пиши 'Настя' — пиши 'я'. "
