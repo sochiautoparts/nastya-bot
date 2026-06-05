@@ -1,47 +1,28 @@
-"""Pollinations.ai Provider v15.0 — EXPANDED 40+ MODEL LOAD BALANCING + IMAGE GEN!
+"""Pollinations.ai Provider v17.0 — DUAL API KEY + EXPANDED MODEL LOAD BALANCING!
 
-v15.0 UPDATE — 40 models, image generation, no restrictions, full responses:
-  - PRIMARY: 'openai' (GPT-5.4 Nano) — fast, vision-capable
-  - BACKUP 1: 'mistral' (Mistral Small 3.2) — fast, good Russian
-  - BACKUP 2: 'gpt-5.4-mini' (GPT-5.4 Mini) — balanced, fast
-  - BACKUP 3: 'deepseek' (DeepSeek V4 Flash) — reasoning, cheap
-  - BACKUP 4: 'mistral-4' (Mistral Small 4) — better, multimodal
-  - BACKUP 5: 'gemma' (Gemma 4 26B) — fast MoE, vision
-  - BACKUP 6: 'llama-scout' (Llama 4 Scout) — long ctx, vision
-  - QUALITY: 'gpt-5.5' — latest GPT model, reasoning + vision
-  - REASONING: 'deepseek-pro' — DeepSeek Pro, better reasoning
-  - POWER: 'mistral-large' — powerful, vision, reasoning, 256k ctx
-  - POWER: 'qwen-vision-pro' — better vision + reasoning
-  - POWER: 'kimi-k2.6' — latest Kimi, better multilingual
-  - POWER: 'nova-fast' — Amazon Nova fast, good Russian
-  - POWER: 'glm' — ChatGLM, good multilingual + Chinese/Russian
-  - POWER: 'minimax' — MiniMax, good for chat
-  - v55: NEW MODELS from Pollinations catalog!
-  - NEW: 'nova' — Amazon Nova, vision + reasoning, 1M ctx
-  - NEW: 'mistral-small' — Mistral Small, fast, good Russian
-  - NEW: 'polly' — Polly, vision + reasoning
-  - NEW: 'perplexity-fast' — Perplexity, fast web search
-  - NEW: 'perplexity' — Perplexity, deep web search, 200k ctx
-  - NEW: 'qwen-vision' — Qwen3 VL, vision specialist
-  - NEW: 'llama' — Llama 3.3 70B, strong reasoning
-  - REASONING: 'openai-large' (GPT-5.4) — for complex questions
-  - VISION: 'openai' — supports image input!
-  - IMAGE GEN: Pollinations /v1/images/generations (flux model)
+v17.0 UPDATE — Expanded models, no model deletion:
+  - ADDED: 'nova-micro', 'openai-reasoning' (now confirmed in catalog)
+  - ADDED: 'deepseek-v4' alias for flash variant
+  - ADDED: 'llama-3.3' alias, 'llama-4-scout' alias
+  - ADDED: 'mistral-small-3.2' alias
+  - RESTORED: 'qwen-large', 'step-flash' (confirmed working with API key)
+  - REMOVED from REMOVED list: Models may come back — Pollinations rotates availability!
+  - IMPORTANT: We NEVER delete models from lists when they fail.
+    Pollinations.ai rotates model availability — a failure today doesn't mean
+    the model is gone. Circuit breaking handles temporary failures.
 
-  v57: NEW MODELS tested and verified (June 2026)!
-  - NEW: 'grok-large' — powerful Grok, good Russian (was 500, FIXED!)
-  - NEW: 'grok-4.3' — latest Grok, best reasoning (was timeout, FIXED!)
-  - NEW: 'perplexity-reasoning' — Perplexity with reasoning
-  - NEW: 'minimax-m3' — MiniMax M3, good Russian
-  - NEW: 'step-3.5-flash' — Step 3.5 Flash, fast
-  - NEW: 'openai-reasoning' — OpenAI reasoning + VISION!
-  - NEW: 'nova-micro' — Amazon Nova Micro, ultra fast
-  - NEW: 'mistral-small-3.2' — Mistral Small 3.2 explicit, fast + VISION!
-  - REMOVED: openai-fast (empty responses), qwen-large (empty responses)
-  - REMOVED: step-flash (empty responses)
-  - STILL REMOVED: gemini (402), gemini-3.5-flash (402), llama-maverick (402)
-  - STILL REMOVED: claude (402), claude-haiku (402), claude-sonnet (402)
+  DUAL API KEY FAILOVER:
+  - KEY1 → KEY2 → Free tier → ProviderError(retryable=True)
+  - On 402/401: mark current key as depleted, auto-switch to next
+  - Depleted keys auto-retry after 600 seconds cooldown
+  - Free tier (no key) always available as last resort before error
+  - NOTE: Free tier currently returns 401 — dual key is critical!
+
+  EXPANDED MODEL LIST (44 models!):
+  - Full Pollinations catalog coverage
+  - All previous models retained (never delete — Pollinations rotates!)
 """
+
 import base64
 import json
 import logging
@@ -58,6 +39,9 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://gen.pollinations.ai"
 
+# ── Cooldown for depleted API keys (seconds) ──
+KEY_COOLDOWN: float = 600.0  # 10 minutes before retrying a depleted key
+
 # ── Model Selection — LOAD BALANCING POOL ──
 # Models are ordered by priority/quality for chat
 # Each model has: cost tier, vision support, reasoning support
@@ -65,7 +49,9 @@ BASE_URL = "https://gen.pollinations.ai"
 CHAT_MODELS = [
     # (model_name, weight_for_round_robin, supports_vision, cost_tier)
     # Cost tiers: 1=cheapest, 2=cheap, 3=moderate, 4=expensive
-    # Models from Pollinations catalog (June 2026) — tested and verified!
+    # Models from Pollinations catalog (June 2026)
+    # IMPORTANT: We NEVER delete models when they temporarily fail.
+    # Pollinations rotates availability — circuit breaking handles it.
     # ── PRIMARY TIER — Fast & Reliable ──
     ("openai",       4, True,  1),   # GPT-5.4 Nano — PRIMARY, fast, vision, cheapest
     ("mistral",      3, True,  1),   # Mistral Small 3.2 — fast, good multilingual
@@ -84,7 +70,7 @@ CHAT_MODELS = [
     ("nova-fast",     2, True,  2),   # Amazon Nova Fast — good Russian, fast
     ("glm",           1, True,  2),   # ChatGLM — good multilingual
     ("minimax",       1, True,  2),   # MiniMax — good for chat
-    # ── CATALOG EXPANSION — More Models ──
+    # ── CATALOG EXPANSION ──
     ("nova",          1, True,  3),   # Amazon Nova — vision + reasoning, 1M ctx
     ("mistral-small", 2, True,  1),   # Mistral Small — fast, good Russian
     ("polly",         1, True,  2),   # Polly — vision + reasoning
@@ -98,24 +84,26 @@ CHAT_MODELS = [
     ("openai-large",  1, True,  4),   # GPT-5.4 — reasoning model for complex questions
     ("kimi",          1, True,  2),   # Kimi — latest, good multilingual
     ("perplexity-deep",1, False, 2),  # Perplexity Deep — deep web search + reasoning
-    # ── v57: NEW MODELS — Tested & Verified June 2026! ──
-    ("grok-large",    2, False, 3),   # Grok Large — powerful, good Russian (was 500, FIXED!)
-    ("grok-4.3",      1, False, 3),   # Grok 4.3 — latest Grok, best reasoning (was timeout, FIXED!)
+    # ── POWERFUL MODELS ──
+    ("grok-large",    2, False, 3),   # Grok Large — powerful, good Russian
+    ("grok-4.3",      1, False, 3),   # Grok 4.3 — latest Grok, best reasoning
     ("perplexity-reasoning",1, False, 2),  # Perplexity Reasoning — web search + reasoning
     ("minimax-m3",    2, False, 2),   # MiniMax M3 — good Russian, fast
     ("step-3.5-flash",1, False, 1),   # Step 3.5 Flash — fast, good for quick chat
     ("openai-reasoning",1, True, 3),  # OpenAI Reasoning — reasoning + VISION!
     ("nova-micro",    2, False, 1),   # Amazon Nova Micro — ultra fast, cheapest
     ("mistral-small-3.2",2, True, 1), # Mistral Small 3.2 — fastest + VISION!
-    # REMOVED v57: openai-fast (empty responses — returns nothing)
-    # REMOVED v57: qwen-large (empty responses — returns nothing)
-    # REMOVED v57: step-flash (empty responses — returns nothing)
-    # REMOVED v55: gemini (402 Payment Required)
-    # REMOVED v55: gemini-3.5-flash (402 Payment Required)
-    # REMOVED v55: llama-maverick (402 Payment Required)
-    # REMOVED v55: claude (402 Payment Required)
-    # REMOVED v55: claude-haiku (402 Payment Required)
-    # REMOVED v55: claude-sonnet (402 Payment Required)
+    # ── v17: RESTORED + NEW MODELS — Confirmed in Pollinations catalog! ──
+    ("openai-fast",   2, True,  1),   # OpenAI Fast — fastest OpenAI variant
+    ("step-flash",    1, True,  2),   # Step Flash — reasoning + vision
+    ("qwen-large",    1, True,  3),   # Qwen Large — reasoning + vision, 1M ctx
+    ("deepseek-v4",   1, False, 1),   # DeepSeek V4 Flash — fast variant (alias)
+    ("llama-3.3",     1, False, 1),   # Llama 3.3 70B (explicit alias)
+    ("llama-4-scout", 1, True,  1),   # Llama 4 Scout (explicit alias)
+    ("nova-2",        1, True,  2),   # Nova 2 Lite — fast, Russian OK
+    # Models may come back — we NEVER delete them!
+    # Previous REMOVED: gemini, gemini-3.5-flash, llama-maverick, claude, claude-haiku, claude-sonnet
+    # These MAY return in the future — Pollinations rotates availability
 ]
 
 MODEL_REASONING = "openai-large"    # GPT-5.4 — for complex questions
@@ -207,40 +195,148 @@ def _parse_json_response(text: str) -> Optional[str]:
 
 
 class PollinationsProvider(BaseProvider):
-    """Pollinations.ai provider v15.0 — 40+ MODEL LOAD BALANCING!
+    """Pollinations.ai provider v17.0 — DUAL KEY + EXPANDED MODEL LOAD BALANCING!
 
     Uses gen.pollinations.ai/v1/chat/completions (OpenAI-compatible).
-    Round-robin across 40+ models for load distribution.
-    Automatic failover on 429/rate-limit errors.
-    Supports vision via multimodal content format (image_url with base64).
-    v57: Added grok-large, grok-4.3, perplexity-reasoning, minimax-m3,
-         step-3.5-flash, openai-reasoning, nova-micro, mistral-small-3.2
+    Round-robin across 44 models for load distribution.
+
+    DUAL API KEY FAILOVER:
+      1. Try KEY1 first
+      2. On 402/401 from KEY1 → switch to KEY2
+      3. On 402/401 from KEY2 → switch to free tier (no key)
+      4. On failure from free tier → raise ProviderError(retryable=True)
+      5. Depleted keys auto-retry after 600 seconds cooldown
+
+    IMPORTANT: Models are NEVER removed when temporarily unavailable.
+    Pollinations.ai rotates model availability — circuit breaking handles it.
     """
 
     name: str = "pollinations"
     supports_streaming: bool = False
     supports_vision: bool = True
 
-    def __init__(self, api_key: str = "", timeout: float = 45.0):
+    def __init__(self, api_key: str = "", api_key_2: str = "", timeout: float = 45.0):
         super().__init__(api_key=api_key, timeout=timeout)
-        self._api_key = api_key
+        # ── Dual API key storage ──
+        self._api_key_1: str = api_key
+        self._api_key_2: str = api_key_2
+        # ── Per-key balance depletion tracking ──
+        # 0 = active/never depleted; >0 = timestamp when depleted
+        self._key1_depleted_at: float = 0.0
+        self._key2_depleted_at: float = 0.0
+        # ── Rate-limit tracking ──
         self._last_429_time: float = 0
         self._429_count: int = 0
         # ── Per-model health tracking ──
         self._model_health: Dict[str, Dict] = {}
-        # {model_name: {"fail_count": int, "last_fail": float, "last_success": float, "total_requests": int, "total_failures": int}}
+        # {model_name: {"fail_count": int, "last_fail": float, "last_success": float,
+        #                "total_requests": int, "total_failures": int}}
         self._round_robin_index: int = 0
         self._total_requests: int = 0
         self._model_usage: Dict[str, int] = {}  # Track usage per model
 
+    # ── API Key Management ──────────────────────────────────────
+
+    def _is_key_available(self, key_index: int) -> bool:
+        """Check if an API key is available (not depleted or cooldown expired).
+
+        Args:
+            key_index: 1 for KEY1, 2 for KEY2
+
+        Returns:
+            True if key can be used for requests
+        """
+        depleted_at = self._key1_depleted_at if key_index == 1 else self._key2_depleted_at
+        key_val = self._api_key_1 if key_index == 1 else self._api_key_2
+
+        # No key configured = not available
+        if not key_val:
+            return False
+
+        # Never depleted = available
+        if depleted_at == 0:
+            return True
+
+        # Check cooldown
+        elapsed = time.time() - depleted_at
+        if elapsed >= KEY_COOLDOWN:
+            # Cooldown expired — key is available again
+            if key_index == 1:
+                self._key1_depleted_at = 0
+            else:
+                self._key2_depleted_at = 0
+            logger.info(f"API KEY{key_index} cooldown expired after {elapsed:.0f}s — retrying")
+            return True
+
+        return False
+
+    def _mark_key_depleted(self, key_index: int) -> None:
+        """Mark an API key as depleted (balance exhausted).
+
+        The key will be automatically retried after KEY_COOLDOWN seconds.
+
+        Args:
+            key_index: 1 for KEY1, 2 for KEY2
+        """
+        if key_index == 1:
+            self._key1_depleted_at = time.time()
+        else:
+            self._key2_depleted_at = time.time()
+        logger.warning(
+            f"API KEY{key_index} depleted (402/401). "
+            f"Will auto-retry after {KEY_COOLDOWN}s cooldown."
+        )
+
+    def _get_active_key_tier(self) -> Tuple[str, int]:
+        """Determine which key/tier to use for the next request.
+
+        Returns:
+            Tuple of (api_key_or_empty_string, key_tier)
+            key_tier: 1=KEY1, 2=KEY2, 0=free tier (no key)
+        """
+        # Try KEY1 first
+        if self._is_key_available(1):
+            return self._api_key_1, 1
+        # Then KEY2
+        if self._is_key_available(2):
+            return self._api_key_2, 2
+        # Fall back to free tier
+        return "", 0
+
+    def _get_key_status_summary(self) -> str:
+        """Get a human-readable summary of key statuses."""
+        parts = []
+        if self._api_key_1:
+            if self._is_key_available(1):
+                parts.append("KEY1=active")
+            else:
+                remaining = KEY_COOLDOWN - (time.time() - self._key1_depleted_at)
+                parts.append(f"KEY1=depleted({remaining:.0f}s)")
+        else:
+            parts.append("KEY1=not_set")
+        if self._api_key_2:
+            if self._is_key_available(2):
+                parts.append("KEY2=active")
+            else:
+                remaining = KEY_COOLDOWN - (time.time() - self._key2_depleted_at)
+                parts.append(f"KEY2=depleted({remaining:.0f}s)")
+        else:
+            parts.append("KEY2=not_set")
+        parts.append("free=always")
+        return ", ".join(parts)
+
+    # ── Initialization ──────────────────────────────────────────
+
     async def init(self) -> None:
-        """Initialize httpx async client with connection pooling and auth."""
+        """Initialize httpx async client with connection pooling."""
         headers = {
-            "User-Agent": "NastyaBot/43.0",
+            "User-Agent": "NastyaBot/44.0",
             "Accept": "application/json",
         }
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
+        # Use KEY1 for initial client headers (will be overridden per-request)
+        active_key, _ = self._get_active_key_tier()
+        if active_key:
+            headers["Authorization"] = f"Bearer {active_key}"
 
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout, connect=15.0),
@@ -263,20 +359,27 @@ class PollinationsProvider(BaseProvider):
             "total_requests": 0, "total_failures": 0,
         }
 
+        key_status = self._get_key_status_summary()
         logger.info(
-            f"PollinationsProvider v15 initialized: {len(CHAT_MODELS)} chat models, "
+            f"PollinationsProvider v17 initialized: {len(CHAT_MODELS)} chat models, "
             f"vision={MODEL_VISION}, reasoning={MODEL_REASONING}, "
-            f"auth={'yes' if self._api_key else 'anonymous'}, "
+            f"keys=[{key_status}], "
             f"timeout={self.timeout}s"
         )
 
     def is_available(self) -> bool:
-        """Available if client is initialized and not in global 429 cooldown."""
+        """Available if client is initialized and not in global 429 cooldown.
+
+        Note: Even with all keys depleted, free tier is always available,
+        so we only block on rate-limit cooldowns.
+        """
         if not self._client:
             return False
         if self._429_count > 3 and time.time() - self._last_429_time < 30:
             return False
         return True
+
+    # ── Model Health Tracking ───────────────────────────────────
 
     def _is_model_healthy(self, model_name: str) -> bool:
         """Check if a specific model is healthy enough to use."""
@@ -329,6 +432,8 @@ class PollinationsProvider(BaseProvider):
             health["last_fail"] = time.time()
             health["total_failures"] += 1
             health["total_requests"] += 1
+
+    # ── Model Selection ─────────────────────────────────────────
 
     def _select_model(self, prefer_model: str = "", need_vision: bool = False,
                       need_reasoning: bool = False) -> str:
@@ -404,11 +509,213 @@ class PollinationsProvider(BaseProvider):
         self._round_robin_index += 1
         return selected
 
+    # ── API Call with Dual-Key Failover ─────────────────────────
+
+    async def _call_api(self, model: str, messages: List[Dict],
+                         temperature: float, max_tokens: int,
+                         reasoning_effort: str = REASONING_CHAT) -> AIResponse:
+        """Make a single API call to Pollinations with dual-key failover.
+
+        KEY FAILOVER ORDER:
+          1. Try with active key (KEY1 → KEY2 → whichever is available)
+          2. On 402/401 → mark current key depleted, retry with next key
+          3. On 402/401 from all keys → retry WITHOUT key (free tier)
+          4. On 402/401 from free tier → raise ProviderError(retryable=True)
+
+        Args:
+            model: Model name to use
+            messages: Chat messages array
+            temperature: Sampling temperature
+            max_tokens: Maximum response tokens
+            reasoning_effort: Reasoning effort level
+
+        Returns:
+            AIResponse with the model's output
+
+        Raises:
+            ProviderError: On API failure (retryable=True for transient errors)
+        """
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "reasoning_effort": reasoning_effort,
+            "stream": False,
+        }
+
+        # ── Build key tier list: active keys first, then free tier ──
+        # Each tier is (api_key_string, tier_index) where tier_index 0 = free
+        tiers_to_try: List[Tuple[str, int]] = []
+
+        # Check which keys are available
+        if self._is_key_available(1):
+            tiers_to_try.append((self._api_key_1, 1))
+        if self._is_key_available(2):
+            tiers_to_try.append((self._api_key_2, 2))
+
+        # Always add free tier as last resort (no auth header)
+        tiers_to_try.append(("", 0))
+
+        last_error: Optional[Exception] = None
+
+        for api_key, tier_index in tiers_to_try:
+            try:
+                headers: Dict[str, str] = {"Content-Type": "application/json"}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+
+                response = await self._client.post(
+                    f"{BASE_URL}/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+                response.raise_for_status()
+
+                # ── Parse successful response ──
+                raw_text = response.text
+                if not raw_text:
+                    raise ProviderError(self.name, f"Empty response from model {model}", retryable=True)
+
+                result = self._parse_response_text(raw_text, model)
+                if result:
+                    return result
+
+                raise ProviderError(
+                    self.name,
+                    f"Unparsable/empty content from {model}",
+                    retryable=True,
+                )
+
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+
+                # ── 402/401: Balance depleted or unauthorized → switch key ──
+                if status in (401, 402):
+                    if tier_index > 0:
+                        self._mark_key_depleted(tier_index)
+                        tier_label = f"KEY{tier_index}"
+                    else:
+                        tier_label = "free_tier"
+
+                    logger.warning(
+                        f"HTTP {status} from {model} via {tier_label} — "
+                        f"{'switching to next key tier' if tier_index > 0 else 'free tier also failed'}"
+                    )
+
+                    last_error = exc
+                    continue  # Try next tier
+
+                # ── 429: Rate limited → short cooldown, no key switch needed ──
+                if status == 429:
+                    self._last_429_time = time.time()
+                    self._429_count += 1
+                    raise ProviderError(
+                        self.name,
+                        f"Rate-limited (429) from {model}",
+                        retryable=True,
+                    )
+
+                # ── Other HTTP errors ──
+                retryable = status in (500, 502, 503, 504)
+                raise ProviderError(
+                    self.name,
+                    f"HTTP {status} from {model}: {exc.response.text[:200]}",
+                    retryable=retryable,
+                )
+
+            except httpx.TimeoutException as exc:
+                raise ProviderError(
+                    self.name,
+                    f"Timeout from {model}: {exc}",
+                    retryable=True,
+                )
+
+            except ProviderError:
+                raise
+
+            except Exception as exc:
+                raise ProviderError(
+                    self.name,
+                    f"Unexpected error from {model}: {exc}",
+                    retryable=True,
+                )
+
+        # ── All tiers failed with 402/401 → signal router to use local model ──
+        raise ProviderError(
+            self.name,
+            f"All API key tiers + free tier returned 402/401 for model {model}. "
+            f"Last error: {last_error}. Router should fall back to local model.",
+            retryable=True,
+        )
+
+    def _parse_response_text(self, raw_text: str, model: str) -> Optional[AIResponse]:
+        """Parse raw API response text into an AIResponse.
+
+        Tries multiple parsing strategies:
+          1. JSON chat completion format (choices[0].message.content)
+          2. SSE streaming format (data: lines)
+          3. Raw text (last resort)
+
+        Args:
+            raw_text: Raw response body text
+            model: Model name for metadata
+
+        Returns:
+            AIResponse if parsing succeeded, None if content is empty/unparsable
+        """
+        # STEP 1: Try JSON chat completion format
+        parsed = _parse_json_response(raw_text)
+        if parsed:
+            cleaned = _strip_reasoning(parsed)
+            if cleaned:
+                return AIResponse(
+                    text=cleaned,
+                    provider=self.name,
+                    model=f"pollinations:{model}",
+                    tokens_used=0,
+                    metadata={"endpoint": "v1/chat/completions", "parsed": "json", "model": model},
+                )
+
+        # STEP 2: Try SSE format
+        cleaned = _strip_sse_artifacts(raw_text)
+        if cleaned:
+            cleaned = _strip_reasoning(cleaned)
+            if cleaned:
+                return AIResponse(
+                    text=cleaned,
+                    provider=self.name,
+                    model=f"pollinations:{model}",
+                    tokens_used=0,
+                    metadata={"endpoint": "v1/chat/completions", "parsed": "sse", "model": model},
+                )
+
+        # STEP 3: Raw text (last resort)
+        final_text = raw_text.strip()
+        if "data:" in final_text or "[DONE]" in final_text:
+            return None  # Unparsable SSE artifacts
+
+        final_text = _strip_reasoning(final_text)
+        if not final_text:
+            return None
+
+        return AIResponse(
+            text=final_text,
+            provider=self.name,
+            model=f"pollinations:{model}",
+            tokens_used=0,
+            metadata={"endpoint": "v1/chat/completions", "parsed": "raw", "model": model},
+        )
+
+    # ── Text Generation ─────────────────────────────────────────
+
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
         """Generate text via Pollinations with MULTI-MODEL load balancing.
 
-        Tries multiple models if primary fails (429, timeout, etc.)
-        This ensures the bot keeps working even under high load.
+        Tries multiple models if primary fails (429, timeout, etc.).
+        Each model attempt uses dual-key failover (KEY1 → KEY2 → free tier).
+        When ALL cloud models fail, raises ProviderError to signal router
+        to fall back to local model.
         """
         if not self._client:
             await self.init()
@@ -441,9 +748,10 @@ class PollinationsProvider(BaseProvider):
             if self._is_model_healthy(MODEL_REASONING):
                 models_to_try.insert(1, MODEL_REASONING)
 
-        # Try each model in order
-        last_error = None
-        for model in models_to_try[:3]:  # Max 3 attempts
+        # Try each model in order (max 3 attempts)
+        last_error: Optional[Exception] = None
+        tried_models = []
+        for model in models_to_try[:3]:
             try:
                 result = await self._call_api(
                     model=model,
@@ -457,110 +765,56 @@ class PollinationsProvider(BaseProvider):
                     return result
             except ProviderError as e:
                 last_error = e
-                self._record_model_failure(model)
                 err_str = str(e)
+                tried_models.append(model)
+
                 if "429" in err_str:
+                    self._record_model_failure(model)
                     logger.warning(f"Model {model} rate-limited (429), trying next model...")
-                elif "PAYMENT_REQUIRED" in err_str or "402" in err_str:
-                    # DO NOT permanently disable! Balance will recover.
-                    # Use short cooldown instead (5 minutes)
-                    logger.warning(f"Model {model} payment required (402) — short cooldown, balance will recover")
-                    if model in self._model_health:
-                        self._model_health[model]["fail_count"] = 3  # Trigger cooldown
-                        self._model_health[model]["last_fail"] = time.time()  # 60s cooldown
+                elif "402" in err_str or "401" in err_str:
+                    # Key depletion handled inside _call_api
+                    # If we got here, ALL tiers failed for this model
+                    self._record_model_failure(model)
+                    logger.warning(
+                        f"Model {model} failed with 402/401 across all key tiers, "
+                        f"trying next model..."
+                    )
+                elif "All API key tiers" in err_str:
+                    # All keys + free tier depleted for this model
+                    self._record_model_failure(model)
+                    logger.warning(f"Model {model}: all tiers depleted, trying next model...")
                 else:
+                    self._record_model_failure(model)
                     logger.warning(f"Model {model} error: {e}, trying next...")
                 continue
             except Exception as e:
                 last_error = e
+                tried_models.append(model)
                 self._record_model_failure(model)
                 logger.warning(f"Model {model} unexpected error: {e}, trying next...")
                 continue
 
-        # All models failed
+        # ── ALL models failed — signal router to use local model ──
+        key_status = self._get_key_status_summary()
+        logger.error(
+            f"All cloud models failed (tried {tried_models}). "
+            f"Key status: [{key_status}]. Signaling router to use local model."
+        )
         raise ProviderError(
             self.name,
-            f"All models failed (tried {len(models_to_try[:3])}). Last error: {last_error}",
+            f"All cloud models failed (tried {tried_models}, "
+            f"keys=[{key_status}]). Last error: {last_error}. "
+            f"FALLBACK_TO_LOCAL=true",
             retryable=True,
         )
 
-    async def _call_api(self, model: str, messages: List[Dict],
-                         temperature: float, max_tokens: int,
-                         reasoning_effort: str = REASONING_CHAT) -> AIResponse:
-        """Make a single API call to Pollinations with a specific model."""
-        payload: Dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            "reasoning_effort": reasoning_effort,
-            "stream": False,
-        }
-
-        headers = {"Content-Type": "application/json"}
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
-
-        response = await self._client.post(
-            f"{BASE_URL}/v1/chat/completions",
-            json=payload,
-            headers=headers,
-        )
-        response.raise_for_status()
-
-        raw_text = response.text
-
-        if not raw_text:
-            raise ProviderError(self.name, f"Empty response from model {model}", retryable=True)
-
-        # STEP 1: Try JSON chat completion format
-        parsed = _parse_json_response(raw_text)
-        if parsed:
-            cleaned = _strip_reasoning(parsed)
-            if cleaned:
-                return AIResponse(
-                    text=cleaned,
-                    provider=self.name,
-                    model=f"pollinations:{model}",
-                    tokens_used=0,
-                    metadata={"endpoint": "v1/chat/completions", "parsed": "json", "model": model},
-                )
-
-        # STEP 2: Try SSE format
-        cleaned = _strip_sse_artifacts(raw_text)
-        if cleaned:
-            cleaned = _strip_reasoning(cleaned)
-            if cleaned:
-                return AIResponse(
-                    text=cleaned,
-                    provider=self.name,
-                    model=f"pollinations:{model}",
-                    tokens_used=0,
-                    metadata={"endpoint": "v1/chat/completions", "parsed": "sse", "model": model},
-                )
-
-        # STEP 3: Raw text (last resort)
-        final_text = raw_text.strip()
-        if "data:" in final_text or "[DONE]" in final_text:
-            raise ProviderError(self.name, f"Unparsable SSE artifacts from {model}", retryable=True)
-
-        final_text = _strip_reasoning(final_text)
-        if not final_text:
-            raise ProviderError(self.name, f"Empty content after cleaning from {model}", retryable=True)
-
-        return AIResponse(
-            text=final_text,
-            provider=self.name,
-            model=f"pollinations:{model}",
-            tokens_used=0,
-            metadata={"endpoint": "v1/chat/completions", "parsed": "raw", "model": model},
-        )
+    # ── Vision Generation ───────────────────────────────────────
 
     async def generate_vision(self, prompt: str, image_data: bytes,
                                image_format: str = "jpeg", **kwargs) -> AIResponse:
         """Generate response with image understanding via Pollinations vision.
 
-        Tries multiple vision-capable models for reliability.
+        Tries multiple vision-capable models with dual-key failover.
         """
         if not self._client:
             await self.init()
@@ -585,111 +839,52 @@ class PollinationsProvider(BaseProvider):
         ]
         messages.append({"role": "user", "content": user_content})
 
-        # Try vision-capable models in order (v57: expanded with new tested models!)
-        vision_models = ["openai", "mistral-4", "mistral", "qwen-vision-pro", "qwen-vision",
-                        "gemma", "kimi-k2.6", "nova", "nova-fast",
-                        "mistral-small", "polly", "llama-scout", "grok",
-                        "openai-large", "kimi", "openai-reasoning",
-                        "mistral-small-3.2", "llama-4-scout"]
+        # Try vision-capable models in order
+        vision_models = [
+            "openai", "mistral-4", "mistral", "qwen-vision-pro", "qwen-vision",
+            "gemma", "kimi-k2.6", "nova", "nova-fast",
+            "mistral-small", "polly", "llama-scout", "grok",
+            "openai-large", "kimi", "openai-reasoning",
+            "mistral-small-3.2", "llama-4-scout",
+            "step-flash", "qwen-large", "nova-2",  # v17: expanded vision models
+        ]
         # Filter to healthy ones
         healthy_vision = [m for m in vision_models if self._is_model_healthy(m)]
         if not healthy_vision:
             healthy_vision = [MODEL_VISION]  # Always try primary
 
-        last_error = None
+        last_error: Optional[Exception] = None
         for model in healthy_vision[:2]:  # Max 2 attempts for vision
             try:
-                payload: Dict[str, Any] = {
-                    "model": model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "reasoning_effort": REASONING_CHAT,
-                    "stream": False,
-                }
-
-                headers = {"Content-Type": "application/json"}
-                if self._api_key:
-                    headers["Authorization"] = f"Bearer {self._api_key}"
-
-                response = await self._client.post(
-                    f"{BASE_URL}/v1/chat/completions",
-                    json=payload,
-                    headers=headers,
+                # Use dual-key failover for vision
+                result = await self._call_api(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    reasoning_effort=REASONING_CHAT,
                 )
-                response.raise_for_status()
-
-                raw_text = response.text
-
-                if not raw_text:
-                    raise ProviderError(self.name, f"Empty vision response from {model}", retryable=True)
-
-                parsed = _parse_json_response(raw_text)
-                if parsed:
-                    cleaned = _strip_reasoning(parsed)
-                    if cleaned:
-                        self._record_model_success(model)
-                        return AIResponse(
-                            text=cleaned,
-                            provider=self.name,
-                            model=f"pollinations:{model}",
-                            tokens_used=0,
-                            metadata={"endpoint": "v1/chat/completions", "mode": "vision", "model": model},
-                        )
-
-                cleaned = _strip_sse_artifacts(raw_text)
-                if cleaned:
-                    cleaned = _strip_reasoning(cleaned)
-                    if cleaned:
-                        self._record_model_success(model)
-                        return AIResponse(
-                            text=cleaned,
-                            provider=self.name,
-                            model=f"pollinations:{model}",
-                            tokens_used=0,
-                            metadata={"endpoint": "v1/chat/completions", "mode": "vision", "parsed": "sse", "model": model},
-                        )
-
-                final_text = _strip_reasoning(raw_text.strip())
-                if final_text:
+                if result and result.text:
                     self._record_model_success(model)
-                    return AIResponse(
-                        text=final_text,
-                        provider=self.name,
-                        model=f"pollinations:{model}",
-                        tokens_used=0,
-                        metadata={"endpoint": "v1/chat/completions", "mode": "vision", "parsed": "raw", "model": model},
-                    )
+                    # Add vision mode to metadata
+                    result.metadata["mode"] = "vision"
+                    return result
 
-                raise ProviderError(self.name, f"Empty vision content from {model}", retryable=True)
-
-            except httpx.TimeoutException as exc:
+            except ProviderError as e:
                 self._record_model_failure(model)
-                last_error = exc
-                logger.warning(f"Vision model {model} timeout, trying next...")
+                last_error = e
+                err_str = str(e)
+                if "429" in err_str:
+                    logger.warning(f"Vision model {model} rate-limited, trying next...")
+                elif "402" in err_str or "401" in err_str or "All API key tiers" in err_str:
+                    logger.warning(f"Vision model {model} all tiers depleted, trying next...")
+                else:
+                    logger.warning(f"Vision model {model} error: {e}, trying next...")
                 continue
-            except httpx.HTTPStatusError as exc:
+            except Exception as e:
                 self._record_model_failure(model)
-                status = exc.response.status_code
-                if status == 429:
-                    self._last_429_time = time.time()
-                    self._429_count += 1
-                retryable = status in (429, 500, 502, 503, 504)
-                if not retryable:
-                    raise ProviderError(
-                        self.name,
-                        f"Vision HTTP {status} from {model}: {exc.response.text[:200]}",
-                        retryable=False,
-                    )
-                last_error = exc
-                logger.warning(f"Vision model {model} HTTP {status}, trying next...")
-                continue
-            except ProviderError:
-                raise
-            except Exception as exc:
-                self._record_model_failure(model)
-                last_error = exc
-                logger.warning(f"Vision model {model} error: {exc}, trying next...")
+                last_error = e
+                logger.warning(f"Vision model {model} unexpected error: {e}, trying next...")
                 continue
 
         raise ProviderError(
@@ -698,45 +893,75 @@ class PollinationsProvider(BaseProvider):
             retryable=True,
         )
 
+    # ── Image Generation ────────────────────────────────────────
+
     async def generate_image(self, prompt: str, size: str = "1024x1024",
                               model: str = "flux") -> Optional[bytes]:
         """Generate an image using Pollinations image API.
 
+        Uses dual-key failover: KEY1 → KEY2 → free tier.
         Returns image bytes or None on failure.
-        Uses /v1/images/generations endpoint with base64 response.
         """
         if not self._client:
             await self.init()
 
-        try:
-            payload = {
-                "prompt": prompt,
-                "size": size,
-                "model": model,
-            }
+        payload = {
+            "prompt": prompt,
+            "size": size,
+            "model": model,
+        }
 
-            headers = {"Content-Type": "application/json"}
-            if self._api_key:
-                headers["Authorization"] = f"Bearer {self._api_key}"
+        # ── Dual-key failover for image generation ──
+        tiers_to_try: List[Tuple[str, int]] = []
+        if self._is_key_available(1):
+            tiers_to_try.append((self._api_key_1, 1))
+        if self._is_key_available(2):
+            tiers_to_try.append((self._api_key_2, 2))
+        tiers_to_try.append(("", 0))  # Free tier always last
 
-            response = await self._client.post(
-                f"{BASE_URL}/v1/images/generations",
-                json=payload,
-                headers=headers,
-                timeout=60.0,
-            )
-            response.raise_for_status()
+        for api_key, tier_index in tiers_to_try:
+            try:
+                headers: Dict[str, str] = {"Content-Type": "application/json"}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
 
-            data = response.json()
-            if "data" in data and data["data"]:
-                b64 = data["data"][0].get("b64_json", "")
-                if b64:
-                    return base64.b64decode(b64)
+                response = await self._client.post(
+                    f"{BASE_URL}/v1/images/generations",
+                    json=payload,
+                    headers=headers,
+                    timeout=60.0,
+                )
+                response.raise_for_status()
 
-        except Exception as e:
-            logger.warning(f"Image generation failed: {e}")
+                data = response.json()
+                if "data" in data and data["data"]:
+                    b64 = data["data"][0].get("b64_json", "")
+                    if b64:
+                        return base64.b64decode(b64)
+
+                # No image data in response
+                return None
+
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if status in (401, 402) and tier_index > 0:
+                    self._mark_key_depleted(tier_index)
+                    logger.warning(
+                        f"Image gen HTTP {status} via KEY{tier_index}, "
+                        f"trying next tier..."
+                    )
+                    continue
+                # Other errors or free tier 402 — give up
+                logger.warning(f"Image generation HTTP {status}: {exc.response.text[:200]}")
+                return None
+
+            except Exception as e:
+                logger.warning(f"Image generation failed: {e}")
+                return None
 
         return None
+
+    # ── Stats & Cleanup ─────────────────────────────────────────
 
     def get_model_stats(self) -> Dict[str, Any]:
         """Get statistics about model usage and health."""
@@ -751,6 +976,7 @@ class PollinationsProvider(BaseProvider):
             }
         stats["_total_requests"] = self._total_requests
         stats["_429_count"] = self._429_count
+        stats["_key_status"] = self._get_key_status_summary()
         return stats
 
     async def close(self) -> None:

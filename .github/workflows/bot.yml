@@ -1,10 +1,11 @@
-name: Nastya Bot — SMART ROUTING v59
+name: Nastya Bot — DUAL-KEY SMART ROUTING v60
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v59.0 — SMART ROUTING (cloud-first for posts, local-first for chat, local-only for comments)
+# Nastya Bot v60.0 — DUAL-KEY SMART ROUTING
 #
 #   - LlamaCpp Qwen3-4B (n_ctx=4096, n_batch=512) — LOCAL for chat & comments
-#   - Pollinations.ai (40 chat models) — CLOUD-FIRST for posts & functions
+#   - Pollinations.ai (44 chat models) — CLOUD-FIRST for posts & functions
+#   - DUAL API KEY FAILOVER: KEY1 → KEY2 → local fallback
 #   - SMART ROUTING:
 #     - Chat (normal conversation) → LOCAL-FIRST (saves balance!)
 #     - Posts & functions → CLOUD-FIRST (better quality for public content!)
@@ -163,7 +164,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v59
+          key: nastya-db-v60
           restore-keys: |
             nastya-db-
 
@@ -174,8 +175,9 @@ jobs:
           OWNER_ID: ${{ secrets.OWNER_ID }}
           ADMIN_IDS: ${{ secrets.OWNER_ID }}
           BOT_USERNAME: asnastya_bot
-          # Pollinations.ai — MULTI-MODEL PRIMARY + VISION
+          # Pollinations.ai — MULTI-MODEL PRIMARY + VISION + DUAL KEY
           POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
+          POLLINATIONS_API_KEY_2: ${{ secrets.POLLINATIONS_API_KEY_2 }}
           # Local model — enabled as FALLBACK when cloud unavailable
           ENABLE_LOCAL_MODEL: "true"
           MODEL_PATH: models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
@@ -191,19 +193,19 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v59.0 SMART ROUTING ==="
+          echo "=== Starting Nastya Bot v60.0 DUAL-KEY SMART ROUTING ==="
           echo "CHAT: LOCAL-FIRST — Local → Cloud → Fallback (saves balance!)"
           echo "POSTS/FUNCTIONS: CLOUD-FIRST — Cloud → Local → Fallback (better quality!)"
           echo "COMMENTS: LOCAL-ONLY — Local → Static fallback (no cloud waste!)"
           echo "VISION: Pollinations vision (16 models) for photos"
           echo "BACKGROUND: CLOUD-FIRST for quality posts!"
-          echo "STRATEGY: chat→LOCAL_FIRST, function→CLOUD_FIRST, comment→LOCAL_ONLY"
+          echo "STRATEGY: chat→LOCAL_FIRST, function→CLOUD_FIRST, comment→LOCAL_ONLY, dual-key→KEY1+KEY2"
           echo "PERSONA: Настя — москвичка, владеет BMW M3 2025!"
           echo "INLINE: @asnastya_bot works in any chat!"
           echo "SEARCH: /find — товары и лучшие цены! /search — поиск информации!"
 
           echo "SMART ROUTING: ENABLED — Local for chat/comments, Cloud for posts/functions!"
-          echo "Config: strategy=SMART_ROUTING, n_ctx=4096, n_batch=512, max_tokens=300(local)/2000(cloud), history=4, timeout=45s, vision=cloud_only, background=cloud_first, comment=local_only"
+          echo "Config: strategy=DUAL_KEY_SMART_ROUTING, n_ctx=4096, n_batch=512, max_tokens=300(local)/2000(cloud), history=4, timeout=45s, vision=cloud_only, background=cloud_first, comment=local_only, dual_key=KEY1+KEY2"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -244,7 +246,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v59-${{ github.run_id }}
+          key: nastya-db-v60-${{ github.run_id }}
 
       # ── Self-dispatch for 24/7 ──
       - name: Re-dispatch workflow for continuous operation

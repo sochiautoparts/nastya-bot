@@ -1,12 +1,13 @@
-"""AI Router v59.0 — SMART ROUTING (CLOUD-FIRST for posts, LOCAL-FIRST for chat, LOCAL-ONLY for comments)!
+"""AI Router v60.0 — DUAL-KEY SMART ROUTING (CLOUD-FIRST for posts, LOCAL-FIRST for chat, LOCAL-ONLY for comments)!
 
-АРХИТЕКТУРА v59 — SMART ROUTING (экономия баланса + качество!):
+АРХИТЕКТУРА v60 — DUAL-KEY SMART ROUTING:
   Баланс обновляется каждый час — экономим!
   
   ПОСТЫ И ФУНКЦИИ (generate_channel_post, background tasks) → CLOUD-FIRST:
-    1. PollinationsProvider (40-MODEL) — PRIMARY для постов и функций!
+    1. PollinationsProvider (44-MODEL, DUAL-KEY) — PRIMARY для постов и функций!
        - Лучшее качество для публичного контента
        - Посты в канале должны быть качественными!
+       - KEY1 → KEY2 → free tier — dual-key failover!
     2. LlamaCppProvider — FALLBACK для постов
     3. Static fallback — бот ВСЕГДА отвечает
 
@@ -14,29 +15,19 @@
     1. LlamaCppProvider (Qwen3-4B, n_ctx=4096) — PRIMARY для чата!
        - Экономит баланс облачных моделей
        - Работает мгновенно (5-12с генерация)
-       - 4 сообщений истории + 600ч системный промпт
-       - stop=["<think"] — блокирует thinking mode Qwen3
-    2. PollinationsProvider v15 (40-MODEL) — FALLBACK для чата
+    2. PollinationsProvider v17 (44-MODEL, DUAL-KEY) — FALLBACK для чата
     3. Static fallback — бот ВСЕГДА отвечает
 
   КОММЕНТАРИИ В ГРУППАХ → LOCAL-ONLY:
     - Только локальная модель — никакого облака!
-    - Комменты — это обычно короткие ответы, не нужны мощные модели
     - Если локальная не справилась — static fallback
     - Экономия баланса на casual комментариях!
 
   VISION (фото-понимание):
     - Pollinations vision API — Настя ВИДИТ фото!
-    - 16 vision-capable моделей
+    - 20 vision-capable моделей
 
-  URL UNDERSTANDING:
-    - Настя читает ссылки и понимает контекст!
-
-  HALLUCINATED LINK FIX v53:
-    - FORCE web search when user asks for products/services/links
-    - AI-hallucinated commercial URLs are detected and REMOVED
-    - Only real URLs from actual search results are kept
-"""
+  Если Pollinations не работает → ВСЁ на локальной модели!
 
 import logging
 import asyncio
@@ -60,7 +51,7 @@ from ai.voice import transcribe_voice_ogg
 from bot.config import (
     MODEL_PATH, MODEL_N_CTX, MODEL_N_THREADS,
     MODEL_MAX_TOKENS, MODEL_HISTORY_LIMIT,
-    POLLINATIONS_API_KEY, POLLINATIONS_MAX_TOKENS,
+    POLLINATIONS_API_KEY, POLLINATIONS_API_KEY_2, POLLINATIONS_MAX_TOKENS,
     ENABLE_LOCAL_MODEL,
 )
 
@@ -149,16 +140,16 @@ def _classify_task_complexity(prompt: str, messages: Optional[List[Dict]] = None
 
 
 class AIRouter:
-    """AI Router v59.0 — SMART ROUTING: cloud-first for posts, local-first for chat, local-only for comments.
+    """AI Router v60.0 — DUAL-KEY SMART ROUTING: cloud-first for posts, local-first for chat, local-only for comments.
 
-    Strategy v59: Route based on USE CASE, not just complexity.
+    Strategy v60: Route based on USE CASE with dual-key failover.
     
     Route for POSTS & FUNCTIONS (route_type="function"):
-        Pollinations (40 models) → LOCAL model → static fallback
+        Pollinations (44 models, KEY1→KEY2) → LOCAL model → static fallback
         Cloud gives better quality for public content!
     
     Route for USER CHAT (route_type="chat", default):
-        LOCAL model → Pollinations → static fallback
+        LOCAL model → Pollinations (dual-key) → static fallback
         Saves cloud balance for normal conversation.
     
     Route for GROUP COMMENTS (route_type="comment"):
@@ -166,11 +157,13 @@ class AIRouter:
         No cloud waste on casual comments!
     
     Route for VISION tasks (photos):
-        Pollinations vision (16 models) → fallback message
+        Pollinations vision (20 models, dual-key) → fallback message
     
     Route for BACKGROUND tasks (news, channel):
-        Pollinations → LOCAL model → skip
+        Pollinations (dual-key) → LOCAL model → skip
         Posts need cloud quality!
+
+    If Pollinations is down or both keys depleted → ALL routes fall back to local model!
     """
 
     def __init__(self, db=None):
@@ -232,6 +225,7 @@ class AIRouter:
         try:
             self._pollinations = PollinationsProvider(
                 api_key=POLLINATIONS_API_KEY,
+                api_key_2=POLLINATIONS_API_KEY_2,
                 timeout=45.0,
             )
             await self._pollinations.init()
@@ -250,9 +244,9 @@ class AIRouter:
         model_name = self._local._model_name if self._local and self._local._loaded else "none"
 
         logger.info(
-            f"AI Router v59.0 SMART ROUTING initialized: "
+            f"AI Router v60.0 DUAL-KEY SMART ROUTING initialized: "
             f"local={local_status} (model={model_name}, n_ctx={max(MODEL_N_CTX, 4096)}, ENABLE_LOCAL_MODEL={ENABLE_LOCAL_MODEL}), "
-            f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + vision), "
+            f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + vision, dual-key=KEY1+KEY2), "
             f"strategy=chat:LOCAL_FIRST/function:CLOUD_FIRST/comment:LOCAL_ONLY, "
             f"max_tokens={POLLINATIONS_MAX_TOKENS}(cloud)/{max(MODEL_MAX_TOKENS, 300)}(local), history={MODEL_HISTORY_LIMIT}"
         )

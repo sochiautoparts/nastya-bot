@@ -1,6 +1,6 @@
-"""Nastya Bot 57.0 — MOSCOW BLOGGER + BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!
+"""Nastya Bot 60.0 — MOSCOW BLOGGER + BMW M3 OWNER + LOCAL EXPERT + DUAL-KEY!
 
-v57.0: 40 POLLINATIONS MODELS + EXPANDED VISION!
+v60.0: 44 POLLINATIONS MODELS + DUAL API KEY FAILOVER!
 - Persona: Настя — москвичка, 23 года, блогер, ведёт Telegram канал @chasnastya
   - Владеет BMW M3 2025 модного серого цвета! 🏎️💨
   - Технически подкована: регламенты ТО, болячки BMW, приколы баварцев
@@ -61,6 +61,7 @@ BOT_TOKEN: str = _env("BOT_TOKEN")
 
 # ── Pollinations.ai — MULTI-MODEL AI Provider ─────────────────
 POLLINATIONS_API_KEY: str = _env("POLLINATIONS_API_KEY", "")
+POLLINATIONS_API_KEY_2: str = _env("POLLINATIONS_API_KEY_2", "")
 # Models pool (configured in pollinations_provider.py)
 POLLINATIONS_TIMEOUT: float = 45.0
 POLLINATIONS_MAX_TOKENS: int = 2000  # Full detailed responses — no limits!
