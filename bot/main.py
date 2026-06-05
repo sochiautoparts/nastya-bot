@@ -522,6 +522,11 @@ async def on_startup(**kwargs) -> None:
     await ai_router.init()
     logger.info(f"AI Router: LlamaCppProvider, status={ai_router.get_status()}")
 
+    # Load partner programs from remote admitad_ads.json (updateable file!)
+    from bot.partners import nastya_partner_manager
+    partner_count = await nastya_partner_manager.load_admitad_async()
+    logger.info(f"Admitad partner programs loaded: {partner_count}")
+
     try:
         await db.get_or_create_user(OWNER_ID, "owner", "Owner")
     except Exception as e:
