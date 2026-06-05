@@ -1,17 +1,17 @@
 {
   "bot": "nastya",
   "version": "1.0",
-  "last_updated": "2026-06-05T23:33:11Z",
+  "last_updated": "2026-06-05T23:35:17Z",
   "pending_reviews": [],
   "reviews": [
     {
-      "id": "rev_1780702391_c_1780702125_4aa9bf",
+      "id": "rev_1780702517_c_1780702125_4aa9bf",
       "candidate_id": "c_1780702125_4aa9bf",
       "reviewer": "nastya",
       "verdict": "approved",
-      "comment": "Новость актуальная и напрямую относится к автопрому: запуск новой версии Suzuki Fronx на рынке Малайзии, с ценами и деталями по модели. Для автоканала подходит.",
+      "comment": "новость про Suzuki Fronx Sport, актуальная и интересная для автолюбителей",
       "improved_text": "",
-      "timestamp": 1780702391.57164
+      "timestamp": 1780702517.1850111
     }
   ],
   "shared_chats": {},
