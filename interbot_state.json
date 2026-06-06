@@ -1,7 +1,7 @@
 {
   "bot": "nastya",
   "version": "1.0",
-  "last_updated": "2026-06-06T08:31:54Z",
+  "last_updated": "2026-06-06T08:34:00Z",
   "pending_reviews": [],
   "reviews": [
     {
@@ -194,13 +194,13 @@
       "timestamp": 1780732539.2225153
     },
     {
-      "id": "rev_1780734714_c_1780734244_31295d",
+      "id": "rev_1780734840_c_1780734244_31295d",
       "candidate_id": "c_1780734244_31295d",
       "reviewer": "nastya",
       "verdict": "approved",
-      "comment": "",
+      "comment": "Новость актуальная и интересная для автолюбителей, соответствует тематике канала (Rolls-Royce).",
       "improved_text": "",
-      "timestamp": 1780734714.732298
+      "timestamp": 1780734840.0951045
     }
   ],
   "shared_chats": {},
