@@ -1,7 +1,7 @@
 {
   "bot": "nastya",
   "version": "1.0",
-  "last_updated": "2026-06-06T03:50:58Z",
+  "last_updated": "2026-06-06T03:53:07Z",
   "pending_reviews": [],
   "reviews": [
     {
@@ -93,6 +93,15 @@
       "comment": "Новость актуальная, интересная для автовладельцев и рынка авто. Подходит для канала.",
       "improved_text": "",
       "timestamp": 1780717858.6831934
+    },
+    {
+      "id": "rev_1780717987_c_1780717798_9105bf",
+      "candidate_id": "c_1780717798_9105bf",
+      "reviewer": "nastya",
+      "verdict": "approved",
+      "comment": "Одобрено (fallback)",
+      "improved_text": "",
+      "timestamp": 1780717987.0718825
     }
   ],
   "shared_chats": {},
