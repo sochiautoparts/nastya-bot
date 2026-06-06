@@ -1,7 +1,7 @@
 {
   "bot": "nastya",
   "version": "1.0",
-  "last_updated": "2026-06-06T09:12:21Z",
+  "last_updated": "2026-06-06T09:48:31Z",
   "pending_reviews": [],
   "reviews": [
     {
@@ -219,6 +219,15 @@
       "comment": "Новость актуальная, интересная для сообщества автовладельцев и байкеров, тема связана с автотюнингом и экипировкой.",
       "improved_text": "",
       "timestamp": 1780737141.716336
+    },
+    {
+      "id": "rev_1780739311_c_1780739038_afa313",
+      "candidate_id": "c_1780739038_afa313",
+      "reviewer": "nastya",
+      "verdict": "approved",
+      "comment": "",
+      "improved_text": "",
+      "timestamp": 1780739311.7426603
     }
   ],
   "shared_chats": {},
