@@ -2480,6 +2480,13 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
                 proactive_text += f"\n\nКстати, заходи на мой канал! 👉 https://t.me/{CHANNEL_USERNAME.replace('@', '')} 💅"
 
             await bot.send_message(chat_id, proactive_text)
+            # Save proactive message to chat history so AI knows what it said
+            # when the user replies — prevents context loss and topic jumping
+            try:
+                if db:
+                    await db.add_message(user_id, "assistant", proactive_text)
+            except Exception:
+                pass
             pro["last_proactive"] = now
             _proactive_tracker[user_id] = pro
             sent += 1
@@ -2502,6 +2509,12 @@ async def check_and_send_proactive(bot, db, ai_router) -> None:
                     try:
                         msg = random.choice(PROACTIVE_MESSAGES)
                         await bot.send_message(uid, msg)
+                        # Save proactive message to chat history
+                        try:
+                            if db:
+                                await db.add_message(uid, "assistant", msg)
+                        except Exception:
+                            pass
                         sent += 1
                     except Exception:
                         pass

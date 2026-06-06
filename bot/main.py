@@ -585,11 +585,18 @@ async def on_startup(**kwargs) -> None:
                 try:
                     from bot.nastya import get_random_fact
                     thought = get_random_fact()
+                    startup_msg = f"💅 Настя проснулась!\n\n{thought}"
                     await bot.send_message(
                         admin_id,
-                        f"💅 Настя проснулась!\n\n{thought}",
+                        startup_msg,
                         parse_mode="HTML",
                     )
+                    # Save startup message to chat history so AI knows what it said
+                    try:
+                        if db:
+                            await db.add_message(admin_id, "assistant", startup_msg)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 
@@ -611,6 +618,12 @@ async def on_shutdown(**kwargs) -> None:
                     "Спать хочу! Ночи! 🌙💤",
                 ])
                 await bot.send_message(admin_id, sleepy)
+                # Save shutdown message to chat history for context continuity
+                try:
+                    if db:
+                        await db.add_message(admin_id, "assistant", sleepy)
+                except Exception:
+                    pass
             except Exception:
                 pass
 
