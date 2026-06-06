@@ -566,7 +566,7 @@ async def on_startup(**kwargs) -> None:
     if dp_ref:
         dp_ref.workflow_data["db"] = db
         dp_ref.workflow_data["ai_router"] = ai_router
-            logger.info(f"workflow_data set: db={db is not None}, ai_router={ai_router is not None}")
+        logger.info(f"workflow_data set: db={db is not None}, ai_router={ai_router is not None}")
 
     if bot:
         asyncio.create_task(news_scheduler(bot))

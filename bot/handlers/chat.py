@@ -1778,14 +1778,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         other_bot_username = (message.from_user.username or "").lower()
         if other_bot_username == "asiaexp_bot":
             user_context += " Это сообщение от Аси - автоэксперта, ведёт канал @sochiautoparts. Вы коллеги! Можешь обсуждать с ней темы, спорить, шутить, делиться мнением."
-            # Register as shared chat
-            try:
-                from bot.interbot import interbot_manager
-                interbot_manager.register_shared_chat(
-                    message.chat.id, getattr(message.chat, "title", "")
-                )
-            except Exception:
-                pass
+            # Interbot removed — each bot works independently
 
     # Build system prompt
     # v56: Date/time awareness - Настя знает какой сегодня день!
