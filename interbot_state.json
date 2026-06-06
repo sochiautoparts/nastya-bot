@@ -1,7 +1,7 @@
 {
   "bot": "nastya",
   "version": "1.0",
-  "last_updated": "2026-06-06T05:45:31Z",
+  "last_updated": "2026-06-06T05:47:35Z",
   "pending_reviews": [],
   "reviews": [
     {
@@ -131,13 +131,13 @@
       "timestamp": 1780722681.2690325
     },
     {
-      "id": "rev_1780724731_c_1780724673_18bd0b",
+      "id": "rev_1780724855_c_1780724673_18bd0b",
       "candidate_id": "c_1780724673_18bd0b",
       "reviewer": "nastya",
       "verdict": "approved",
-      "comment": "Новость интересна и подходит для автомобильного канала.",
+      "comment": "Новость интересная и про автомобили",
       "improved_text": "",
-      "timestamp": 1780724731.3901136
+      "timestamp": 1780724855.9879138
     }
   ],
   "shared_chats": {},
