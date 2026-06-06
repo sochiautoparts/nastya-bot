@@ -88,7 +88,7 @@ ADMIN_IDS: List[int] = list(set(
 ))
 BOT_USERNAME: str = _env("BOT_USERNAME", "asnastya_bot")
 
-# ── GitHub PAT (for inter-bot state sync) ──────────────────
+# ── GitHub PAT (for workflow self-dispatch) ──────────────────
 GH_PAT: str = _env("GH_PAT", "")
 
 # ── Server ─────────────────────────────────────────────────

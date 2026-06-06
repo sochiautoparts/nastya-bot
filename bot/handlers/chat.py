@@ -1773,12 +1773,7 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     if any(kw in text.lower() for kw in political_keywords):
         user_context += " Вопрос про политику - переведи тему!"
 
-    # INTER-BOT: Detect messages from Ася (@asiaexp_bot) in shared chats
-    if message.from_user and message.from_user.is_bot:
-        other_bot_username = (message.from_user.username or "").lower()
-        if other_bot_username == "asiaexp_bot":
-            user_context += " Это сообщение от Аси - автоэксперта, ведёт канал @sochiautoparts. Вы коллеги! Можешь обсуждать с ней темы, спорить, шутить, делиться мнением."
-            # Interbot removed — each bot works independently
+    # Interbot removed — each bot works independently
 
     # Build system prompt
     # v56: Date/time awareness - Настя знает какой сегодня день!
