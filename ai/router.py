@@ -153,6 +153,7 @@ class AIRouter:
 
     def __init__(self, db=None):
         self._pollinations: Optional[PollinationsProvider] = None
+        self._local = None  # Legacy compat — local model removed, but admin.py references this
         self._db = db
         self._total_requests: int = 0
         self._total_fallbacks: int = 0
@@ -291,11 +292,13 @@ class AIRouter:
         # -- Pollinations - SOLE provider --
         if self._pollinations and self._pollinations.is_available():
             try:
+                # Use caller's max_tokens if provided, otherwise default
+                caller_max_tokens = kwargs.get("max_tokens", POLLINATIONS_MAX_TOKENS)
                 result = await self._pollinations.generate(
                     prompt,
                     system_prompt=system_prompt,
                     messages=messages,
-                    max_tokens=POLLINATIONS_MAX_TOKENS,
+                    max_tokens=caller_max_tokens,
                     reasoning_effort=reasoning,
                 )
                 if result and result.text:
@@ -345,11 +348,13 @@ class AIRouter:
         # -- Pollinations - SOLE provider for background --
         if self._pollinations and self._pollinations.is_available():
             try:
+                # Use caller's max_tokens if provided, otherwise default to 300
+                bg_max_tokens = kwargs.get("max_tokens", 300)
                 result = await self._pollinations.generate(
                     prompt,
                     system_prompt=system_prompt,
                     messages=messages,
-                    max_tokens=300,
+                    max_tokens=bg_max_tokens,
                     reasoning_effort=REASONING_CHAT,
                 )
                 if result and result.text:

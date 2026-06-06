@@ -1,6 +1,6 @@
 """Channel Scanner v1.0 - Scan public Telegram channel for dedup.
 
-Scrapes t.me/s/sochiautoparts (public web version) to get
+Scrapes t.me/s/{channel_username} (public web version) to get
 the last 30-50 post texts. Used by Nastya (chief editor)
 to prevent duplicate news in the channel.
 
@@ -30,8 +30,9 @@ _cached_posts: List[str] = []
 _cached_fingerprints: Set[str] = set()
 _cache_time: float = 0
 
-# Target channel
-CHANNEL_WEB_URL = "https://t.me/s/sochiautoparts"
+# Target channel — use configured channel username
+from bot.config import CHANNEL_USERNAME
+CHANNEL_WEB_URL = f"https://t.me/s/{CHANNEL_USERNAME.lstrip('@')}"
 
 
 def _compute_fingerprint(text: str) -> str:
