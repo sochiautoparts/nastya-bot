@@ -1,7 +1,7 @@
 {
   "bot": "nastya",
   "version": "1.0",
-  "last_updated": "2026-06-06T03:46:49Z",
+  "last_updated": "2026-06-06T03:48:53Z",
   "pending_reviews": [],
   "reviews": [
     {
@@ -86,13 +86,13 @@
       "timestamp": 1780715680.9635909
     },
     {
-      "id": "rev_1780717609_c_1780717376_179db5",
+      "id": "rev_1780717733_c_1780717376_179db5",
       "candidate_id": "c_1780717376_179db5",
       "reviewer": "nastya",
       "verdict": "approved",
-      "comment": "Интересная автоновость: снижение спроса на 4x4 ute в Австралии, есть цифра (-18%), привязка к конкретным моделям (Toyota HiLux, Ford Ranger) — для автоканала это релевантно и без политики.",
+      "comment": "",
       "improved_text": "",
-      "timestamp": 1780717609.8768399
+      "timestamp": 1780717733.729595
     }
   ],
   "shared_chats": {},
