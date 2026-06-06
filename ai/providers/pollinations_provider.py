@@ -100,7 +100,7 @@ CHAT_MODELS = [
     ("llama-4-scout", 1, True,  1),   # Llama 4 Scout (explicit alias)
     ("nova-2",        1, True,  2),   # Nova 2 Lite - fast, Russian OK
     # ── v18: NEW MODELS - Confirmed working! ──
-    ("midijourney",   1, False, 1),   # Midijourney - text-to-music/chat model
+    # ("midijourney",   1, False, 1),   # REMOVED: text-to-music model, NOT for chat!
     # Models may come back - we NEVER delete them!
     # Previous REMOVED: gemini, gemini-3.5-flash, llama-maverick, claude, claude-haiku, claude-sonnet
     # These MAY return in the future - Pollinations rotates availability

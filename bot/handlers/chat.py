@@ -2411,6 +2411,17 @@ def _clean_response(text: str) -> str:
     if not text:
         return "Ммм... Настя задумалась... 🤔"
 
+    # Block structured YAML/MIDI/JSON output from text-to-music models
+    structured_patterns = [
+        r'^title:\s*.+?\n(duration|key|notation|pitch|velocity|tempo|bpm):',
+        r'^---\s*\n.*?(title|duration|notation|pitch|velocity):',
+        r'pitch,\s*time,\s*duration,\s*velocity',
+    ]
+    for pattern in structured_patterns:
+        if re.search(pattern, text, re.DOTALL | re.IGNORECASE):
+            logger.warning(f"Blocked structured/music output in chat response")
+            return "Ммм... Настя задумалась... 🤔"
+
     from ai.router import AIRouter
     text = AIRouter.clean_ai_response(text)
 
