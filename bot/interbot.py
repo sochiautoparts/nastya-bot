@@ -196,7 +196,11 @@ class InterbotManager:
 
     async def review_candidate(self, candidate: Dict) -> Dict:
         """Review a news candidate from Ася using AI.
-        
+
+        v3: Now also considers if the candidate would be interesting
+        for Настя's own audience (@chasnastya). If approved for Настя's
+        channel too, marks it as nastya_approved=True.
+
         Returns review dict with verdict: approved, rejected, or improved.
         """
         if not self._ai_router:
@@ -207,40 +211,46 @@ class InterbotManager:
                 "verdict": "approved",  # Default approve if no AI
                 "comment": "Автоматическое одобрение (AI недоступен)",
                 "improved_text": "",
+                "nastya_approved": True,  # Also approve for Настя's channel
                 "timestamp": time.time(),
             }
-        
+
         try:
             title = candidate.get("title", "")
             summary = candidate.get("summary", "")
             category = candidate.get("category", "general")
-            
+
             prompt = f"Новость от Аси для канала @sochiautoparts:\n\nЗаголовок: {title}\n"
             if summary:
                 prompt += f"Содержание: {summary[:500]}\n"
             prompt += f"\nКатегория: {category}\n"
             prompt += (
-                "\nОцени эту новость для публикации в автоканале @sochiautoparts. "
-                "Ответь СТРОГО в формате JSON:\n"
-                '{"verdict": "approved|rejected|improved", "comment": "твой комментарий", "improved_text": "улучшенный текст поста если verdict=improved иначе пусто"}\n\n'
+                "\nОцени эту новость для публикации. Ответь СТРОГО в формате JSON:\n"
+                '{"verdict": "approved|rejected|improved", "comment": "твой комментарий", '
+                '"improved_text": "улучшенный текст поста если verdict=improved иначе пусто", '
+                '"nastya_approved": true|false}\n\n'
                 "Критерии:\n"
                 "- approved: новость интересная, актуальная, про автомобили, без политики\n"
                 "- rejected: новость скучная, не про авто, политическая, устаревшая, дубликат\n"
                 "- improved: новость хорошая, но нужно улучшить текст - дай улучшенную версию\n"
+                "- nastya_approved: true если новость была бы интересна подписчикам Насти "
+                "(@chasnastya - лайфстайл, автомобили, BMW, повседневные темы), false если нет\n"
                 "Важно: канал @sochiautoparts - АВТОМОБИЛЬНЫЙ, только про машины и автопром!"
             )
-            
+
             result = await self._ai_router.chat(
                 prompt=prompt,
                 system_prompt=(
-                    "Ты Настя - блогер и редактор. Ты помогаешь Асе отбирать новости для её автоканала. "
+                    "Ты Настя - блогер и редактор. Ты помогаешь Асе отбирать новости для её автоканала, "
+                    "и одновременно решаешь, стоит ли рассказать об этом на своём канале @chasnastya. "
+                    "Настя - лайфстайл блогер, фанат BMW M3, пишет про авто, жизнь, шопинг. "
                     "Отвечай ТОЛЬКО JSON, без другого текста."
                 ),
                 max_tokens=400,
                 priority="low",
                 route_type="function",
             )
-            
+
             if result and result.text:
                 import re
                 text = result.text.strip()
@@ -251,7 +261,11 @@ class InterbotManager:
                     verdict = review_data.get("verdict", "approved")
                     if verdict not in ("approved", "rejected", "improved"):
                         verdict = "approved"
-                    
+
+                    nastya_approved = review_data.get("nastya_approved", verdict == "approved")
+                    if isinstance(nastya_approved, str):
+                        nastya_approved = nastya_approved.lower() in ("true", "yes", "1")
+
                     review = {
                         "id": f"rev_{int(time.time())}_{candidate.get('id', '')}",
                         "candidate_id": candidate.get("id", ""),
@@ -259,21 +273,22 @@ class InterbotManager:
                         "verdict": verdict,
                         "comment": review_data.get("comment", ""),
                         "improved_text": review_data.get("improved_text", ""),
+                        "nastya_approved": nastya_approved,
                         "timestamp": time.time(),
                     }
-                    
+
                     # Save review to own state
                     self._own_state.setdefault("reviews", []).append(review)
                     # Keep only last 50 reviews
                     self._own_state["reviews"] = self._own_state["reviews"][-50:]
                     await self._push_state()
-                    
-                    logger.info(f"Reviewed candidate '{title[:40]}...': {verdict}")
+
+                    logger.info(f"Reviewed candidate '{title[:40]}...': {verdict}, nastya_approved={nastya_approved}")
                     return review
-        
+
         except Exception as e:
             logger.error(f"AI review error: {e}")
-        
+
         # Fallback: approve
         review = {
             "id": f"rev_{int(time.time())}_{candidate.get('id', '')}",
@@ -282,6 +297,7 @@ class InterbotManager:
             "verdict": "approved",
             "comment": "Одобрено (fallback)",
             "improved_text": "",
+            "nastya_approved": True,
             "timestamp": time.time(),
         }
         self._own_state.setdefault("reviews", []).append(review)
@@ -289,20 +305,30 @@ class InterbotManager:
         return review
 
     async def run_review_cycle(self):
-        """Run a full review cycle: check pending -> review -> push."""
+        """Run a full review cycle: check pending -> review -> push.
+
+        v3: Also considers Настя's audience interest. After reviewing,
+        approved candidates can be published on Настя's channel too.
+        """
         unreviewed = await self.check_pending_reviews()
         if not unreviewed:
             return 0
-        
+
         reviewed = 0
         for candidate in unreviewed[:3]:  # Review max 3 per cycle
             try:
-                await self.review_candidate(candidate)
+                review = await self.review_candidate(candidate)
                 reviewed += 1
+
+                # If nastya_approved, we can optionally notify about it
+                # (the actual posting to channel is done by post_interbot_news() in channel.py)
+                if review.get("nastya_approved"):
+                    logger.info(f"Candidate '{candidate.get('title', '')[:40]}...' approved for Настя's channel too")
+
                 await asyncio.sleep(2)  # Don't spam AI
             except Exception as e:
                 logger.error(f"Review cycle error: {e}")
-        
+
         return reviewed
 
     # ── Inter-bot messaging ──
@@ -373,6 +399,7 @@ class InterbotManager:
         return {
             "pending_reviews_for_us": len([p for p in self._other_state.get("pending_reviews", []) if p.get("status") == "pending"]),
             "our_reviews": len(self._own_state.get("reviews", [])),
+            "nastya_approved": len([r for r in self._own_state.get("reviews", []) if r.get("nastya_approved")]),
             "unread_messages": len([m for m in self._other_state.get("messages", []) if m.get("to") == "nastya" and not m.get("read", False)]),
             "shared_chats": len(self._own_state.get("shared_chats", {})),
         }

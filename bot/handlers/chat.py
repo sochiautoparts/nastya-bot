@@ -1900,8 +1900,11 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     # ── Partner links context ──
     # Nastya gives partner links naturally in conversation - not as ads, but as personal recommendations
+    # v4: Uses get_all_relevant_links for cross-category coverage + 🔧 format
     try:
-        partner_context = nastya_partner_manager.generate_partner_context(text, max_shops=4)
+        # First: use the enhanced generate_partner_context which now includes
+        # cross-category links via get_all_relevant_links
+        partner_context = nastya_partner_manager.generate_partner_context(text, max_programs=5)
         if partner_context:
             system_prompt += f"\n\n{partner_context}"
             logger.info(f"Partner context added for user {user_id}: categories detected")
@@ -1909,15 +1912,37 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         logger.warning(f"Partner context error: {e}")
 
     # ── Auto parts specific: if user mentions BMW or auto parts, add direct shop links ──
+    # Настя водит BMW M3 — она знает где покупать запчасти!
+    # v4: Now also adds links from ALL auto categories (tires, tools, insurance, checkauto)
     text_lower_for_parts = text.lower()
-    auto_keywords = ["bmw", "бмв", "запчаст", "деталь", "артикул", "масло", "фильтр",
-                     "колодки", "ремонт", "сто ", "обслуживание", "то ", "регламент",
-                     "свечи", "ремень", "прокладк", "подшипник", "амортизатор"]
-    if any(kw in text_lower_for_parts for kw in auto_keywords):
+    auto_keywords = [
+        "bmw", "бмв", "m3", "m4", "m5", "x5", "x3", "x6",  # BMW models
+        "запчаст", "деталь", "артикул", "масло", "фильтр",
+        "колодки", "ремонт", "сто ", "обслуживание", "то ", "регламент",
+        "свечи", "ремень", "прокладк", "подшипник", "амортизатор",
+        "двигател", "турбо", "кузов", "ходов", "тормоз", "рулев",
+        "сцеплен", "коробк", "автомат", "механик", "привод",
+        "автозапч", "автомагазин", "автотовар", "подбор запчас",
+        "росско", "rossko", "автопитер", "autopiter", "avtoall", "автоолл",
+        "авто", "машина", "тачк", "шины", "диски", "осаго", "каско",
+    ]
+    is_auto_topic = any(kw in text_lower_for_parts for kw in auto_keywords)
+    if is_auto_topic:
         try:
+            # get_auto_parts_links now includes ALL auto categories + Ася's partners
             auto_context = nastya_partner_manager.get_auto_parts_links(text)
             if auto_context and auto_context not in system_prompt:
                 system_prompt += f"\n\n{auto_context}"
+            # Add natural M3-owner context for BMW/car discussions
+            bmw_keywords = ["bmw", "бмв", "m3", "m4", "m5", "рядн", "бавар"]
+            if any(kw in text_lower_for_parts for kw in bmw_keywords):
+                system_prompt += (
+                    "\n\nНастя владеет BMW M3 и разбирается в запчастях! "
+                    "Если разговор про BMW или авто — естественно упомяни где покупаешь запчасти для своей M3. "
+                    "Например: 'Кстати, запчасти для своей M3 я обычно ищу тут: 🔧 Росско — [ссылка]' — "
+                    "НЕ как реклама, а как личная рекомендация от владелицы BMW! "
+                    "Формат ссылок: 🔧 Имя — URL. НЕ используй HTML!"
+                )
         except Exception:
             pass
 

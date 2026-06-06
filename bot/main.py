@@ -374,6 +374,32 @@ async def discovery_scheduler(bot_instance: Bot) -> None:
         await asyncio.sleep(wait)
 
 
+async def partner_post_scheduler(bot_instance: Bot) -> None:
+    """Background task: periodically post partner recommendations to channel.
+
+    Runs every 6 hours, max 3 partner posts per day.
+    Uses post_partner_to_channel_capped for daily cap enforcement.
+    """
+    from channel import post_partner_to_channel_capped
+
+    # Wait for startup
+    await asyncio.sleep(180)  # 3 min - let other systems settle first
+
+    while True:
+        try:
+            if db and CHANNEL_ID:
+                posted = await post_partner_to_channel_capped(bot_instance, db, ai_router)
+                if posted:
+                    logger.info("Partner post scheduler: posted partner recommendation to channel")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Partner post scheduler error: {e}")
+
+        # Every 6 hours
+        await asyncio.sleep(6 * 3600)
+
+
 async def periodic_db_cleanup() -> None:
     """Background task: periodically clean up old DB records."""
     while True:
@@ -575,6 +601,7 @@ async def on_startup(**kwargs) -> None:
         asyncio.create_task(channel_scheduler(bot))
         asyncio.create_task(proactive_scheduler(bot))
         asyncio.create_task(discovery_scheduler(bot))
+        asyncio.create_task(partner_post_scheduler(bot))
         asyncio.create_task(periodic_db_cleanup())
         asyncio.create_task(memory_cleanup())
         asyncio.create_task(conflict_monitor())

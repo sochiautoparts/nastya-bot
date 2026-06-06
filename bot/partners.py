@@ -146,8 +146,8 @@ class PartnerProgram:
         if not self.goto_link:
             return ""
         if with_description and self.category_name:
-            return f"{self.name} ({self.category_name}): {self.goto_link}"
-        return f"{self.name}: {self.goto_link}"
+            return f"🔧 {self.name} ({self.category_name}) — {self.goto_link}"
+        return f"🔧 {self.name} — {self.goto_link}"
 
     def format_link_with_search(self, query: str) -> str:
         """Format partner link with search query."""
@@ -156,8 +156,8 @@ class PartnerProgram:
             return ""
         desc = self._get_category_description()
         if desc:
-            return f"{self.name} ({desc}): {search_url}"
-        return f"{self.name}: {search_url}"
+            return f"🔧 {self.name} ({desc}) — {search_url}"
+        return f"🔧 {self.name} — {search_url}"
 
     def _get_category_description(self) -> str:
         """Get a user-friendly description for this partner's category."""
@@ -300,46 +300,86 @@ class NastyaPartnerManager:
         if not self._loaded or (time.time() - self._last_load_time > ADMITAD_REFRESH_INTERVAL):
             await self.load_admitad_async()
 
+    # ── Category keyword definitions (used by detect_categories and get_all_relevant_links) ──
+
+    CATEGORY_KEYWORDS = {
+        "autoparts": [
+            "запчаст", "деталь", "артикул", "купить запчас", "купить детал",
+            "оригинал", "аналог", "замена", "подбор", "номер детал",
+            "oem", "оригинальн", "поиск запчас", "найти запчас",
+            "фильтр", "колодки", "свечи", "ремень", "прокладк",
+            "сальник", "подшипник", "амортизатор", "реле", "датчик",
+            "масло", "антифриз", "тормозн", "двигател", "bmw", "бмв",
+            "сто", "ремонт", "обслуживание", "то ", "регламент",
+            "росско", "rossko", "автопитер", "autopiter", "avtoall", "автоолл",
+            "m3", "m4", "m5", "x5", "x3", "x6",  # BMW models
+            "автозапч", "автомагазин", "автотовар",
+            "турбо", "кузов", "ходов", "рулев", "сцеплен", "коробк",
+            "авто", "машина", "тачк", "движок", "ходовая",
+        ],
+        "tires": [
+            "шины", "шина", "диски", "колёс", "колеса", "резин",
+            "зимн", "летн", "всесезон", "покрышк", "r16", "r17", "r18", "r19",
+        ],
+        "tools": [
+            "инструмент", "ключ", "набор инструмент", "домкрат",
+            "балонник", "съёмник", "ключ головк", "torx",
+        ],
+        "autoinsurance": [
+            "осаго", "каско", "страхов", "полис", "договор страх",
+        ],
+        "checkauto": [
+            "проверк", "вин", "vin", "история авто", "проверить авто",
+            "пробег", "аварий", "залог", "ограничен",
+        ],
+        "autorent": [
+            "аренда авто", "прокат авто", "арендовать авто", "rentcar",
+            "discovercars", "автопрокат", "взять машину",
+        ],
+        "shopping": [
+            "купить", "заказать", "цена", "стоимость", "подешевле",
+            "где купить", "найти", "поищи", "нужен", "хочу",
+            "вариант", "выбрать", "подобрать", "лучший", "топ",
+            "скидк", "акци", "промокод", "aliexpress", "алиэкспресс",
+        ],
+        "coupons": [
+            "промокод", "купон", "скидк", "акци", "кэшбэк", "cashback",
+            "бонус",
+        ],
+        "fashion": [
+            "одежд", "платье", "сумоч", "обувь", "кроссов", "куртк",
+            "пальто", "брюк", "джинс", "футбол", "свитер",
+            "маникюр", "косметик", "макияж", "парфюм", "духи",
+        ],
+        "electronics": [
+            "айфон", "iphone", "телефон", "смартфон", "ноутбук",
+            "планшет", "наушник", "часы", "apple watch", "гаджет",
+            "техник", "компьютер", "монитор",
+        ],
+        "travel": [
+            "путешеств", "тур", "авиа", "билет", "самолёт",
+            "отель", "гостиниц", "авиасейлс", "aviasales",
+        ],
+    }
+
+    # ── Category groups: related categories to include together ──
+
+    CATEGORY_GROUPS = {
+        "auto": ["autoparts", "tires", "tools", "autoinsurance", "checkauto"],
+        "shopping": ["shopping", "coupons"],
+        "travel": ["travel", "autorent"],
+    }
+
+    # ── Ася's specific auto partners (always include for auto topics) ──
+
+    AUTO_PARTNER_SITES = ["rossko.ru", "autopiter.ru", "avtoall.ru"]
+
     def detect_categories(self, text: str) -> List[str]:
         """Detect which partner categories match the user's message."""
         text_lower = text.lower()
         matched = []
 
-        category_keywords = {
-            "autoparts": [
-                "запчаст", "деталь", "артикул", "купить запчас", "купить детал",
-                "оригинал", "аналог", "замена", "подбор", "номер детал",
-                "oem", "оригинальн", "поиск запчас", "найти запчас",
-                "фильтр", "колодки", "свечи", "ремень", "прокладк",
-                "сальник", "подшипник", "амортизатор", "реле", "датчик",
-                "масло", "антифриз", "тормозн", "двигател", "bmw", "бмв",
-                "сто", "ремонт", "обслуживание", "то ", "регламент",
-                "росско", "rossko", "автопитер", "autopiter",
-            ],
-            "shopping": [
-                "купить", "заказать", "цена", "стоимость", "подешевле",
-                "где купить", "найти", "поищи", "нужен", "хочу",
-                "вариант", "выбрать", "подобрать", "лучший", "топ",
-                "скидк", "акци", "промокод", "aliexpress", "алиэкспресс",
-            ],
-            "fashion": [
-                "одежд", "платье", "сумоч", "обувь", "кроссов", "куртк",
-                "пальто", "брюк", "джинс", "футбол", "свитер",
-                "маникюр", "косметик", "макияж", "парфюм", "духи",
-            ],
-            "electronics": [
-                "айфон", "iphone", "телефон", "смартфон", "ноутбук",
-                "планшет", "наушник", "часы", "apple watch", "гаджет",
-                "техник", "компьютер", "монитор",
-            ],
-            "travel": [
-                "путешеств", "тур", "авиа", "билет", "самолёт",
-                "отель", "гостиниц", "авиасейлс", "aviasales",
-                "аренда авто", "прокат авто", "discovercars",
-            ],
-        }
-
-        for cat_key, keywords in category_keywords.items():
+        for cat_key, keywords in self.CATEGORY_KEYWORDS.items():
             for kw in keywords:
                 if kw in text_lower:
                     matched.append(cat_key)
@@ -367,22 +407,123 @@ class NastyaPartnerManager:
                     seen.add(p.id)
         return results
 
+    def get_all_relevant_links(self, text: str, max_programs: int = 5, region: str = DEFAULT_REGION) -> List[Dict[str, str]]:
+        """Get ALL relevant partner links for a given text, expanding categories.
+
+        Detects ALL relevant categories from the text and expands them
+        using CATEGORY_GROUPS. For auto-related queries, includes autoparts +
+        tires + tools + insurance + checkauto. For shopping, includes coupons.
+        For travel, includes autorent.
+        Also ensures Ася's auto partners (Росско, Autopiter, AvtoALL) are
+        included for car/BMW-related queries.
+
+        Returns a list of dicts: {name, url, description, category_name}
+        """
+        self.ensure_loaded()
+
+        detected = self.detect_categories(text)
+        if not detected:
+            return []
+
+        # Expand detected categories via CATEGORY_GROUPS
+        expanded_categories = set(detected)
+        for cat in detected:
+            for group_name, group_cats in self.CATEGORY_GROUPS.items():
+                if cat in group_cats:
+                    expanded_categories.update(group_cats)
+                # Also: if any keyword from a group category matched, include the whole group
+                # E.g. if "autoparts" was detected, include the full "auto" group
+
+        # Special case: if any auto-related keyword is present, include all auto categories
+        auto_cats = {"autoparts", "tires", "tools", "autoinsurance", "checkauto", "autorent"}
+        if expanded_categories & auto_cats:
+            expanded_categories.update(auto_cats)
+
+        # Get programs for all expanded categories
+        programs = self.get_programs_for_categories(list(expanded_categories), region)
+
+        # If car/BMW-related, ensure Ася's auto partners are present
+        text_lower = text.lower()
+        auto_keywords = ["bmw", "бмв", "m3", "m4", "m5", "x5", "авто", "машина", "тачк",
+                         "запчаст", "ремонт", "двигател", "масло", "фильтр", "колодки",
+                         "росско", "автопитер", "avtoall", "sto", "сто"]
+        is_auto_topic = any(kw in text_lower for kw in auto_keywords)
+        if is_auto_topic:
+            # Ensure Ася's specific auto partners are included
+            seen_ids = {p.id for p in programs}
+            for site in self.AUTO_PARTNER_SITES:
+                prog = self._site_map.get(site)
+                if prog and prog.id not in seen_ids and prog.has_region(region):
+                    programs.append(prog)
+                    seen_ids.add(prog.id)
+
+        # Deduplicate and shuffle for variety
+        random.shuffle(programs)
+
+        # Build result list
+        results = []
+        seen_names = set()
+        for p in programs[:max_programs * 2]:  # Over-select to allow dedup
+            if p.name not in seen_names and p.goto_link:
+                desc = p._get_category_description()
+                results.append({
+                    "name": p.name,
+                    "url": p.goto_link,  # Use EXACTLY as-is!
+                    "description": desc,
+                    "category_name": p.category_name,
+                    "category": p.category,
+                })
+                seen_names.add(p.name)
+            if len(results) >= max_programs:
+                break
+
+        return results
+
     def generate_partner_context(self, text: str, max_programs: int = 4, region: str = DEFAULT_REGION) -> str:
         """Generate partner context for AI system prompt.
 
-        v3: Uses goto_link from admitad_ads.json EXACTLY as-is!
-        No subid additions - the link is ready to use!
+        v4: Uses get_all_relevant_links for cross-category partner links.
+        goto_link used EXACTLY as-is - no modifications!
+        Format: 🔧 Name — URL (simple, NOT HTML)
         """
         self.ensure_loaded()
 
         categories = self.detect_categories(text)
 
-        # Find matching programs
-        matches = self.find_matching_programs(text, region)
-        if not matches and categories:
-            matches = self.get_programs_for_categories(categories, region)
+        # Use get_all_relevant_links for expanded category coverage
+        all_links = self.get_all_relevant_links(text, max_programs=max_programs, region=region)
 
-        if not matches:
+        # Also check for direct text matches (existing behavior)
+        matches = self.find_matching_programs(text, region)
+
+        # Merge: prefer all_links, supplement with direct matches
+        seen_urls = {l["url"] for l in all_links}
+        for p in matches:
+            if p.goto_link and p.goto_link not in seen_urls:
+                all_links.append({
+                    "name": p.name,
+                    "url": p.goto_link,
+                    "description": p._get_category_description(),
+                    "category_name": p.category_name,
+                    "category": p.category,
+                })
+                seen_urls.add(p.goto_link)
+
+        if not all_links:
+            # Fallback to category-based programs
+            if categories:
+                cat_programs = self.get_programs_for_categories(categories, region)
+                for p in cat_programs[:max_programs]:
+                    if p.goto_link:
+                        all_links.append({
+                            "name": p.name,
+                            "url": p.goto_link,
+                            "description": p._get_category_description(),
+                            "category_name": p.category_name,
+                            "category": p.category,
+                        })
+
+        if not all_links:
             return ""
 
         # Check for article number
@@ -394,32 +535,52 @@ class NastyaPartnerManager:
         lines = [
             f"Партнёрские ссылки для темы: {', '.join(cat_labels)}",
             "Вставь эти ссылки ЕСТЕСТВЕННО в ответ - как личная рекомендация! Не как рекламу!",
+            "Формат ссылок: 🔧 Имя — URL",
         ]
 
-        for p in matches[:max_programs]:
-            if article:
-                link = p.format_link_with_search(article)
+        for link_data in all_links[:max_programs]:
+            name = link_data["name"]
+            url = link_data["url"]
+            desc = link_data.get("description", "")
+            if desc and desc != "рекомендую":
+                lines.append(f"- 🔧 {name} ({desc}) — {url}")
             else:
-                link = p.format_link(with_description=True)
-            if link:
-                lines.append(f"- {link}")
+                lines.append(f"- 🔧 {name} — {url}")
 
-        if not lines:
+        if len(lines) <= 3:
             return ""
 
         lines.append("")
         lines.append("ВАЖНО: Ссылки выше - ПАРТНЁРСКИЕ (goto_link из admitad_ads.json). Используй их КАК ЕСТЬ, ничего не добавляй и не меняй!")
+        lines.append("Формат в ответе: 🔧 Имя — URL. НЕ используй HTML!")
         lines.append("Эти ссылки можно также естественно использовать в постах канала.")
 
         return "\n".join(lines)
 
     def get_auto_parts_links(self, query: str, region: str = DEFAULT_REGION) -> str:
-        """Get auto parts shop links specifically (for BMW-related queries)."""
+        """Get auto parts shop links specifically (for BMW-related queries).
+
+        v4: Now includes ALL auto-related categories (autoparts, tires, tools,
+        insurance, checkauto) and ensures Ася's partners (Росско, Autopiter,
+        AvtoALL) are always included.
+        Format: 🔧 Name — URL
+        """
         self.ensure_loaded()
 
-        parts_programs = self.get_by_category("autoparts", region)
+        # Get programs from ALL auto-related categories
+        auto_cats = ["autoparts", "tires", "tools", "autoinsurance", "checkauto"]
+        parts_programs = self.get_programs_for_categories(auto_cats, region)
+
         if not parts_programs:
             parts_programs = self.find_matching_programs(query, region)
+
+        # Ensure Ася's specific auto partners are always present
+        seen_ids = {p.id for p in parts_programs}
+        for site in self.AUTO_PARTNER_SITES:
+            prog = self._site_map.get(site)
+            if prog and prog.id not in seen_ids and prog.has_region(region):
+                parts_programs.append(prog)
+                seen_ids.add(prog.id)
 
         article_match = re.search(r'\b([A-Z0-9]{4,}[-/]?[A-Z0-9]*)\b', query.upper())
         article = article_match.group(1) if article_match else query.strip()
@@ -427,44 +588,69 @@ class NastyaPartnerManager:
         if not parts_programs:
             return ""
 
-        lines = ["Ссылки на магазины автозапчастей (вставь естественно в ответ с описанием!):"]
-        for p in parts_programs[:4]:
+        lines = ["Ссылки на магазины автозапчастей и автосервисы (вставь естественно в ответ!):"]
+        lines.append("Формат: 🔧 Имя — URL")
+        for p in parts_programs[:5]:
             link = p.format_link_with_search(article)
             if link:
                 lines.append(f"- {link}")
 
         lines.append("Настя водит M3 и знает где покупать запчасти! Упомяни это естественно.")
         lines.append("ВАЖНО: Ссылки - ПАРТНЁРСКИЕ (goto_link из admitad_ads.json). Используй КАК ЕСТЬ!")
+        lines.append("Формат в ответе: 🔧 Имя — URL. НЕ используй HTML!")
         return "\n".join(lines)
+
+    # ── Category cycling state for smart channel posts ──
+    _category_cycle_index: int = 0
+    _partner_post_cycle_categories = ["autoparts", "tires", "coupons", "shopping",
+                                       "autoparts", "tools", "fashion", "electronics",
+                                       "autoparts", "autoinsurance", "checkauto", "travel"]
 
     def get_partner_links_for_post(self, category: str = "", region: str = "RU") -> List[Dict[str, str]]:
         """Get partner links suitable for channel posts.
-        
+
+        v4: Cycles through categories intelligently, includes Ася's auto
+        partners, uses image field directly. goto_link used EXACTLY as-is!
+
         Returns 1-2 links that Настя can naturally include in her posts.
-        These are the same goto_links from admitad_ads.json - ready to use!
         """
         self.ensure_loaded()
         links = []
-        
-        # Get programs matching category or random ones
-        programs = []
-        if category:
-            programs = self.get_by_category(category, region)
+
+        # If no specific category, cycle through categories for variety
+        if not category:
+            category = self._partner_post_cycle_categories[
+                self._category_cycle_index % len(self._partner_post_cycle_categories)
+            ]
+            self._category_cycle_index += 1
+
+        # Get programs matching category
+        programs = self.get_by_category(category, region)
+
+        # For auto-related categories, also ensure Ася's partners are present
+        auto_cats = {"autoparts", "tires", "tools", "autoinsurance", "checkauto"}
+        if category in auto_cats or not programs:
+            seen_ids = {p.id for p in programs}
+            for site in self.AUTO_PARTNER_SITES:
+                prog = self._site_map.get(site)
+                if prog and prog.id not in seen_ids and prog.has_region(region):
+                    programs.append(prog)
+                    seen_ids.add(prog.id)
+
         if not programs:
-            # Get random programs for auto-related posts
-            auto_cats = ["autoparts", "tires", "coupons"]
-            for cat in auto_cats:
+            # Fallback: get programs from all auto categories + coupons
+            auto_cats_list = ["autoparts", "tires", "coupons"]
+            for cat in auto_cats_list:
                 progs = self.get_by_category(cat, region)
                 programs.extend(progs)
-        
+
         if not programs:
             # Just get any programs for the region
             programs = [p for p in self._admitad_programs if p.has_region(region)]
-        
+
         # Pick 1-2 relevant programs
-        import random
         selected = random.sample(programs, min(2, len(programs))) if programs else []
-        
+
         for p in selected:
             desc = p._get_category_description()
             links.append({
@@ -472,8 +658,10 @@ class NastyaPartnerManager:
                 "url": p.goto_link,  # Ready-to-use link from admitad!
                 "description": desc,
                 "category_name": p.category_name,
+                "category": p.category,
+                "image": p.image,  # Include image URL from PartnerProgram!
             })
-        
+
         return links
 
     def get_by_category(self, category: str, region: str = DEFAULT_REGION) -> List[PartnerProgram]:

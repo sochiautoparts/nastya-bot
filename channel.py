@@ -699,6 +699,369 @@ async def post_real_poll_to_channel(bot: Bot, db) -> bool:
         return False
 
 
+# ── Auto-focused partner post templates (Настя drives a BMW M3!) ──
+
+AUTO_PARTNER_POST_TEMPLATES = [
+    "Мои запчасти всегда с {name}! {desc} 👉 {url}",
+    "Для M3 ищу всё на {name} — {desc} 👉 {url}",
+    "{name} — {desc}, проверено на моей тачке! 👉 {url}",
+    "Кто тоже водит — запчасти на {name}! {desc} 👉 {url}",
+    "Ремонт M3? {name} — {desc}. Настя проверила! 👉 {url}",
+]
+
+# ── General partner post templates (lifestyle blogger style) ──
+
+GENERAL_PARTNER_POST_TEMPLATES = [
+    "Кстати, я тут нашла классное — {name}! {desc} Реально удобно! 💅✨\n\n🔧 {name} — {url}",
+    "О, прикинь! {name} — {desc}. Настя рекомендует! 👍✨\n\n🔧 {name} — {url}",
+    "Котятки, делюсь находкой! {name} — {desc}. Кайф! 💋✨\n\n🔧 {name} — {url}",
+    "Настя тут заказывала через {name} — {desc}. Удобно и быстро! 💅🔥\n\n🔧 {name} — {url}",
+    "Блин, как я раньше не знала про {name}! {desc} Точняк пригодится! ✨💅\n\n🔧 {name} — {url}",
+]
+
+
+async def post_partner_to_channel(bot: Bot, db, ai_router=None) -> bool:
+    """Post a partner recommendation to channel in Nastya's natural style.
+
+    v4: Smart category cycling, auto-focused templates for BMW M3 owner,
+    uses partner image from PartnerProgram.image field directly,
+    goto_link used EXACTLY as-is, format: 🔧 Name — URL.
+    Returns True if posted successfully.
+    """
+    if not CHANNEL_ID:
+        return False
+
+    try:
+        from bot.partners import nastya_partner_manager
+
+        # Get 1-2 partner links suitable for a channel post
+        # v4: Smart category cycling is now handled inside get_partner_links_for_post
+        partner_links = nastya_partner_manager.get_partner_links_for_post(category="", region="RU")
+        if not partner_links:
+            logger.debug("No partner links available for channel post")
+            return False
+
+        # Pick one partner to feature
+        partner = partner_links[0]
+        partner_name = partner.get("name", "")
+        partner_url = partner.get("url", "")
+        partner_desc = partner.get("description", "")
+        partner_cat = partner.get("category_name", "")
+        partner_category = partner.get("category", "")
+        partner_image_url = partner.get("image", "")  # v4: image from PartnerProgram!
+
+        if not partner_url:
+            return False
+
+        # Choose template based on category
+        # Auto-related categories get auto-focused templates (Настя drives BMW M3!)
+        auto_cats = {"autoparts", "tires", "tools", "autoinsurance", "checkauto"}
+        if partner_category in auto_cats:
+            post_text = random.choice(AUTO_PARTNER_POST_TEMPLATES).format(
+                name=partner_name,
+                desc=partner_desc if partner_desc else "всё для авто",
+                url=partner_url,
+            )
+        else:
+            post_text = random.choice(GENERAL_PARTNER_POST_TEMPLATES).format(
+                name=partner_name,
+                desc=partner_desc if partner_desc else "крутая штука",
+                url=partner_url,
+            )
+
+        # If there's a second partner link, add it naturally with 🔧 format
+        if len(partner_links) > 1:
+            p2 = partner_links[1]
+            if p2.get("url"):
+                p2_name = p2['name']
+                p2_desc = p2.get('description', 'рекомендую')
+                p2_url = p2['url']
+                post_text += f"\n\nА ещё 🔧 {p2_name} ({p2_desc}) — {p2_url}"
+
+        # Channel signature
+        post_text += f"\n\n@chasnastya"
+
+        # Dedup check
+        if _is_recent_post(post_text):
+            logger.debug("Skipping duplicate partner post")
+            return False
+
+        # Safety validation
+        if not _validate_post_text(post_text):
+            logger.warning("Partner post validation failed")
+            return False
+
+        # Try to send partner image if available
+        # v4: Use image URL directly from partner data, not search by category
+        image_sent = False
+        if partner_image_url:
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                    img_resp = await client.get(partner_image_url)
+                    if img_resp.status_code == 200 and len(img_resp.content) > 500:
+                        from io import BytesIO
+                        buf = BytesIO(img_resp.content)
+                        buf.seek(0)
+
+                        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(
+                                text="💬 Написать Насте",
+                                url=f"https://t.me/{BOT_USERNAME}?start=chat",
+                            )],
+                        ])
+                        await bot.send_photo(
+                            chat_id=CHANNEL_ID,
+                            photo=buf,
+                            caption=post_text,
+                            reply_markup=keyboard,
+                        )
+                        image_sent = True
+            except Exception as img_err:
+                logger.debug(f"Partner image download failed: {img_err}")
+                # v4: Don't skip the post - continue without image
+
+        # If no image was sent, send as text message
+        if not image_sent:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="💬 Написать Насте",
+                    url=f"https://t.me/{BOT_USERNAME}?start=chat",
+                )],
+            ])
+            await bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=post_text,
+                reply_markup=keyboard,
+                disable_web_page_preview=True,
+            )
+
+        # Track in DB
+        await db.add_channel_post(
+            news_id=0,
+            post_text=post_text,
+            post_type="partner",
+        )
+        _track_post(post_text)
+
+        logger.info(f"Channel partner post: {partner_name} ({partner_desc}), auto={'yes' if partner_category in auto_cats else 'no'}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Channel partner post error: {e}")
+        return False
+
+
+# ── Partner post daily tracker ──
+_partner_posts_today: int = 0
+_partner_posts_date: str = ""
+_MAX_PARTNER_POSTS_PER_DAY = 3  # 2-3 partner posts per day
+
+
+async def post_partner_to_channel_capped(bot: Bot, db, ai_router=None) -> bool:
+    """Post partner content to channel, respecting the daily cap (3 per day)."""
+    global _partner_posts_today, _partner_posts_date
+
+    import datetime
+    from zoneinfo import ZoneInfo
+    today = datetime.datetime.now(ZoneInfo("Europe/Moscow")).strftime("%Y-%m-%d")
+
+    # Reset counter on a new day
+    if today != _partner_posts_date:
+        _partner_posts_today = 0
+        _partner_posts_date = today
+
+    if _partner_posts_today >= _MAX_PARTNER_POSTS_PER_DAY:
+        logger.debug("Daily partner post cap reached")
+        return False
+
+    posted = await post_partner_to_channel(bot, db, ai_router)
+    if posted:
+        _partner_posts_today += 1
+
+    return posted
+
+
+async def post_interbot_news(bot: Bot, db, ai_router=None) -> bool:
+    """Read Ася's approved news candidates, create a Настя-style post, and publish.
+
+    Настя reviews Ася's approved news and creates her own version for @chasnastya.
+    Includes relevant partner links formatted as 🔧 Name — URL.
+    """
+    if not CHANNEL_ID:
+        return False
+
+    try:
+        from bot.interbot import interbot_manager
+
+        # Get Ася's pending reviews that have been approved by Настя
+        await interbot_manager.maybe_refresh()
+
+        # Look at Ася's pending_reviews (news candidates FROM asya)
+        pending = interbot_manager._other_state.get("pending_reviews", [])
+        if not pending:
+            return False
+
+        # Get our own reviews to see what we've already posted about
+        our_reviews = {r["candidate_id"] for r in interbot_manager._own_state.get("reviews", [])}
+        already_posted_ids = set()
+
+        # Find an approved candidate that we haven't yet posted about
+        candidate = None
+        for p in pending:
+            cid = p.get("id", "")
+            # Check if we approved this one
+            review = None
+            for r in interbot_manager._own_state.get("reviews", []):
+                if r.get("candidate_id") == cid and r.get("verdict") in ("approved", "improved"):
+                    review = r
+                    break
+
+            if review and cid not in already_posted_ids:
+                candidate = p
+                break
+
+        if not candidate:
+            return False
+
+        title = candidate.get("title", "")
+        summary = candidate.get("summary", "")
+        category = candidate.get("category", "general")
+
+        if not title:
+            return False
+
+        # Dedup check
+        if _is_recent_post(title):
+            return False
+
+        # Generate Настя-style post using AI
+        ai_comment = ""
+        if ai_router:
+            try:
+                prompt_parts = [f"Новость от Аси (автоканал @sochiautoparts): {title}"]
+                if summary:
+                    import re as _re_ib
+                    clean_summary = _re_ib.sub(r'<[^>]+>', '', summary).strip()[:500]
+                    prompt_parts.append(f"Краткое содержание: {clean_summary}")
+                prompt_parts.append(f"Категория: {category}")
+
+                prompt = "\n".join(prompt_parts)
+
+                # Get partner links relevant to this topic
+                partner_context = ""
+                try:
+                    from bot.partners import nastya_partner_manager
+                    partner_context = nastya_partner_manager.generate_partner_context(
+                        f"{title} {summary}", max_programs=3
+                    )
+                except Exception:
+                    pass
+
+                result = await ai_router.chat(
+                    prompt=prompt,
+                    system_prompt=(
+                        "Ты Настя - москвичка, 23 года, блогер, ведёшь канал @chasnastya. "
+                        "Ася (автобот) нашла новость, и ты хочешь рассказать об этом своим подписчикам. "
+                        "Напиши пост ОТ СЕБЯ - от первого лица, как живой человек. "
+                        "Пиши 'я думаю', 'мне кажется', 'я прочитала'. "
+                        "4-6 предложений, живо и эмоционально, со своим мнением. "
+                        "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
+                        "Без markdown, без буллетов. "
+                        "НЕ добавляй ссылки на источник - ты пишешь от себя. "
+                        "НЕ пиши 'Настя' в начале - говори от первого лица. "
+                        f"{partner_context}"
+                    ),
+                    max_tokens=300,
+                    priority="low",
+                )
+                if result and result.text:
+                    import re as _re_ib2
+                    ai_comment = result.text.strip()
+                    ai_comment = _re_ib2.sub(r'<[^>]+>', '', ai_comment)
+                    for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
+                        if ai_comment.startswith(prefix):
+                            ai_comment = ai_comment[len(prefix):].strip()
+                    if len(ai_comment) > 600:
+                        ai_comment = ai_comment[:597] + "..."
+            except Exception as e:
+                logger.error(f"Interbot news AI error: {e}")
+
+        if not ai_comment:
+            return False
+
+        # Build the post
+        post_text = ai_comment
+        post_text += f"\n\n📖 {title}"
+
+        if summary:
+            import re as _re_ib3
+            short_summary = _re_ib3.sub(r'<[^>]+>', '', summary).strip()[:200]
+            if short_summary:
+                post_text += f"\n💡 {short_summary}"
+
+        # Add relevant partner links in 🔧 format
+        try:
+            from bot.partners import nastya_partner_manager
+            all_links = nastya_partner_manager.get_all_relevant_links(
+                f"{title} {summary}", max_programs=2
+            )
+            if all_links:
+                post_text += "\n"
+                for link_data in all_links[:2]:
+                    post_text += f"\n🔧 {link_data['name']} — {link_data['url']}"
+        except Exception:
+            pass
+
+        # Category emoji + hashtag
+        cat_emojis = {
+            "auto": "🚗", "general": "📰", "tech": "💻", "gaming": "🎮",
+            "internet": "🌐", "entertainment": "🎬", "world": "🌍", "science": "🔬",
+            "food": "🍳", "events": "🎉", "lifestyle": "💅", "sports": "⚽",
+        }
+        cat_emoji = cat_emojis.get(category, "📰")
+        post_text += f"\n{cat_emoji} #{category.capitalize()}"
+
+        # Channel signature
+        post_text += f"\n\n@chasnastya"
+
+        # Validate
+        if not _validate_post_text(post_text):
+            return False
+
+        if _is_recent_post(post_text):
+            return False
+
+        # Post to channel
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="💬 Обсудить с Настей",
+                url=f"https://t.me/{BOT_USERNAME}?start=chat",
+            )],
+        ])
+
+        await bot.send_message(
+            chat_id=CHANNEL_ID,
+            text=post_text,
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
+        )
+
+        await db.add_channel_post(
+            news_id=0,
+            post_text=post_text,
+            post_type="interbot_news",
+        )
+        _track_post(post_text)
+
+        logger.info(f"Channel interbot news post: {title[:50]}...")
+        return True
+
+    except Exception as e:
+        logger.error(f"Channel interbot news post error: {e}")
+        return False
+
+
 async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> bool:
     """Post an AI-generated substantive news commentary to channel.
 
@@ -1058,6 +1421,24 @@ async def run_channel_cycle(bot: Bot, db, ai_router=None) -> int:
                 logger.info(f"Channel knowledge quiz: {question[:50]}...")
         except Exception as e:
             logger.error(f"Channel knowledge quiz error: {e}")
+
+    # Partner posts (20% chance - 2-3 per day for better monetization)
+    if posted < max_posts and random.random() < 0.20:
+        try:
+            if await post_partner_to_channel_capped(bot, db, ai_router):
+                posted += 1
+                logger.info("Posted partner recommendation to channel")
+        except Exception as e:
+            logger.error(f"Channel partner post cycle error: {e}")
+
+    # Interbot news (10% chance - publish Ася's approved news in Настя's style)
+    if posted < max_posts and random.random() < 0.10:
+        try:
+            if await post_interbot_news(bot, db, ai_router):
+                posted += 1
+                logger.info("Posted interbot news to channel")
+        except Exception as e:
+            logger.error(f"Channel interbot news cycle error: {e}")
 
     # Promo posts (3% chance - rare, not spammy)
     if posted < max_posts and random.random() < 0.03:
