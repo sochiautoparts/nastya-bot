@@ -670,9 +670,19 @@ class NastyaPartnerManager:
         return [p for p in self._admitad_programs if p.has_category(category) and p.has_region(region)]
 
     def get_by_site(self, site_url: str) -> Optional[PartnerProgram]:
-        """Find a partner program by its site URL."""
+        """Find a partner program by its site URL or domain."""
         self.ensure_loaded()
+        if not site_url:
+            return None
+        
+        # Try parsing as URL first
         domain = urlparse(site_url).netloc.replace("www.", "") if site_url else ""
+        
+        # If urlparse didn't extract a netloc (bare domain like "rossko.ru"),
+        # treat the input itself as the domain
+        if not domain and site_url:
+            domain = site_url.replace("www.", "").rstrip("/")
+        
         return self._site_map.get(domain)
 
 

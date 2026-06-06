@@ -733,6 +733,8 @@ async def cmd_find(message: Message, db=None, ai_router=None) -> None:
         return
 
     response = format_product_results(results, query)
+    # CRITICAL: Replace plain partner URLs with affiliate goto_link
+    response = _replace_plain_urls_with_affiliate(response)
     await message.answer(response)
 
     if db:
@@ -1330,6 +1332,8 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
             if response_text:
                 cleaned = _clean_response(response_text)
                 if cleaned:
+                    # CRITICAL: Replace any plain partner URLs with affiliate goto_link
+                    cleaned = _replace_plain_urls_with_affiliate(cleaned)
                     # Save to DB
                     try:
                         await db.add_message(user_id, "assistant", cleaned)
@@ -1349,6 +1353,8 @@ async def handle_photo(message: Message, db=None, ai_router=None) -> None:
                                 product_results = await search_products(search_query, num_results=3)
                                 if product_results:
                                     product_text = format_product_results(product_results, search_query)
+                                    # CRITICAL: Replace plain partner URLs with affiliate goto_link
+                                    product_text = _replace_plain_urls_with_affiliate(product_text)
                                     await message.answer(f"🔍 Настя нашла по фото:\n\n{product_text}")
                         except Exception as e:
                             logger.error(f"Photo product search error: {e}")
@@ -2016,6 +2022,9 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     if search_results:
         response_text = _remove_hallucinated_urls(response_text, search_result_urls, is_product_search=is_product_search)
 
+    # CRITICAL: Replace any plain partner URLs with affiliate goto_link equivalents
+    response_text = _replace_plain_urls_with_affiliate(response_text)
+
     # Add search result link if no URLs remain after cleanup
     if search_results and not re.search(r'https?://\S+', response_text):
         # Append ALL search result URLs when AI didn't include any
@@ -2305,6 +2314,97 @@ def _remove_hallucinated_urls(text: str, search_result_urls: set, is_product_sea
         text = re.sub(r'\n{3,}', '\n\n', text)
 
     return text.strip()
+
+
+# Known partner domains that MUST use affiliate links, not plain URLs
+_NASTYA_PARTNER_DOMAINS_MAP = {
+    "rossko.ru": "Росско",
+    "autopiter.ru": "Autopiter",
+    "autopiter.kz": "Autopiter KZ",
+    "avtoall.ru": "AvtoALL",
+    "exist.ru": "Exist",
+    "emex.ru": "Emex",
+    "autodoc.ru": "Autodoc",
+    "zzap.ru": "Zzap",
+    "aliexpress.ru": "AliExpress",
+    "avtocod.ru": "Avtocod",
+    "petrolplus.ru": "PetrolPlus",
+    "bs-tyres.ru": "BS-Tyres",
+    "euro-diski.ru": "Euro-diski",
+    "koleso.ru": "Колесо",
+    "hyperauto.ru": "Hyperauto",
+    "mirdvornikov.ru": "МирДворников",
+    "globaldrive.ru": "Globaldrive",
+    "lukoil-shop.com": "Лукойл",
+    "ozon.ru": "Ozon",
+    "wildberries.ru": "Wildberries",
+    "aliexpress.com": "AliExpress",
+    "raketa.fashion": "RAKETA",
+}
+
+
+def _replace_plain_urls_with_affiliate(text: str) -> str:
+    """Replace any plain partner domain URLs with affiliate goto_link equivalents.
+    
+    When the AI generates responses containing plain URLs like rossko.ru or 
+    autopiter.ru instead of the affiliate tracking links from admitad_ads.json,
+    this function detects them and replaces with the proper goto_link.
+    
+    This handles cases where:
+    - AI ignores the system prompt and invents plain URLs
+    - AI uses domain names without the affiliate wrapper
+    - Web search returns plain URLs that should be affiliate links
+    """
+    try:
+        nastya_partner_manager.ensure_loaded()
+    except Exception:
+        return text
+    
+    for domain, display_name in _NASTYA_PARTNER_DOMAINS_MAP.items():
+        prog = nastya_partner_manager.get_by_site(domain)
+        if not prog or not prog.goto_link:
+            continue
+        
+        affiliate_url = prog.goto_link
+        
+        # Pattern 1: Full URLs with paths — https://rossko.ru/search?text=abc
+        pattern = rf'https?://{re.escape(domain)}[^\s<>)\]"\']*'
+        matches = re.findall(pattern, text)
+        for plain_url in matches:
+            # Try to extract search query and build affiliate link with search
+            search_query = ""
+            if "search" in plain_url or "querystr" in plain_url or "q=" in plain_url:
+                try:
+                    from urllib.parse import urlparse, parse_qs
+                    parsed = urlparse(plain_url)
+                    params = parse_qs(parsed.query)
+                    for key in ("text", "querystr", "q", "query", "SearchText", "keyword", "p"):
+                        if key in params:
+                            search_query = params[key][0]
+                            break
+                except Exception:
+                    pass
+            
+            if search_query:
+                replacement = prog.get_search_url(search_query)
+            else:
+                replacement = affiliate_url
+            
+            text = text.replace(plain_url, replacement)
+        
+        # Pattern 2: Bare domain mentions — rossko.ru (not already part of a longer URL)
+        bare_pattern = rf'(?<![/\w.-])(?:www\.)?{re.escape(domain)}(?![/\w.-])'
+        bare_matches = re.findall(bare_pattern, text)
+        for bare_domain in bare_matches:
+            # Check this isn't already inside an affiliate URL
+            idx = text.find(bare_domain)
+            if idx > 0:
+                before = text[max(0, idx-50):idx]
+                if any(tracking_domain in before for tracking_domain in ["ad.admitad.com", ".com/g/", "xmknb.com", "ujhjj.com", "rcpsj.com", "sgkaa.com"]):
+                    continue
+            text = text.replace(bare_domain, affiliate_url, 1)
+    
+    return text
 
 
 def _clean_response(text: str) -> str:
