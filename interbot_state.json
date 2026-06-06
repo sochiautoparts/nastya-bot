@@ -1,7 +1,7 @@
 {
   "bot": "nastya",
   "version": "1.0",
-  "last_updated": "2026-06-06T03:12:36Z",
+  "last_updated": "2026-06-06T03:14:40Z",
   "pending_reviews": [],
   "reviews": [
     {
@@ -77,13 +77,13 @@
       "timestamp": 1780713483.712549
     },
     {
-      "id": "rev_1780715556_c_1780715348_7964be",
+      "id": "rev_1780715680_c_1780715348_7964be",
       "candidate_id": "c_1780715348_7964be",
       "reviewer": "nastya",
       "verdict": "rejected",
-      "comment": "Новость не относится к автомобилям или автопрому: речь про МКС и эвакуацию астронавтов. Для автоканала @sochiautoparts не подходит.",
-      "improved_text": "",
-      "timestamp": 1780715556.068188
+      "comment": "Новость не относится к автомобильной тематике и включает в себя космическую тему, что не соответствует направлению канала @sochiautoparts",
+      "improved_text": null,
+      "timestamp": 1780715680.9635909
     }
   ],
   "shared_chats": {},
