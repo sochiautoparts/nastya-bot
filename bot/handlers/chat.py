@@ -914,37 +914,61 @@ async def cmd_numerology(message: Message, db=None, ai_router=None) -> None:
         parse_birth_date, calculate_life_path_number, calculate_karmic_debts,
         calculate_pinnacle_numbers, calculate_challenge_numbers,
         LIFE_PATH_MEANINGS, KARMIC_DEBTS, NUMEROLOGY_SYSTEM_PROMPT,
+        build_numerology_context,
     )
 
     query = message.text.replace("/numerology", "").strip()
+
+    # Initialize birth data
+    day = month = year = None
+
     if not query:
-        await message.answer(
-            "🔢 Профессиональная нумерология от Насти!\n\n"
-            "Полный разбор по дате рождения:\n"
-            "- Число Жизненного Пути\n"
-            "- Кармические долги (13, 14, 16, 19)\n"
-            "- Пиковые числа (4 периода)\n"
-            "- Числа вызова (4 урока)\n\n"
-            "Пример: /numerology 15.06.2001\n\n"
-            "Совместимость: /numerology совм 15.06.2001 22.11.1998"
-        )
-        return
+        # Check if we have stored birth data
+        if db:
+            try:
+                stored = await db.get_user_birth_data(message.from_user.id)
+                if stored and stored.get("birth_day"):
+                    day, month, year = stored["birth_day"], stored["birth_month"], stored["birth_year"]
+            except Exception:
+                pass
+        if not day:
+            await message.answer(
+                "🔢 Профессиональная нумерология от Насти!\n\n"
+                "Полный разбор по дате рождения:\n"
+                "- Число Жизненного Пути\n"
+                "- Кармические долги (13, 14, 16, 19)\n"
+                "- Пиковые числа (4 периода)\n"
+                "- Числа вызова (4 урока)\n\n"
+                "Пример: /numerology 15.06.2001\n\n"
+                "Совместимость: /numerology совм 15.06.2001 22.11.1998"
+            )
+            return
+    else:
+        # Check if compatibility mode
+        if query.lower().startswith("совм"):
+            await _handle_numerology_compatibility(message, query, db, ai_router)
+            return
 
-    # Check if compatibility mode
-    if query.lower().startswith("совм"):
-        await _handle_numerology_compatibility(message, query, db, ai_router)
-        return
+        birth_date = parse_birth_date(query)
+        if not birth_date:
+            # Check stored birth data as fallback
+            if db:
+                try:
+                    stored = await db.get_user_birth_data(message.from_user.id)
+                    if stored and stored.get("birth_day"):
+                        day, month, year = stored["birth_day"], stored["birth_month"], stored["birth_year"]
+                except Exception:
+                    pass
+            if not day:
+                await message.answer(
+                    "Ой, Настя не разобралась с датой! 😅\n\n"
+                    "Напиши в формате: DD.MM.YYYY\n"
+                    "Пример: /numerology 15.06.2001"
+                )
+                return
+        else:
+            day, month, year = birth_date
 
-    birth_date = parse_birth_date(query)
-    if not birth_date:
-        await message.answer(
-            "Ой, Настя не разобралась с датой! 😅\n\n"
-            "Напиши в формате: DD.MM.YYYY\n"
-            "Пример: /numerology 15.06.2001"
-        )
-        return
-
-    day, month, year = birth_date
     if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2020):
         await message.answer("Капец, дата какая-то странная... Проверь и попробуй снова! 🤔")
         return
@@ -996,10 +1020,11 @@ async def cmd_numerology(message: Message, db=None, ai_router=None) -> None:
             c = challenges[key]
             prompt_parts.append(f"- Урок {c['number']}: {c['lesson']}")
 
+        numerology_context = build_numerology_context(day, month, year)
         result = await ai_router.chat(
-            prompt=f"Составь профессиональный нумерологический разбор.\n\n" + "\n".join(prompt_parts),
+            prompt=f"Составь профессиональный нумерологический разбор.\n\n" + "\n".join(prompt_parts) + f"\n\n{numerology_context}",
             system_prompt=NUMEROLOGY_SYSTEM_PROMPT,
-            max_tokens=2000,
+            max_tokens=3000,
         )
 
         if result and result.text:
@@ -1066,7 +1091,7 @@ async def _handle_numerology_compatibility(message, query, db, ai_router) -> Non
                 f"Дай советы как улучшить отношения."
             ),
             system_prompt=NUMEROLOGY_SYSTEM_PROMPT,
-            max_tokens=1500,
+            max_tokens=3000,
         )
 
         if result and result.text:
@@ -1388,32 +1413,53 @@ _consultation_state: dict = {}  # user_id -> {"type": "matrix"|"astro"|"humandes
 @router.message(Command("matrix"))
 async def cmd_matrix(message: Message, db=None, ai_router=None) -> None:
     """Professional Matrix of Destiny consultation."""
-    from bot.consultations import parse_birth_date, calculate_matrix_of_destiny, get_matrix_prompt_params, MATRIX_SYSTEM_PROMPT
+    from bot.consultations import parse_birth_date, calculate_matrix_of_destiny, get_matrix_prompt_params, MATRIX_SYSTEM_PROMPT, build_numerology_context
 
     query = message.text.replace("/matrix", "").strip()
 
+    # Initialize birth data
+    day = month = year = None
+
     if not query:
-        await message.answer(
-            "🔮 Матрица Судьбы — это профессиональный разбор по дате рождения!\n\n"
-            "Напиши дату рождения, и Настя составит полный разбор:\n"
-            "- Личность и предназначение\n"
-            "- Карма прошлых жизней\n"
-            "- Любовь, финансы, таланты\n"
-            "- Мужская и женская линии\n\n"
-            "Пример: /matrix 15.06.2001"
-        )
-        return
-
-    birth_date = parse_birth_date(query)
-    if not birth_date:
-        await message.answer(
-            "Ой, Настя не разобралась с датой! 😅\n\n"
-            "Напиши в формате: DD.MM.YYYY\n"
-            "Пример: /matrix 15.06.2001"
-        )
-        return
-
-    day, month, year = birth_date
+        # Check if we have stored birth data
+        if db:
+            try:
+                stored = await db.get_user_birth_data(message.from_user.id)
+                if stored and stored.get("birth_day"):
+                    day, month, year = stored["birth_day"], stored["birth_month"], stored["birth_year"]
+            except Exception:
+                pass
+        if not day:
+            await message.answer(
+                "🔮 Матрица Судьбы — это профессиональный разбор по дате рождения!\n\n"
+                "Напиши дату рождения, и Настя составит полный разбор:\n"
+                "- Личность и предназначение\n"
+                "- Карма прошлых жизней\n"
+                "- Любовь, финансы, таланты\n"
+                "- Мужская и женская линии\n\n"
+                "Пример: /matrix 15.06.2001"
+            )
+            return
+    else:
+        birth_date = parse_birth_date(query)
+        if not birth_date:
+            # Check stored birth data as fallback
+            if db:
+                try:
+                    stored = await db.get_user_birth_data(message.from_user.id)
+                    if stored and stored.get("birth_day"):
+                        day, month, year = stored["birth_day"], stored["birth_month"], stored["birth_year"]
+                except Exception:
+                    pass
+            if not day:
+                await message.answer(
+                    "Ой, Настя не разобралась с датой! 😅\n\n"
+                    "Напиши в формате: DD.MM.YYYY\n"
+                    "Пример: /matrix 15.06.2001"
+                )
+                return
+        else:
+            day, month, year = birth_date
 
     if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2020):
         await message.answer("Капец, дата какая-то странная... Проверь и попробуй снова! 🤔")
@@ -1440,10 +1486,11 @@ async def cmd_matrix(message: Message, db=None, ai_router=None) -> None:
         matrix = calculate_matrix_of_destiny(day, month, year)
         prompt_data = get_matrix_prompt_params(matrix)
 
+        numerology_context = build_numerology_context(day, month, year)
         result = await ai_router.chat(
-            prompt=f"Составь профессиональный разбор Матрицы Судьбы. Вот расчёт:\n\n{prompt_data}",
+            prompt=f"Составь профессиональный разбор Матрицы Судьбы.\n\n{prompt_data}\n\n{numerology_context}",
             system_prompt=MATRIX_SYSTEM_PROMPT,
-            max_tokens=2000,
+            max_tokens=3000,
         )
 
         if result and result.text:
@@ -1466,57 +1513,84 @@ async def cmd_astro(message: Message, db=None, ai_router=None) -> None:
     """Professional astrology consultation."""
     from bot.consultations import (
         parse_birth_date, get_zodiac_sign, ZODIAC_DETAILS, ASTRO_SYSTEM_PROMPT_V3,
-        calculate_life_path_number, SOLAR_RETURN_INFO,
+        calculate_life_path_number, SOLAR_RETURN_INFO, build_astrology_context,
     )
 
     query = message.text.replace("/astro", "").strip()
 
-    if not query:
-        await message.answer(
-            "⭐ Профессиональный астрологический разбор!\n\n"
-            "Напиши дату рождения, и Настя составит натальную карту:\n"
-            "- Солнце, Луна, Асцендент\n"
-            "- Планеты в знаках и домах\n"
-            "- Ключевые аспекты\n"
-            "- Текущие транзиты\n"
-            "- Солярное возвращение (тема года)\n"
-            "- Прогноз на 6-12 месяцев\n\n"
-            "Пример: /astro 15.06.2001\n"
-            "С временем точнее: /astro 15.06.2001 14:30 Москва"
-        )
-        return
-
-    # Try to extract time and place too
+    # Initialize birth data
+    day = month = year = None
     birth_time = ""
     birth_place = ""
-    date_part = query
 
-    # Extract time (HH:MM pattern)
-    time_match = re.search(r'(\d{1,2}[:.]\d{2})', query)
-    if time_match:
-        birth_time = time_match.group(1).replace(".", ":")
-        date_part = date_part.replace(time_match.group(0), "").strip()
+    if not query:
+        # Check if we have stored birth data
+        if db:
+            try:
+                stored = await db.get_user_birth_data(message.from_user.id)
+                if stored and stored.get("birth_day"):
+                    day, month, year = stored["birth_day"], stored["birth_month"], stored["birth_year"]
+                    birth_time = stored.get("birth_time", "")
+                    birth_place = stored.get("birth_place", "")
+            except Exception:
+                pass
+        if not day:
+            await message.answer(
+                "⭐ Профессиональный астрологический разбор!\n\n"
+                "Напиши дату рождения, и Настя составит натальную карту:\n"
+                "- Солнце, Луна, Асцендент\n"
+                "- Планеты в знаках и домах\n"
+                "- Ключевые аспекты\n"
+                "- Текущие транзиты\n"
+                "- Солярное возвращение (тема года)\n"
+                "- Прогноз на 6-12 месяцев\n\n"
+                "Пример: /astro 15.06.2001\n"
+                "С временем точнее: /astro 15.06.2001 14:30 Москва"
+            )
+            return
+    else:
+        # Try to extract time and place too
+        date_part = query
 
-    # Extract place (everything after date that's not time)
-    parts = date_part.split()
-    if len(parts) > 1:
-        # First part is likely the date
-        potential_place = " ".join(parts[1:])
-        if not potential_place.replace(".", "").replace("/", "").replace("-", "").replace(" ", "").isdigit():
-            birth_place = potential_place
-            date_part = parts[0]
+        # Extract time (HH:MM pattern)
+        time_match = re.search(r'(\d{1,2}[:.]\d{2})', query)
+        if time_match:
+            birth_time = time_match.group(1).replace(".", ":")
+            date_part = date_part.replace(time_match.group(0), "").strip()
 
-    birth_date = parse_birth_date(date_part)
-    if not birth_date:
-        await message.answer(
-            "Ой, Настя не разобралась с датой! 😅\n\n"
-            "Напиши в формате: DD.MM.YYYY\n"
-            "Пример: /astro 15.06.2001\n"
-            "С временем: /astro 15.06.2001 14:30 Москва"
-        )
-        return
+        # Extract place (everything after date that's not time)
+        parts = date_part.split()
+        if len(parts) > 1:
+            # First part is likely the date
+            potential_place = " ".join(parts[1:])
+            if not potential_place.replace(".", "").replace("/", "").replace("-", "").replace(" ", "").isdigit():
+                birth_place = potential_place
+                date_part = parts[0]
 
-    day, month, year = birth_date
+        birth_date = parse_birth_date(date_part)
+        if not birth_date:
+            # Check stored birth data as fallback
+            if db:
+                try:
+                    stored = await db.get_user_birth_data(message.from_user.id)
+                    if stored and stored.get("birth_day"):
+                        day, month, year = stored["birth_day"], stored["birth_month"], stored["birth_year"]
+                        if not birth_time:
+                            birth_time = stored.get("birth_time", "")
+                        if not birth_place:
+                            birth_place = stored.get("birth_place", "")
+                except Exception:
+                    pass
+            if not day:
+                await message.answer(
+                    "Ой, Настя не разобралась с датой! 😅\n\n"
+                    "Напиши в формате: DD.MM.YYYY\n"
+                    "Пример: /astro 15.06.2001\n"
+                    "С временем: /astro 15.06.2001 14:30 Москва"
+                )
+                return
+        else:
+            day, month, year = birth_date
 
     # Save birth data so Nastya remembers
     if db:
@@ -1577,10 +1651,11 @@ async def cmd_astro(message: Message, db=None, ai_router=None) -> None:
                 "Укажи что для полного разбора с Асцендентом и домами нужно время и место рождения."
             )
 
+        astro_context = build_astrology_context(day, month, year, birth_time, birth_place)
         result = await ai_router.chat(
-            prompt=f"Составь профессиональный астрологический разбор.\n\n" + "\n".join(prompt_parts),
+            prompt=f"Составь профессиональный астрологический разбор.\n\n" + "\n".join(prompt_parts) + f"\n\n{astro_context}",
             system_prompt=ASTRO_SYSTEM_PROMPT_V3,
-            max_tokens=2000,
+            max_tokens=3000,
         )
 
         if result and result.text:
@@ -1608,53 +1683,80 @@ async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
     """Professional Human Design consultation."""
     from bot.consultations import (
         parse_birth_date, HD_TYPES, HD_AUTHORITIES, HD_PROFILES, HD_CENTERS,
-        HD_CHANNELS, HD_GATES, HD_VARIABLES, HD_SYSTEM_PROMPT_V3,
+        HD_SYSTEM_PROMPT_V3, build_humandesign_context,
     )
 
     query = message.text.replace("/humandesign", "").strip()
 
-    if not query:
-        await message.answer(
-            "🧬 Дизайн Человека — твоя энергетическая карта!\n\n"
-            "Напиши дату рождения, и Настя составит разбор:\n"
-            "- Тип и Стратегия\n"
-            "- Авторитет\n"
-            "- Профиль\n"
-            "- Центры (определённые и открытые)\n"
-            "- Каналы и Ворота\n"
-            "- Переменные (Детерминация, Среда, Перспектива)\n\n"
-            "Пример: /humandesign 15.06.2001\n"
-            "С временем точнее: /humandesign 15.06.2001 14:30 Москва"
-        )
-        return
-
-    # Extract time and place
+    # Initialize birth data
+    day = month = year = None
     birth_time = ""
     birth_place = ""
-    date_part = query
 
-    time_match = re.search(r'(\d{1,2}[:.]\d{2})', query)
-    if time_match:
-        birth_time = time_match.group(1).replace(".", ":")
-        date_part = date_part.replace(time_match.group(0), "").strip()
+    if not query:
+        # Check if we have stored birth data
+        if db:
+            try:
+                stored = await db.get_user_birth_data(message.from_user.id)
+                if stored and stored.get("birth_day"):
+                    day, month, year = stored["birth_day"], stored["birth_month"], stored["birth_year"]
+                    birth_time = stored.get("birth_time", "")
+                    birth_place = stored.get("birth_place", "")
+            except Exception:
+                pass
+        if not day:
+            await message.answer(
+                "🧬 Дизайн Человека — твоя энергетическая карта!\n\n"
+                "Напиши дату рождения, и Настя составит разбор:\n"
+                "- Тип и Стратегия\n"
+                "- Авторитет\n"
+                "- Профиль\n"
+                "- Центры (определённые и открытые)\n"
+                "- Каналы и Ворота\n"
+                "- Переменные (Детерминация, Среда, Перспектива)\n\n"
+                "Пример: /humandesign 15.06.2001\n"
+                "С временем точнее: /humandesign 15.06.2001 14:30 Москва"
+            )
+            return
+    else:
+        # Extract time and place
+        date_part = query
 
-    parts = date_part.split()
-    if len(parts) > 1:
-        potential_place = " ".join(parts[1:])
-        if not potential_place.replace(".", "").replace("/", "").replace("-", "").replace(" ", "").isdigit():
-            birth_place = potential_place
-            date_part = parts[0]
+        time_match = re.search(r'(\d{1,2}[:.]\d{2})', query)
+        if time_match:
+            birth_time = time_match.group(1).replace(".", ":")
+            date_part = date_part.replace(time_match.group(0), "").strip()
 
-    birth_date = parse_birth_date(date_part)
-    if not birth_date:
-        await message.answer(
-            "Ой, Настя не разобралась с датой! 😅\n\n"
-            "Напиши в формате: DD.MM.YYYY\n"
-            "Пример: /humandesign 15.06.2001"
-        )
-        return
+        parts = date_part.split()
+        if len(parts) > 1:
+            potential_place = " ".join(parts[1:])
+            if not potential_place.replace(".", "").replace("/", "").replace("-", "").replace(" ", "").isdigit():
+                birth_place = potential_place
+                date_part = parts[0]
 
-    day, month, year = birth_date
+        birth_date = parse_birth_date(date_part)
+        if not birth_date:
+            # Check stored birth data as fallback
+            if db:
+                try:
+                    stored = await db.get_user_birth_data(message.from_user.id)
+                    if stored and stored.get("birth_day"):
+                        day, month, year = stored["birth_day"], stored["birth_month"], stored["birth_year"]
+                        if not birth_time:
+                            birth_time = stored.get("birth_time", "")
+                        if not birth_place:
+                            birth_place = stored.get("birth_place", "")
+                except Exception:
+                    pass
+            if not day:
+                await message.answer(
+                    "Ой, Настя не разобралась с датой! 😅\n\n"
+                    "Напиши в формате: DD.MM.YYYY\n"
+                    "Пример: /humandesign 15.06.2001"
+                )
+                return
+        else:
+            day, month, year = birth_date
 
     # Save birth data so Nastya remembers
     if db:
@@ -1676,23 +1778,7 @@ async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
     await message.answer("Настя составляет твой Дизайн Человека! Это глубокая работа... 🧬✨")
 
     try:
-        # Build knowledge context for AI
-        types_desc = "\n".join([
-            f"- {name}: стратегия '{info['strategy']}', сигнатура '{info['signature']}', не-я '{info['not_self']}' ({info['percentage']})"
-            for name, info in HD_TYPES.items()
-        ])
-        auth_desc = "\n".join([f"- {name}: {desc}" for name, desc in HD_AUTHORITIES.items()])
-        profiles_desc = "\n".join([f"- {name}: {desc}" for name, desc in HD_PROFILES.items()])
-        centers_desc = "\n".join([f"- {name}: {desc}" for name, desc in HD_CENTERS.items()])
-
-        # Channels, Gates, Variables — NEW professional data
-        channels_desc = "\n".join([f"- {name}: {desc}" for name, desc in HD_CHANNELS.items()])
-        gates_keys = sorted(HD_GATES.keys())
-        gates_desc = "\n".join([f"- Ворота {num}: {desc}" for num, desc in sorted(HD_GATES.items())])
-        variables_desc = "\n".join([
-            f"- {name}: {info['description']}. Варианты: " + "; ".join([f"{vname} — {vdesc}" for vname, vdesc in info['variants'].items()])
-            for name, info in HD_VARIABLES.items()
-        ])
+        hd_context = build_humandesign_context(day, month, year, birth_time, birth_place)
 
         prompt_parts = [
             f"Дата рождения: {day:02d}.{month:02d}.{year}",
@@ -1701,14 +1787,6 @@ async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
             prompt_parts.append(f"Время рождения: {birth_time}")
         if birth_place:
             prompt_parts.append(f"Место рождения: {birth_place}")
-
-        prompt_parts.append(f"\nСПРАВОЧНИК ТИПОВ:\n{types_desc}")
-        prompt_parts.append(f"\nСПРАВОЧНИК АВТОРИТЕТОВ:\n{auth_desc}")
-        prompt_parts.append(f"\nСПРАВОЧНИК ПРОФИЛЕЙ:\n{profiles_desc}")
-        prompt_parts.append(f"\nСПРАВОЧНИК ЦЕНТРОВ:\n{centers_desc}")
-        prompt_parts.append(f"\nСПРАВОЧНИК КАНАЛОВ:\n{channels_desc}")
-        prompt_parts.append(f"\nСПРАВОЧНИК ВОРОТ:\n{gates_desc}")
-        prompt_parts.append(f"\nСПРАВОЧНИК ПЕРЕМЕННЫХ:\n{variables_desc}")
 
         if birth_time and birth_place:
             prompt_parts.append(
@@ -1722,9 +1800,9 @@ async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
             )
 
         result = await ai_router.chat(
-            prompt=f"Составь профессиональный разбор Дизайна Человека.\n\n" + "\n".join(prompt_parts),
+            prompt=f"Составь профессиональный разбор Дизайна Человека.\n\n" + "\n".join(prompt_parts) + f"\n\n{hd_context}",
             system_prompt=HD_SYSTEM_PROMPT_V3,
-            max_tokens=2000,
+            max_tokens=3000,
         )
 
         if result and result.text:
@@ -1746,7 +1824,7 @@ async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
 @router.message(Command("health"))
 async def cmd_health(message: Message, db=None, ai_router=None) -> None:
     """Health and wellness consultation - Ayurveda, psychosomatics."""
-    from bot.consultations import AYURVEDA_DOSHAS, PSYCHOSOMATICS, BLOOD_TYPE_CONSTITUTION, HEALTH_SYSTEM_PROMPT_V3
+    from bot.consultations import AYURVEDA_DOSHAS, PSYCHOSOMATICS, BLOOD_TYPE_CONSTITUTION, HEALTH_SYSTEM_PROMPT_V3, build_health_context
 
     query = message.text.replace("/health", "").strip()
 
@@ -1774,21 +1852,6 @@ async def cmd_health(message: Message, db=None, ai_router=None) -> None:
     await message.answer("Настя анализирует твоё здоровье! Секунду... 🌿✨")
 
     try:
-        # Build knowledge context
-        doshas_desc = "\n".join([
-            f"- {name}: стихия {info['element']}, качества: {info['qualities']}, тело: {info['body_type']}, "
-            f"ум: {info['mind']}, сильные стороны: {info['strengths']}, слабости: {info['weaknesses']}, "
-            f"баланс: {info['balance_tips']}, еда+: {info['best_food']}, еда-: {info['avoid_food']}"
-            for name, info in AYURVEDA_DOSHAS.items()
-        ])
-        psycho_desc = "\n".join([f"- {symptom}: {meaning}" for symptom, meaning in PSYCHOSOMATICS.items()])
-        blood_desc = "\n".join([
-            f"- {btype} ({info['name']}): {info['description']}. Питание: {info['diet']}. "
-            f"Упражнения: {info['exercise']}. Сильные стороны: {info['strengths']}. "
-            f"Слабости: {info['weaknesses']}. Реакция на стресс: {info['stress_response']}"
-            for btype, info in BLOOD_TYPE_CONSTITUTION.items()
-        ])
-
         # Try to detect blood type from query
         blood_type_hint = ""
         blood_keywords = {
@@ -1802,18 +1865,7 @@ async def cmd_health(message: Message, db=None, ai_router=None) -> None:
                 blood_type_hint = btype
                 break
 
-        blood_context = ""
-        if blood_type_hint and blood_type_hint in BLOOD_TYPE_CONSTITUTION:
-            bt_info = BLOOD_TYPE_CONSTITUTION[blood_type_hint]
-            blood_context = (
-                f"\nГРУППА КРОВИ УКАЗАНА: {blood_type_hint} ({bt_info['name']})\n"
-                f"Описание: {bt_info['description']}\n"
-                f"Питание: {bt_info['diet']}\n"
-                f"Упражнения: {bt_info['exercise']}\n"
-                f"Сильные стороны: {bt_info['strengths']}\n"
-                f"Слабости: {bt_info['weaknesses']}\n"
-                f"Реакция на стресс: {bt_info['stress_response']}\n"
-            )
+        health_context = build_health_context(symptoms=query, blood_type=blood_type_hint)
 
         # Save health consultation data
         if db and blood_type_hint:
@@ -1848,10 +1900,7 @@ async def cmd_health(message: Message, db=None, ai_router=None) -> None:
             prompt=(
                 f"Опиши человека и дай профессиональную консультацию по здоровью.\n\n"
                 f"Описание человека: {query}\n\n"
-                f"СПРАВОЧНИК ДОШ (Аюрведа):\n{doshas_desc}\n\n"
-                f"СПРАВОЧНИК ПСИХОСОМАТИКИ:\n{psycho_desc}\n\n"
-                f"СПРАВОЧНИК КОНСТИТУЦИИ ПО ГРУППАМ КРОВИ:\n{blood_desc}\n\n"
-                f"{blood_context}"
+                f"{health_context}\n\n"
                 f"Определи вероятную доминирующую дошу, дай рекомендации по питанию, образу жизни, "
                 f"рассмотри психосоматические связи если есть симптомы. "
                 f"Если указана группа крови — обязательно рассмотри конституцию по группе крови. "
@@ -1859,7 +1908,7 @@ async def cmd_health(message: Message, db=None, ai_router=None) -> None:
                 f"ОБЯЗАТЕЛЬНО напомни что ты не врач и при серьёзных проблемах нужно обратиться к специалисту."
             ),
             system_prompt=HEALTH_SYSTEM_PROMPT_V3,
-            max_tokens=2000,
+            max_tokens=3000,
         )
 
         if result and result.text:
@@ -1883,59 +1932,85 @@ async def cmd_jyotish(message: Message, db=None, ai_router=None) -> None:
     """Professional Jyotish (Vedic Astrology) consultation — Джанма-Кундали."""
     from bot.consultations import (
         parse_birth_date, get_zodiac_sign, get_jyotish_rashi_approx,
-        JYOTISH_RASHIS, JYOTISH_GRAHAS, JYOTISH_BHAVAS, JYOTISH_NAKSHATRAS,
-        JYOTISH_DASHAS, JYOTISH_YOGAS, JYOTISH_SYSTEM_PROMPT,
+        JYOTISH_SYSTEM_PROMPT, build_jyotish_context,
     )
 
     query = message.text.replace("/jyotish", "").strip()
 
-    if not query:
-        await message.answer(
-            "🕉️ Джйотиш — Ведическая астрология (карта Джанма-Кундали)!\n\n"
-            "Это древнейшая система астрологии, использующая сидерический зодиак.\n"
-            "Настя составит профессиональный разбор:\n"
-            "- Лагна (Асцендент) и Бхавы (дома)\n"
-            "- Грахи (планеты) в Раши (знаках)\n"
-            "- Накшатра (лунная стоянка рождения)\n"
-            "- Атма-карака (задача души)\n"
-            "- Йоги (Раджа, Дхана, Мангал-доша)\n"
-            "- Махадаша (текущий планетный период)\n"
-            "- Транзиты (Гочара)\n"
-            "- Рекомендации: мантры, камни, ритуалы\n\n"
-            "Пример: /jyotish 15.06.2001\n"
-            "С временем и местом точнее: /jyotish 15.06.2001 14:30 Москва\n\n"
-            "⚠️ Без времени рождения Лагна и дома — приблизительные!"
-        )
-        return
-
-    # Extract time and place
+    # Initialize birth data
+    day = month = year = None
     birth_time = ""
     birth_place = ""
-    date_part = query
 
-    time_match = re.search(r'(\d{1,2}[:.]\d{2})', query)
-    if time_match:
-        birth_time = time_match.group(1).replace(".", ":")
-        date_part = date_part.replace(time_match.group(0), "").strip()
+    if not query:
+        # Check if we have stored birth data
+        if db:
+            try:
+                stored = await db.get_user_birth_data(message.from_user.id)
+                if stored and stored.get("birth_day"):
+                    day, month, year = stored["birth_day"], stored["birth_month"], stored["birth_year"]
+                    birth_time = stored.get("birth_time", "")
+                    birth_place = stored.get("birth_place", "")
+            except Exception:
+                pass
+        if not day:
+            await message.answer(
+                "🕉️ Джйотиш — Ведическая астрология (карта Джанма-Кундали)!\n\n"
+                "Это древнейшая система астрологии, использующая сидерический зодиак.\n"
+                "Настя составит профессиональный разбор:\n"
+                "- Лагна (Асцендент) и Бхавы (дома)\n"
+                "- Грахи (планеты) в Раши (знаках)\n"
+                "- Накшатра (лунная стоянка рождения)\n"
+                "- Атма-карака (задача души)\n"
+                "- Йоги (Раджа, Дхана, Мангал-доша)\n"
+                "- Махадаша (текущий планетный период)\n"
+                "- Транзиты (Гочара)\n"
+                "- Рекомендации: мантры, камни, ритуалы\n\n"
+                "Пример: /jyotish 15.06.2001\n"
+                "С временем и местом точнее: /jyotish 15.06.2001 14:30 Москва\n\n"
+                "⚠️ Без времени рождения Лагна и дома — приблизительные!"
+            )
+            return
+    else:
+        # Extract time and place
+        date_part = query
 
-    parts = date_part.split()
-    if len(parts) > 1:
-        potential_place = " ".join(parts[1:])
-        if not potential_place.replace(".", "").replace("/", "").replace("-", "").replace(" ", "").isdigit():
-            birth_place = potential_place
-            date_part = parts[0]
+        time_match = re.search(r'(\d{1,2}[:.]\d{2})', query)
+        if time_match:
+            birth_time = time_match.group(1).replace(".", ":")
+            date_part = date_part.replace(time_match.group(0), "").strip()
 
-    birth_date = parse_birth_date(date_part)
-    if not birth_date:
-        await message.answer(
-            "Ой, Настя не разобралась с датой! 😅\n\n"
-            "Напиши в формате: DD.MM.YYYY\n"
-            "Пример: /jyotish 15.06.2001\n"
-            "С временем: /jyotish 15.06.2001 14:30 Москва"
-        )
-        return
+        parts = date_part.split()
+        if len(parts) > 1:
+            potential_place = " ".join(parts[1:])
+            if not potential_place.replace(".", "").replace("/", "").replace("-", "").replace(" ", "").isdigit():
+                birth_place = potential_place
+                date_part = parts[0]
 
-    day, month, year = birth_date
+        birth_date = parse_birth_date(date_part)
+        if not birth_date:
+            # Check stored birth data as fallback
+            if db:
+                try:
+                    stored = await db.get_user_birth_data(message.from_user.id)
+                    if stored and stored.get("birth_day"):
+                        day, month, year = stored["birth_day"], stored["birth_month"], stored["birth_year"]
+                        if not birth_time:
+                            birth_time = stored.get("birth_time", "")
+                        if not birth_place:
+                            birth_place = stored.get("birth_place", "")
+                except Exception:
+                    pass
+            if not day:
+                await message.answer(
+                    "Ой, Настя не разобралась с датой! 😅\n\n"
+                    "Напиши в формате: DD.MM.YYYY\n"
+                    "Пример: /jyotish 15.06.2001\n"
+                    "С временем: /jyotish 15.06.2001 14:30 Москва"
+                )
+                return
+        else:
+            day, month, year = birth_date
 
     # Save birth data so Nastya remembers
     if db:
@@ -1960,62 +2035,26 @@ async def cmd_jyotish(message: Message, db=None, ai_router=None) -> None:
         # Determine Western zodiac sign and approximate Vedic Rashi
         western_sign = get_zodiac_sign(day, month)
         vedic_rashi = get_jyotish_rashi_approx(western_sign)
-        rashi_info = JYOTISH_RASHIS.get(vedic_rashi, {})
-
-        # Build comprehensive knowledge context for AI
-        rashis_desc = "\n".join([
-            f"- {name}: управитель {info['ruler']}, стихия {info['element']}, качество {info['quality']}, "
-            f"западный аналог {info['symbol']}, черты: {info['traits']}, часть тела: {info['body_part']}"
-            for name, info in JYOTISH_RASHIS.items()
-        ])
-
-        grahas_desc = "\n".join([
-            f"- {name}: природа {info['nature']}, показатель {info['significator']}, "
-            f"экзальтация {info['exalted']}, падение {info['debilitated']}, описание: {info['description']}"
-            for name, info in JYOTISH_GRAHAS.items()
-        ])
-
-        bhavas_desc = "\n".join([
-            f"- Дом {num} ({info['name']}): {info['meaning']}"
-            for num, info in JYOTISH_BHAVAS.items()
-        ])
-
-        nakshatras_desc = "\n".join([
-            f"- {name}: управитель {info['ruler']}, символ {info['symbol']}, значение: {info['meaning']}"
-            for name, info in JYOTISH_NAKSHATRAS.items()
-        ])
-
-        dashas_desc = "\n".join([
-            f"- {name}: {info['years']} лет, значение: {info['meaning']}"
-            for name, info in JYOTISH_DASHAS.items()
-        ])
-
-        yogas_desc = "\n".join([
-            f"- {name}: {desc}"
-            for name, desc in JYOTISH_YOGAS.items()
-        ])
+        rashi_info = {"symbol": "", "ruler": "", "element": "", "quality": "", "traits": ""}
+        # Get rashi info from the context builder
+        jyotish_context = build_jyotish_context(day, month, year, birth_time, birth_place)
+        # Try to extract rashi info from context for display
+        try:
+            from bot.consultations import JYOTISH_RASHIS
+            rashi_info = JYOTISH_RASHIS.get(vedic_rashi, rashi_info)
+        except Exception:
+            pass
 
         prompt_parts = [
             f"Дата рождения: {day:02d}.{month:02d}.{year}",
             f"Западный знак зодиака: {western_sign.capitalize()}",
             f"Приблизительный ведический Раши (сидерический): {vedic_rashi} ({rashi_info.get('symbol', '')})",
-            f"Управитель Раши: {rashi_info.get('ruler', '')}",
-            f"Стихия: {rashi_info.get('element', '')}",
-            f"Качество: {rashi_info.get('quality', '')}",
-            f"Черты: {rashi_info.get('traits', '')}",
         ]
 
         if birth_time:
             prompt_parts.append(f"Время рождения: {birth_time}")
         if birth_place:
             prompt_parts.append(f"Место рождения: {birth_place}")
-
-        prompt_parts.append(f"\nСПРАВОЧНИК РАШИ (12 ведических знаков):\n{rashis_desc}")
-        prompt_parts.append(f"\nСПРАВОЧНИК ГРАХ (9 планет):\n{grahas_desc}")
-        prompt_parts.append(f"\nСПРАВОЧНИК БХАВ (12 домов):\n{bhavas_desc}")
-        prompt_parts.append(f"\nСПРАВОЧНИК НАКШАТР (27 лунных стоянок):\n{nakshatras_desc}")
-        prompt_parts.append(f"\nСПРАВОЧНИК ДАШ (планетные периоды):\n{dashas_desc}")
-        prompt_parts.append(f"\nСПРАВОЧНИК ЙОГ:\n{yogas_desc}")
 
         if birth_time and birth_place:
             prompt_parts.append(
@@ -2037,9 +2076,9 @@ async def cmd_jyotish(message: Message, db=None, ai_router=None) -> None:
             )
 
         result = await ai_router.chat(
-            prompt=f"Составь профессиональный разбор карты Джанма-Кундали (Джйотиш / Ведическая астрология).\n\n" + "\n".join(prompt_parts),
+            prompt=f"Составь профессиональный разбор карты Джанма-Кундали (Джйотиш / Ведическая астрология).\n\n" + "\n".join(prompt_parts) + f"\n\n{jyotish_context}",
             system_prompt=JYOTISH_SYSTEM_PROMPT,
-            max_tokens=2000,
+            max_tokens=3000,
         )
 
         if result and result.text:
