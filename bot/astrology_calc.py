@@ -1,4 +1,4 @@
-"""Астрологический расчётный модуль v1.0
+"""Астрологический расчётный модуль v2.0
 =========================================
 
 Комплексный модуль астрологических вычислений для Telegram-бота «Настя».
@@ -10,8 +10,11 @@
   - Куспиды 12 домов (упрощённая система равных домов)
   - Аспекты между планетами (7 типов, applying/separating)
   - Фаза Луны при рождении
-  - Часть Фортуны (Part of Fortune)
-  - Ретроградность планет
+  - Часть Фортуны (Part of Fortune) — дневная/ночная формула
+  - Арабские Части (Дух, Брак, Карьера)
+  - Управитель Гороскопа (Chart Ruler)
+  - Ретроградность планет (улучшенная с Swiss Ephemeris)
+  - Синастрия (аспекты между двумя картами)
   - Планеты в домах
   - Солярный возврат (Solar Return)
   - Мастер-функция calculate_all_astrology()
@@ -113,7 +116,7 @@ CITY_COORDINATES: Dict[str, Tuple[float, float]] = {
     # Россия — UTC+2
     'калининград':      (54.71, 20.51),
     'kaliningrad':      (54.71, 20.51),
-    # Россия — UTC+3
+    # Россия — UTC+3 — основные города
     'москва':           (55.76, 37.62),
     'moscow':           (55.76, 37.62),
     'санкт-петербург':  (59.93, 30.32),
@@ -151,6 +154,91 @@ CITY_COORDINATES: Dict[str, Tuple[float, float]] = {
     'пенза':            (53.19, 45.00),
     'саранск':          (54.18, 45.17),
     'тамбов':           (52.72, 41.45),
+    # Россия — UTC+3 — южные республики
+    'майкоп':           (44.61, 40.10),
+    'maykop':           (44.61, 40.10),
+    'назрань':          (43.22, 44.77),
+    'nazran':           (43.22, 44.77),
+    'владикавказ':      (43.04, 44.67),
+    'vladikavkaz':      (43.04, 44.67),
+    'грозный':          (43.32, 45.69),
+    'grozny':           (43.32, 45.69),
+    'махачкала':        (42.98, 47.50),
+    'makhachkala':      (42.98, 47.50),
+    'нальчик':          (43.49, 43.62),
+    'nalchik':          (43.49, 43.62),
+    'черкесск':         (44.22, 42.06),
+    'cherkessk':        (44.22, 42.06),
+    'элиста':           (46.31, 44.26),
+    'elista':           (46.31, 44.26),
+    'астрахань':        (46.35, 48.04),
+    'astrakhan':        (46.35, 48.04),
+    # Россия — UTC+3 — поволжье и север
+    'киров':            (58.60, 49.66),
+    'kirov':            (58.60, 49.66),
+    'йошкар-ола':       (56.64, 47.87),
+    'yoshkar-ola':      (56.64, 47.87),
+    'чебоксары':        (56.13, 47.25),
+    'cheboksary':       (56.13, 47.25),
+    'великий новгород': (58.52, 31.27),
+    'veliky novgorod':  (58.52, 31.27),
+    'петрозаводск':     (61.78, 34.35),
+    'petrozavodsk':     (61.78, 34.35),
+    'сыктывкар':        (61.67, 50.84),
+    'syktyvkar':        (61.67, 50.84),
+    'брянск':           (53.24, 34.37),
+    'bryansk':          (53.24, 34.37),
+    # Россия — UTC+3 — московская область
+    'дзержинск':        (56.24, 43.50),
+    'dzerzhinsk':       (56.24, 43.50),
+    'подольск':         (55.43, 37.55),
+    'podolsk':          (55.43, 37.55),
+    'люберцы':          (55.69, 37.90),
+    'lyubertsy':        (55.69, 37.90),
+    'мытищи':           (55.91, 37.73),
+    'mytishchi':        (55.91, 37.73),
+    'химки':            (55.89, 37.44),
+    'khimki':           (55.89, 37.44),
+    'красногорск':      (55.83, 37.34),
+    'krasnogorsk':      (55.83, 37.34),
+    'коломна':          (55.09, 38.78),
+    'kolomna':          (55.09, 38.78),
+    'одинцово':         (55.67, 37.28),
+    'odintsovo':        (55.67, 37.28),
+    'королёв':          (55.92, 37.82),
+    'korolev':          (55.92, 37.82),
+    'орехово-зуево':    (55.80, 38.98),
+    'orekhovo-zuyevo':  (55.80, 38.98),
+    'серпухов':         (54.92, 37.53),
+    'serpukhov':        (54.92, 37.53),
+    'клин':             (56.33, 36.72),
+    'klin':             (56.33, 36.72),
+    'раменское':        (55.57, 38.22),
+    'ramenskoye':       (55.57, 38.22),
+    'реутов':           (55.76, 37.86),
+    'reutov':           (55.76, 37.86),
+    'щёлково':          (55.92, 38.02),
+    'shchyolkovo':      (55.92, 38.02),
+    'электросталь':     (55.79, 38.44),
+    'elektrostal':      (55.79, 38.44),
+    'долгопрудный':     (55.94, 37.51),
+    'dolgoprudny':      (55.94, 37.51),
+    'жуковский':        (55.59, 38.07),
+    'zhukovsky':        (55.59, 38.07),
+    # Россия — UTC+3 — пригороды СПб
+    'ломоносов':        (59.90, 29.77),
+    'lymonosov':        (59.90, 29.77),
+    'пушкин':           (59.72, 30.40),
+    'pushkin':          (59.72, 30.40),
+    'петергоф':         (59.88, 29.90),
+    'peterhof':         (59.88, 29.90),
+    # Россия — UTC+3 — черноморское побережье
+    'новороссийск':     (44.72, 37.77),
+    'novorossiysk':     (44.72, 37.77),
+    'анапа':            (44.89, 37.32),
+    'anapa':            (44.89, 37.32),
+    'геленджик':        (44.56, 38.08),
+    'gelendzhik':       (44.56, 38.08),
     # Россия — UTC+4
     'самара':           (53.20, 50.15),
     'samara':           (53.20, 50.15),
@@ -158,6 +246,24 @@ CITY_COORDINATES: Dict[str, Tuple[float, float]] = {
     'ижевск':           (56.85, 53.21),
     'саратов':          (51.53, 46.02),
     'ульяновск':        (54.31, 48.37),
+    # Россия — UTC+4 — самарская область
+    'сызрань':          (53.16, 48.47),
+    'syzran':           (53.16, 48.47),
+    'новокуйбышевск':   (52.99, 49.98),
+    'novokuybyshevsk':  (52.99, 49.98),
+    'чапаевск':         (52.95, 49.72),
+    'chapaevsk':        (52.95, 49.72),
+    # Россия — UTC+4 — башкортостан
+    'октябрьский':      (54.48, 54.34),
+    'oktyabrsky':       (54.48, 54.34),
+    'нефтекамск':       (56.09, 54.25),
+    'neftekamsk':       (56.09, 54.25),
+    'салават':          (53.36, 55.99),
+    'salavat':          (53.36, 55.99),
+    'ишимбай':          (53.26, 56.04),
+    'ishimbay':         (53.26, 56.04),
+    'кумертау':         (52.77, 55.80),
+    'kumertau':         (52.77, 55.80),
     # Россия — UTC+5
     'екатеринбург':     (56.84, 60.61),
     'yekaterinburg':    (56.84, 60.61),
@@ -169,9 +275,29 @@ CITY_COORDINATES: Dict[str, Tuple[float, float]] = {
     'пермь':            (58.01, 56.24),
     'оренбург':         (51.77, 55.10),
     'магнитогорск':     (53.42, 59.00),
+    # Россия — UTC+5 — хмао
+    'нижневартовск':    (60.93, 76.58),
+    'nizhnevartovsk':   (60.93, 76.58),
+    'сургут':           (61.25, 73.42),
+    'surgut':           (61.25, 73.42),
+    'нефтеюганск':      (61.09, 72.62),
+    'nefteyugansk':     (61.09, 72.62),
+    'нягань':           (62.14, 65.40),
+    'nyagan':           (62.14, 65.40),
     # Россия — UTC+6
     'омск':             (55.00, 73.37),
     'omsk':             (55.00, 73.37),
+    # Казахстан — UTC+6
+    'петропавловск':    (54.87, 69.15),
+    'petropavlovsk':    (54.87, 69.15),
+    'костанай':         (53.21, 63.58),
+    'kostanay':         (53.21, 63.58),
+    'павлодар':         (52.29, 76.95),
+    'pavlodar':         (52.29, 76.95),
+    'семей':            (50.41, 80.23),
+    'semey':            (50.41, 80.23),
+    'туркестан':        (43.30, 68.25),
+    'turkestan':        (43.30, 68.25),
     # Россия — UTC+7
     'новосибирск':      (55.03, 82.92),
     'novosibirsk':      (55.03, 82.92),
@@ -180,12 +306,30 @@ CITY_COORDINATES: Dict[str, Tuple[float, float]] = {
     'барнаул':          (53.35, 83.76),
     'кемерово':         (55.36, 86.09),
     'томск':            (56.50, 84.97),
+    # Россия — UTC+7 — хакасия, алтай, тува
+    'абакан':           (53.72, 91.44),
+    'abakan':           (53.72, 91.44),
+    'горно-алтайск':    (51.96, 85.96),
+    'gorno-altaysk':    (51.96, 85.96),
+    'кызыл':            (51.71, 94.45),
+    'kyzyl':            (51.71, 94.45),
+    'норильск':         (69.35, 88.20),
+    'norilsk':          (69.35, 88.20),
+    'минусинск':        (53.71, 91.69),
+    'minusinsk':        (53.71, 91.69),
     # Россия — UTC+8
     'иркутск':          (52.30, 104.30),
     'irkutsk':          (52.30, 104.30),
     'братск':           (56.13, 101.63),
     'улан-удэ':         (51.83, 107.59),
     'ulan-ude':         (51.83, 107.59),
+    # Россия — UTC+8 — амурская область
+    'благовещенск':     (50.29, 127.53),
+    'blagoveshchensk':  (50.29, 127.53),
+    'белогорск':        (50.55, 127.58),
+    'belogorsk':        (50.55, 127.58),
+    'свободный':        (51.37, 128.14),
+    'svobodny':         (51.37, 128.14),
     # Россия — UTC+9
     'якутск':           (62.03, 129.73),
     'yakutsk':          (62.03, 129.73),
@@ -196,12 +340,32 @@ CITY_COORDINATES: Dict[str, Tuple[float, float]] = {
     'vladivostok':      (43.12, 131.87),
     'хабаровск':        (48.48, 135.08),
     'khabarovsk':       (48.48, 135.08),
+    # Россия — UTC+10 — приморье и еао
+    'биробиджан':       (48.79, 132.92),
+    'birobidzhan':      (48.79, 132.92),
+    'находка':          (42.82, 132.88),
+    'nakhodka':         (42.82, 132.88),
+    'уссурийск':        (43.80, 131.95),
+    'ussuriysk':        (43.80, 131.95),
+    'арсеньев':         (44.17, 133.28),
+    'arsenyev':         (44.17, 133.28),
+    'комсомольск-на-амуре': (50.55, 137.00),
+    'komsomolsk-on-amur':   (50.55, 137.00),
     # Россия — UTC+11
     'магадан':          (59.56, 150.80),
     'magadan':          (59.56, 150.80),
+    # Россия — UTC+11 — сахалин и колыма
+    'южно-сахалинск':   (46.96, 142.73),
+    'yuzhno-sakhalinsk': (46.96, 142.73),
+    'охотск':           (59.36, 143.24),
+    'okhotsk':          (59.36, 143.24),
+    'среднеколымск':    (67.45, 153.70),
+    'srednekolymsk':    (67.45, 153.70),
     # Россия — UTC+12
     'петропавловск-камчатский': (53.01, 158.65),
     'petropavlovsk-kamchatsky': (53.01, 158.65),
+    'анадырь':          (64.73, 177.51),
+    'anadyr':           (64.73, 177.51),
     # СНГ
     'минск':            (53.90, 27.57),
     'minsk':            (53.90, 27.57),
@@ -222,6 +386,15 @@ CITY_COORDINATES: Dict[str, Tuple[float, float]] = {
     'yerevan':          (40.18, 44.51),
     'баку':             (40.41, 49.87),
     'baku':             (40.41, 49.87),
+    # Казахстан — запад (UTC+5)
+    'актау':            (43.65, 51.16),
+    'aktau':            (43.65, 51.16),
+    'актобе':           (50.28, 57.21),
+    'aktobe':           (50.28, 57.21),
+    'актюбинск':        (50.28, 57.21),
+    'aktyubinsk':       (50.28, 57.21),
+    'уральск':          (51.23, 51.37),
+    'uralsk':           (51.23, 51.37),
 }
 
 
@@ -1032,14 +1205,186 @@ def calculate_part_of_fortune(
 
 
 # ════════════════════════════════════════════════════════════════
-#  7. РЕТРОГРАДНОСТЬ ПЛАНЕТ
+#  6b. АРАБСКИЕ ЧАСТИ (Arabic Parts / Lots)
 # ════════════════════════════════════════════════════════════════
 
-def detect_retrograde(birth_jd: float) -> Dict[str, Dict[str, Any]]:
+def calculate_arabic_parts(
+    ascendant_lon: float,
+    mc_lon: float,
+    sun_lon: float,
+    moon_lon: float,
+    venus_lon: float,
+    is_night_birth: bool,
+) -> Dict[str, Dict[str, Any]]:
+    """Рассчитать основные Арабские Части (Lots).
+
+    Формулы:
+      - Часть Духа (Part of Spirit): обратная Части Фортуны
+          День: ASC + Sun - Moon
+          Ночь: ASC + Moon - Sun
+      - Часть Брака (Part of Marriage): ASC + DSC - Venus
+          = ASC + (ASC + 180) - Venus
+      - Часть Карьеры (Part of Career): ASC + MC - Sun
+
+    Параметры:
+        ascendant_lon: долгота Асцендента
+        mc_lon: долгота MC
+        sun_lon: долгота Солнца
+        moon_lon: долгота Луны
+        venus_lon: долгота Венеры
+        is_night_birth: ночное ли рождение
+
+    Возвращает:
+        dict с ключевыми арабскими частями
+    """
+    dsc_lon = _deg_norm(ascendant_lon + 180.0)
+
+    # Часть Духа (обратная Части Фортуны)
+    if is_night_birth:
+        spirit_lon = _deg_norm(ascendant_lon + moon_lon - sun_lon)
+        spirit_formula = 'ночная (ASC + Луна − Солнце)'
+    else:
+        spirit_lon = _deg_norm(ascendant_lon + sun_lon - moon_lon)
+        spirit_formula = 'дневная (ASC + Солнце − Луна)'
+
+    # Часть Брака
+    marriage_lon = _deg_norm(ascendant_lon + dsc_lon - venus_lon)
+
+    # Часть Карьеры
+    career_lon = _deg_norm(ascendant_lon + mc_lon - sun_lon)
+
+    # Часть Фортуны (для полноты)
+    if is_night_birth:
+        fortune_lon = _deg_norm(ascendant_lon + sun_lon - moon_lon)
+        fortune_formula = 'ночная (ASC + Солнце − Луна)'
+    else:
+        fortune_lon = _deg_norm(ascendant_lon + moon_lon - sun_lon)
+        fortune_formula = 'дневная (ASC + Луна − Солнце)'
+
+    # Интерпретации по знаку
+    part_meanings = {
+        'Овен': 'Действие, инициатива, смелость.',
+        'Телец': 'Стабильность, материализация, терпение.',
+        'Близнецы': 'Общение, интеллект, разнообразие.',
+        'Рак': 'Эмоции, семья, забота.',
+        'Лев': 'Творчество, лидерство, самовыражение.',
+        'Дева': 'Служение, анализ, здоровье.',
+        'Весы': 'Партнёрство, гармония, справедливость.',
+        'Скорпион': 'Трансформация, глубина, власть.',
+        'Стрелец': 'Экспансия, мудрость, свобода.',
+        'Козерог': 'Дисциплина, структура, достижение.',
+        'Водолей': 'Инновации, сообщество, независимость.',
+        'Рыбы': 'Духовность, интуиция, сострадание.',
+    }
+
+    def _make_part(name: str, lon: float, formula: str, base_meaning: str) -> Dict[str, Any]:
+        sign, deg, minutes = longitude_to_sign_degree(lon)
+        sign_meaning = part_meanings.get(sign, '')
+        return {
+            'name': name,
+            'degree': round(lon, 4),
+            'sign': sign,
+            'degree_in_sign': deg,
+            'minutes_in_sign': int(minutes),
+            'formatted': format_longitude(lon),
+            'formula': formula,
+            'meaning': f'{base_meaning} В {sign}: {sign_meaning}',
+        }
+
+    return {
+        'part_of_fortune': _make_part(
+            'Часть Фортуны (Part of Fortune)',
+            fortune_lon, fortune_formula,
+            'Точка материального благополучия и физического тела.'
+        ),
+        'part_of_spirit': _make_part(
+            'Часть Духа (Part of Spirit)',
+            spirit_lon, spirit_formula,
+            'Точка духовного предназначения и сознательной воли.'
+        ),
+        'part_of_marriage': _make_part(
+            'Часть Брака (Part of Marriage)',
+            marriage_lon, 'ASC + DSC − Venus',
+            'Точка значимых партнёрских отношений и брака.'
+        ),
+        'part_of_career': _make_part(
+            'Часть Карьеры (Part of Career)',
+            career_lon, 'ASC + MC − Sun',
+            'Точка профессионального предназначения и социального статуса.'
+        ),
+    }
+
+
+# ════════════════════════════════════════════════════════════════
+#  6c. УПРАВИТЕЛЬ ГОРОСКОПА (Chart Ruler)
+# ════════════════════════════════════════════════════════════════
+
+# Управители знаков Зодиака
+SIGN_RULERS: Dict[str, str] = {
+    'Овен': 'mars',       'Телец': 'venus',      'Близнецы': 'mercury',
+    'Рак': 'moon',        'Лев': 'sun',           'Дева': 'mercury',
+    'Весы': 'venus',      'Скорпион': 'pluto',    'Стрелец': 'jupiter',
+    'Козерог': 'saturn',  'Водолей': 'uranus',    'Рыбы': 'neptune',
+}
+
+# Управители в русском
+RULER_NAMES_RU: Dict[str, str] = {
+    'sun': 'Солнце',      'moon': 'Луна',         'mercury': 'Меркурий',
+    'venus': 'Венера',    'mars': 'Марс',          'jupiter': 'Юпитер',
+    'saturn': 'Сатурн',   'uranus': 'Уран',        'neptune': 'Нептун',
+    'pluto': 'Плутон',
+}
+
+
+def determine_chart_ruler(ascendant_sign: str) -> Dict[str, Any]:
+    """Определить Управитель Гороскопа (Chart Ruler).
+
+    Управитель гороскопа = планета-управитель знака Асцендента.
+    Эта планета имеет особое значение в натальной карте.
+
+    Параметры:
+        ascendant_sign: знак Асцендента (на русском)
+
+    Возвращает:
+        dict с информацией об управителе гороскопа
+    """
+    ruler = SIGN_RULERS.get(ascendant_sign, 'sun')
+    ruler_name_ru = RULER_NAMES_RU.get(ruler, ruler)
+
+    # Описание управителя по планете
+    ruler_descriptions = {
+        'sun': 'Управитель — Солнце: гороскоп вращается вокруг личности, творчества и самовыражения. Важна реализация «Я».',
+        'moon': 'Управитель — Луна: гороскоп акцентирован на эмоциях, интуиции, семье и потребностях. Важна эмоциональная безопасность.',
+        'mercury': 'Управитель — Меркурий: гороскоп фокусирован на мышлении, общении, обучении и информации. Важен интеллект.',
+        'venus': 'Управитель — Венера: гороскоп связан с гармонией, отношениями, красотой и ценностями. Важна любовь и эстетика.',
+        'mars': 'Управитель — Марс: гороскоп наполнен энергией, действием, инициативой и смелостью. Важна активность.',
+        'jupiter': 'Управитель — Юпитер: гороскоп ориентирован на рост, расширение, мудрость и удачу. Важен смысл.',
+        'saturn': 'Управитель — Сатурн: гороскоп структурирован, дисциплинирован и ориентирован на достижение. Важна ответственность.',
+        'uranus': 'Управитель — Уран: гороскоп связан с свободой, инновациями и нестандартностью. Важна независимость.',
+        'neptune': 'Управитель — Нептун: гороскоп ориентирован на духовность, интуицию и творчество. Важна связь с высшим.',
+        'pluto': 'Управитель — Плутон: гороскоп связан с трансформацией, властью и глубиной. Важна внутренняя сила.',
+    }
+
+    description = ruler_descriptions.get(ruler, '')
+
+    return {
+        'ruler': ruler,
+        'ruler_name_ru': ruler_name_ru,
+        'ascendant_sign': ascendant_sign,
+        'description': description,
+    }
+
+
+# ════════════════════════════════════════════════════════════════
+#  7. РЕТРОГРАДНОСТЬ ПЛАНЕТ (улучшенная версия)
+# ════════════════════════════════════════════════════════════════
+
+def detect_retrogrades(birth_jd: float) -> Dict[str, Dict[str, Any]]:
     """Определить ретроградность планет на момент рождения.
 
-    Использует упрощённый астрономический алгоритм: планета ретроградна,
-    если её видимая долгота уменьшается со временем (движение назад по зодиаку).
+    Улучшенная версия: использует Swiss Ephemeris при наличии для точного
+    определения ретроградности через скорость планеты. Fallback — сравнение
+    позиций с интервалом 0.5 дня.
 
     Проверяемые планеты: Меркурий, Венера, Марс, Юпитер, Сатурн, Уран, Нептун, Плутон.
     (Солнце и Луна никогда не бывают ретроградными; узлы всегда ретроградны.)
@@ -1048,43 +1393,122 @@ def detect_retrograde(birth_jd: float) -> Dict[str, Dict[str, Any]]:
         birth_jd: Юлианский день рождения (UT)
 
     Возвращает:
-        dict {имя_планеты: {'retrograde': bool, 'name_ru': str, 'meaning': str}}
+        dict {имя_планеты: {'retrograde': bool, 'name_ru': str, 'movement_per_day': float, 'meaning': str}}
     """
-    # Планеты, которые могут быть ретроградными
+    from bot.hd_calc import _SWE_AVAILABLE as _swe_avail
+
     retro_bodies = ['mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'pluto']
-    delta = 0.5  # Полдня шаг для определения направления движения
+    delta = 0.5  # полдня шаг
 
     result = {}
 
     for body in retro_bodies:
-        # Рассчитываем позицию сейчас и чуть позже
-        lon_now = _planet_longitude_approx(birth_jd, body)
-        lon_future = _planet_longitude_approx(birth_jd + delta, body)
+        # Пробуем Swiss Ephemeris для точного определения
+        if _swe_avail:
+            try:
+                from bot.hd_calc import _SWE_BODIES
+                import swisseph as swe
+                body_id = _SWE_BODIES.get(body)
+                if body_id is not None:
+                    for flags in [swe.FLG_SWIEPH, swe.FLG_MOSEPH]:
+                        try:
+                            res_now = swe.calc_ut(birth_jd, body_id, flags)
+                            speed = res_now[0][3]  # скорость по долготе (градусы/день)
+                            is_retro = speed < 0
+                            name_ru = PLANET_NAMES_RU.get(body, body)
+                            retro_key = f'{name_ru} R'
+                            meaning = RETROGRADE_MEANINGS.get(retro_key, '') if is_retro else ''
+                            result[body] = {
+                                'retrograde': is_retro,
+                                'name_ru': name_ru,
+                                'movement_per_day': round(speed, 4),
+                                'meaning': meaning,
+                                'method': 'swisseph',
+                            }
+                            break
+                        except Exception:
+                            continue
+                    else:
+                        # Fallback для этого тела
+                        result[body] = _retro_fallback(birth_jd, body, delta)
+                    continue
+            except Exception:
+                pass
 
-        # Разница движения
-        movement = (lon_future - lon_now + 180.0) % 360.0 - 180.0
+        # Fallback — сравнение позиций
+        result[body] = _retro_fallback(birth_jd, body, delta)
 
-        is_retro = movement < 0
-        name_ru = PLANET_NAMES_RU.get(body, body)
-        retro_key = f'{name_ru} R'
-        meaning = RETROGRADE_MEANINGS.get(retro_key, '') if is_retro else ''
-
-        result[body] = {
-            'retrograde': is_retro,
-            'name_ru': name_ru,
-            'movement_per_day': round(movement / delta, 4),
-            'meaning': meaning,
-        }
-
-    # Северный узел — всегда ретроградный (средний узел движется назад)
+    # Северный узел — всегда ретроградный
     result['north_node'] = {
         'retrograde': True,
         'name_ru': 'Северный Узел (Раху)',
         'movement_per_day': -0.053,
         'meaning': RETROGRADE_MEANINGS.get('Северный Узел (Раху) R', ''),
+        'method': 'always_retro',
     }
 
     return result
+
+
+def _retro_fallback(birth_jd: float, body: str, delta: float) -> Dict[str, Any]:
+    """Fallback определение ретроградности через сравнение позиций."""
+    lon_now = _planet_longitude_approx(birth_jd, body)
+    lon_future = _planet_longitude_approx(birth_jd + delta, body)
+    movement = (lon_future - lon_now + 180.0) % 360.0 - 180.0
+    is_retro = movement < 0
+    name_ru = PLANET_NAMES_RU.get(body, body)
+    retro_key = f'{name_ru} R'
+    meaning = RETROGRADE_MEANINGS.get(retro_key, '') if is_retro else ''
+    return {
+        'retrograde': is_retro,
+        'name_ru': name_ru,
+        'movement_per_day': round(movement / delta, 4),
+        'meaning': meaning,
+        'method': 'fallback_position_compare',
+    }
+
+
+# ════════════════════════════════════════════════════════════════
+#  7b. СИНАСТРИЯ (Synastry Aspects between two charts)
+# ════════════════════════════════════════════════════════════════
+
+def calculate_synastry(
+    chart1_positions: Dict[str, float],
+    chart2_positions: Dict[str, float],
+    orb: float = 8.0,
+) -> List[Dict[str, Any]]:
+    """Рассчитать синастрические аспекты между двумя натальными картами.
+
+    Находит аспекты между планетами двух разных карт и определяет,
+    какие энергии активируются во взаимодействии.
+
+    Параметры:
+        chart1_positions: {имя_планеты: долгота} — первая карта
+        chart2_positions: {имя_планеты: долгота} — вторая карта
+        orb: максимальная орба в градусах
+
+    Возвращает:
+        список словарей с синастрическими аспектами
+    """
+    aspects = []
+
+    for name1, lon1 in chart1_positions.items():
+        for name2, lon2 in chart2_positions.items():
+            # Пропускаем одну и ту же планету (если имена совпадают)
+            if name1 == name2:
+                continue
+            aspect_info = _check_aspect(name1, lon1, name2, lon2, orb)
+            if aspect_info:
+                # Добавляем пометку что это синастрический аспект
+                aspect_info['synastry'] = True
+                aspect_info['chart1_planet'] = name1
+                aspect_info['chart2_planet'] = name2
+                aspects.append(aspect_info)
+
+    # Сортируем по орбу (самые точные первые)
+    aspects.sort(key=lambda a: a.get('orb', 999))
+
+    return aspects
 
 
 # ════════════════════════════════════════════════════════════════
@@ -1338,8 +1762,21 @@ def calculate_all_astrology(
         is_night,
     )
 
-    # ─── Ретроградность ───
-    retrogrades = detect_retrograde(birth_jd)
+    # ─── Арабские Части ───
+    arabic_parts = calculate_arabic_parts(
+        ascendant['degree'],
+        midheaven['degree'],
+        sun_lon,
+        planet_positions.get('moon', 0.0),
+        planet_positions.get('venus', 0.0),
+        is_night,
+    )
+
+    # ─── Управитель Гороскопа ───
+    chart_ruler = determine_chart_ruler(ascendant.get('sign', 'Овен'))
+
+    # ─── Ретроградность (улучшенная) ───
+    retrogrades = detect_retrogrades(birth_jd)
 
     # ─── Планеты в домах ───
     planets_in_houses = calculate_planets_in_houses(planet_positions, house_cusps)
@@ -1406,6 +1843,12 @@ def calculate_all_astrology(
 
         # Часть Фортуны
         'part_of_fortune': part_of_fortune,
+
+        # Арабские Части
+        'arabic_parts': arabic_parts,
+
+        # Управитель Гороскопа
+        'chart_ruler': chart_ruler,
 
         # Ретроградность
         'retrogrades': {
@@ -1571,6 +2014,24 @@ def format_astrology_report(data: Dict[str, Any]) -> str:
     if pof.get('meaning'):
         lines.append(f'   {pof["meaning"]}')
     lines.append('')
+
+    # Арабские Части
+    ap = data.get('arabic_parts', {})
+    if ap:
+        lines.append('⚖️ АРАБСКИЕ ЧАСТИ:')
+        for part_key, part_info in ap.items():
+            lines.append(f'   {part_info.get("name", part_key)}: {part_info.get("formatted", "?")}')
+            if part_info.get('meaning'):
+                lines.append(f'     {part_info["meaning"]}')
+        lines.append('')
+
+    # Управитель Гороскопа
+    cr = data.get('chart_ruler', {})
+    if cr:
+        lines.append(f'👑 Управитель Гороскопа: {cr.get("ruler_name_ru", "?")} (управитель {cr.get("ascendant_sign", "?")})')
+        if cr.get('description'):
+            lines.append(f'   {cr["description"]}')
+        lines.append('')
 
     # Солярный возврат
     sr = data.get('solar_return', {})

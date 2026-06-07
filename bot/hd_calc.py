@@ -1,4 +1,4 @@
-"""Human Design (Bodygraph) Calculation Engine v1.0
+"""Human Design (Bodygraph) Calculation Engine v2.0
 ====================================================
 
 Реальный астрономический движок расчёта Дизайна Человека.
@@ -9,9 +9,10 @@
   - Позиции 13 планет (Личность + Дизайн)
   - Дизайн-дата: Солнце на 88° раньше позиции рождения
   - Маппинг на 64 ворот (5.625° на ворот)
-  - Линии (1-6) внутри ворот
+  - Линии (1-6), Цвета (1-6), Тоны (1-6) внутри ворот
   - 32 канала, определённость 9 центров
-  - Тип, Авторитет, Профиль, Переменные, Инкарнационный крест
+  - Тип, Авторитет, Профиль, Переменные (Color/Tone), Инкарнационный крест
+  - Пищеварение, Среда, Перспектива, Мотивация
 
 Автор: nastya-bot engine
 """
@@ -149,7 +150,7 @@ for _ch in CHANNELS:
 TIMEZONE_OFFSETS: Dict[str, float] = {
     # UTC+2
     'калининград': 2, 'kaliningrad': 2,
-    # UTC+3
+    # UTC+3 — основные города
     'москва': 3, 'moscow': 3,
     'санкт-петербург': 3, 'saint petersburg': 3, 'питер': 3, 'спб': 3,
     'казань': 3, 'kazan': 3,
@@ -177,13 +178,69 @@ TIMEZONE_OFFSETS: Dict[str, float] = {
     'пенза': 3, 'penza': 3,
     'саранск': 3, 'saransk': 3,
     'тамбов': 3, 'tambov': 3,
-    'ульяновск': 4, 'ulyanovsk': 4,  # UTC+4 actually since 2018
-    # UTC+4
+    # UTC+3 — южные республики
+    'майкоп': 3, 'maykop': 3,
+    'назрань': 3, 'nazran': 3,
+    'владикавказ': 3, 'vladikavkaz': 3,
+    'грозный': 3, 'grozny': 3,
+    'махачкала': 3, 'makhachkala': 3,
+    'нальчик': 3, 'nalchik': 3,
+    'черкесск': 3, 'cherkessk': 3,
+    'элиста': 3, 'elista': 3,
+    'астрахань': 3, 'astrakhan': 3,
+    # UTC+3 — поволжье и север
+    'киров': 3, 'kirov': 3,
+    'йошкар-ола': 3, 'yoshkar-ola': 3,
+    'чебоксары': 3, 'cheboksary': 3,
+    'великий новгород': 3, 'veliky novgorod': 3,
+    'петрозаводск': 3, 'petrozavodsk': 3,
+    'сыктывкар': 3, 'syktyvkar': 3,
+    'брянск': 3, 'bryansk': 3,
+    # UTC+3 — московская область
+    'дзержинск': 3, 'dzerzhinsk': 3,
+    'подольск': 3, 'podolsk': 3,
+    'люберцы': 3, 'lyubertsy': 3,
+    'мытищи': 3, 'mytishchi': 3,
+    'химки': 3, 'khimki': 3,
+    'красногорск': 3, 'krasnogorsk': 3,
+    'коломна': 3, 'kolomna': 3,
+    'одинцово': 3, 'odintsovo': 3,
+    'королёв': 3, 'korolev': 3,
+    'орехово-зуево': 3, 'orekhovo-zuyevo': 3,
+    'серпухов': 3, 'serpukhov': 3,
+    'клин': 3, 'klin': 3,
+    'раменское': 3, 'ramenskoye': 3,
+    'реутов': 3, 'reutov': 3,
+    'щёлково': 3, 'shchyolkovo': 3,
+    'электросталь': 3, 'elektrostal': 3,
+    'долгопрудный': 3, 'dolgoprudny': 3,
+    'жуковский': 3, 'zhukovsky': 3,
+    # UTC+3 — пригороды СПб
+    'ломоносов': 3, 'lymonosov': 3,
+    'пушкин': 3, 'pushkin': 3,
+    'петергоф': 3, 'peterhof': 3,
+    # UTC+3 — черноморское побережье
+    'новороссийск': 3, 'novorossiysk': 3,
+    'анапа': 3, 'anapa': 3,
+    'геленджик': 3, 'gelendzhik': 3,
+    # UTC+3 → UTC+4 переход
+    'ульяновск': 4, 'ulyanovsk': 4,
+    # UTC+4 — основные города
     'самара': 4, 'samara': 4,
     'тольятти': 4, 'tolyatti': 4,
     'ижевск': 4, 'izhevsk': 4,
     'саратов': 4, 'saratov': 4,
-    # UTC+5
+    # UTC+4 — самарская область
+    'сызрань': 4, 'syzran': 4,
+    'новокуйбышевск': 4, 'novokuybyshevsk': 4,
+    'чапаевск': 4, 'chapaevsk': 4,
+    # UTC+4 — башкортостан
+    'октябрьский': 4, 'oktyabrsky': 4,
+    'нефтекамск': 4, 'neftekamsk': 4,
+    'салават': 4, 'salavat': 4,
+    'ишимбай': 4, 'ishimbay': 4,
+    'кумертау': 4, 'kumertau': 4,
+    # UTC+5 — основные города
     'екатеринбург': 5, 'yekaterinburg': 5, 'екб': 5,
     'уфа': 5, 'ufa': 5,
     'челябинск': 5, 'chelyabinsk': 5,
@@ -191,28 +248,60 @@ TIMEZONE_OFFSETS: Dict[str, float] = {
     'пермь': 5, 'perm': 5,
     'оренбург': 5, 'orenburg': 5,
     'магнитогорск': 5, 'magnitogorsk': 5,
-    # UTC+6
+    # UTC+5 — хмао
+    'нижневартовск': 5, 'nizhnevartovsk': 5,
+    'сургут': 5, 'surgut': 5,
+    'нефтеюганск': 5, 'nefteyugansk': 5,
+    'нягань': 5, 'nyagan': 5,
+    # UTC+6 — Россия
     'омск': 6, 'omsk': 6,
-    # UTC+7
+    # UTC+6 — Казахстан
+    'петропавловск': 6, 'petropavlovsk': 6,
+    'костанай': 6, 'kostanay': 6,
+    'павлодар': 6, 'pavlodar': 6,
+    'семей': 6, 'semey': 6,
+    'туркестан': 6, 'turkestan': 6,
+    # UTC+7 — основные города
     'новосибирск': 7, 'novosibirsk': 7,
     'красноярск': 7, 'krasnoyarsk': 7,
     'барнаул': 7, 'barnaul': 7,
     'кемерово': 7, 'kemerovo': 7,
     'томск': 7, 'tomsk': 7,
-    # UTC+8
+    # UTC+7 — хакасия, алтай, тува
+    'абакан': 7, 'abakan': 7,
+    'горно-алтайск': 7, 'gorno-altaysk': 7,
+    'кызыл': 7, 'kyzyl': 7,
+    'норильск': 7, 'norilsk': 7,
+    'минусинск': 7, 'minusinsk': 7,
+    # UTC+8 — основные города
     'иркутск': 8, 'irkutsk': 8,
     'братск': 8, 'bratsk': 8,
     'ulan-ude': 8, 'улан-удэ': 8,
+    # UTC+8 — амурская область
+    'благовещенск': 8, 'blagoveshchensk': 8,
+    'белогорск': 8, 'belogorsk': 8,
+    'свободный': 8, 'svobodny': 8,
     # UTC+9
     'якутск': 9, 'yakutsk': 9,
     'чита': 9, 'chita': 9,
-    # UTC+10
+    # UTC+10 — основные города
     'владивосток': 10, 'vladivostok': 10,
     'хабаровск': 10, 'khabarovsk': 10,
-    # UTC+11
+    # UTC+10 — приморье и еао
+    'биробиджан': 10, 'birobidzhan': 10,
+    'находка': 10, 'nakhodka': 10,
+    'уссурийск': 10, 'ussuriysk': 10,
+    'арсеньев': 10, 'arsenyev': 10,
+    'комсомольск-на-амуре': 10, 'komsomolsk-on-amur': 10,
+    # UTC+11 — основные города
     'магадан': 11, 'magadan': 11,
+    # UTC+11 — сахалин и колыма
+    'южно-сахалинск': 11, 'yuzhno-sakhalinsk': 11,
+    'охотск': 11, 'okhotsk': 11,
+    'среднеколымск': 11, 'srednekolymsk': 11,
     # UTC+12
     'петропавловск-камчатский': 12, 'petropavlovsk-kamchatsky': 12,
+    'анадырь': 12, 'anadyr': 12,
     # СНГ
     'минск': 3, 'minsk': 3,
     'киев': 2, 'kyiv': 2, 'kiev': 2,
@@ -223,6 +312,11 @@ TIMEZONE_OFFSETS: Dict[str, float] = {
     'тбилиси': 4, 'tbilisi': 4,
     'ереван': 4, 'yerevan': 4,
     'баку': 4, 'baku': 4,
+    # Казахстан — запад (UTC+5)
+    'актау': 5, 'aktau': 5,
+    'актобе': 5, 'aktobe': 5,
+    'актюбинск': 5, 'aktyubinsk': 5,
+    'уральск': 5, 'uralsk': 5,
 }
 
 # ════════════════════════════════════════════════════════════════
@@ -821,35 +915,229 @@ PROFILE_DESCRIPTIONS_RU: Dict[str, str] = {
 
 
 # ════════════════════════════════════════════════════════════════
-#  9. ПЕРЕМЕННЫЕ (4 стрелки)
+#  9. ПЕРЕМЕННЫЕ (4 стрелки) — Цвет, Тон, Пищеварение, Среда,
+#     Перспектива, Мотивация
 # ════════════════════════════════════════════════════════════════
 
-def _determine_variables(
-    personality_sun_pos_in_gate: float,
-    personality_earth_pos_in_gate: float,
-    design_sun_pos_in_gate: float,
-    design_earth_pos_in_gate: float,
-) -> Dict[str, str]:
-    """Определить 4 Переменные (стрелки).
+# ─── Константы для Цветов и Тонов ───
 
-    Каждая стрелка: Left (Стратегический/Активный) или Right (Восприимчивый/Пассивный).
-    Позиция в вороте > 50% (2.8125°) → Right, < 50% → Left.
+# Каждый ворот = 5.625°, каждая линия = 0.9375°
+# Каждый цвет внутри линии = 0.15625° (0.9375 / 6)
+# Каждый тон внутри цвета ≈ 0.02604° (0.15625 / 6)
+
+LINE_WIDTH = GATE_SIZE / 6.0    # 0.9375°
+COLOR_WIDTH = LINE_WIDTH / 6.0  # 0.15625°
+TONE_WIDTH = COLOR_WIDTH / 6.0  # ≈ 0.02604°
+
+# Названия 6 Цветов (общие)
+COLOR_NAMES: Dict[int, str] = {
+    1: 'Определённый (Determined)',
+    2: 'Настроенный (Adjusted)',
+    3: 'Перенесённый (Transferred)',
+    4: 'Открытый (Open)',
+    5: 'Перекрёстный (Crossed)',
+    6: 'Динамичный (Dynamic)',
+}
+
+# Названия 6 Тонов
+TONE_NAMES: Dict[int, str] = {
+    1: 'Обоняние (Smell)',
+    2: 'Вкус (Taste)',
+    3: 'Внешнее зрение (Outer Vision)',
+    4: 'Внутреннее зрение (Inner Vision)',
+    5: 'Чувство (Feeling)',
+    6: 'Осязание (Touch)',
+}
+
+# Названия Цветов для Пищеварения (Design Sun Color)
+DIGESTION_COLOR_NAMES: Dict[int, str] = {
+    1: 'Последовательное (Consecutive)',
+    2: 'Чередующееся (Alternating)',
+    3: 'Закрытое (Closed)',
+    4: 'Открытое (Open)',
+    5: 'Перекрёстное (Crossed)',
+    6: 'Динамичное (Dynamic)',
+}
+
+# Названия Цветов для Среды (Personality Sun Color)
+ENVIRONMENT_COLOR_NAMES: Dict[int, str] = {
+    1: 'Пещеры (Caves)',
+    2: 'Рынки (Markets)',
+    3: 'Кухни (Kitchens)',
+    4: 'Горы (Mountains)',
+    5: 'Долины (Valleys)',
+    6: 'Берега (Shores)',
+}
+
+# Названия Тонов для Перспективы (Personality Sun Tone)
+PERSPECTIVE_TONE_NAMES: Dict[int, str] = {
+    1: 'Обоняние — активное исследование (Smell)',
+    2: 'Вкус — избирательность (Taste)',
+    3: 'Внешнее зрение — фокус вовне (Outer Vision)',
+    4: 'Внутреннее зрение — внутренний фокус (Inner Vision)',
+    5: 'Чувство — интуитивное восприятие (Feeling)',
+    6: 'Осязание — контактное восприятие (Touch)',
+}
+
+# Названия Тонов для Мотивации (Design Sun Tone)
+MOTIVATION_TONE_NAMES: Dict[int, str] = {
+    1: 'Обоняние — личная потребность (Smell)',
+    2: 'Вкус — личный выбор (Taste)',
+    3: 'Внешнее зрение — личная перспектива (Outer Vision)',
+    4: 'Внутреннее зрение — трансцендентная перспектива (Inner Vision)',
+    5: 'Чувство — трансцендентная мотивация (Feeling)',
+    6: 'Осязание — трансцендентный контакт (Touch)',
+}
+
+
+# ─── Функция определения Цвета и Тона ───
+
+def longitude_to_color_tone(lon: float) -> Tuple[int, int, int, int]:
+    """Перевести эклиптическую долготу в ворота, линию, цвет и тон.
+
+    Иерархия: Ворото → Линия → Цвет → Тон.
+    Каждый ворот = 5.625°, линия = 0.9375°, цвет = 0.15625°, тон ≈ 0.02604°.
+
+    Возвращает: (gate, line, color, tone)
+        gate: 1-64
+        line: 1-6
+        color: 1-6
+        tone: 1-6
     """
-    half_gate = GATE_SIZE / 2.0  # 2.8125°
+    lon = lon % 360.0
+    sector = int(lon / GATE_SIZE)  # 0..63
+    if sector >= 64:
+        sector = 63
+    gate = GATE_SEQUENCE[sector]
+    position_in_gate = lon - sector * GATE_SIZE
+
+    # Линия: каждая = 0.9375°
+    line = int(position_in_gate / LINE_WIDTH) + 1
+    if line > 6:
+        line = 6
+    position_in_line = position_in_gate - (line - 1) * LINE_WIDTH
+
+    # Цвет: каждый = 0.15625°
+    color = int(position_in_line / COLOR_WIDTH) + 1
+    if color > 6:
+        color = 6
+    position_in_color = position_in_line - (color - 1) * COLOR_WIDTH
+
+    # Тон: каждый ≈ 0.02604°
+    tone = int(position_in_color / TONE_WIDTH) + 1
+    if tone > 6:
+        tone = 6
+
+    return gate, line, color, tone
+
+
+def determine_variables(
+    personality_sun_lon: float,
+    design_sun_lon: float,
+) -> Dict[str, Any]:
+    """Определить 4 Переменные Дизайна Человека на основе Цвета и Тона Солнц.
+
+    Переменные (4 стрелки на бодиграфе):
+      1. Пищеварение/Питание (верхняя левая) — Design Sun Color
+         Цвет 1-3 = Левое/Активное, 4-6 = Правое/Восприимчивое
+      2. Среда (верхняя правая) — Personality Sun Color
+         Цвет 1-3 = Левое/Выбранное, 4-6 = Правое/Обнаруженное
+      3. Перспектива/Видение (нижняя правая) — Personality Sun Tone
+         Тон 1-3 = Левое/Фокусированное, 4-6 = Правое/Периферийное
+      4. Мотивация (нижняя левая) — Design Sun Tone
+         Тон 1-3 = Левое/Личное, 4-6 = Правое/Трансцендентное
+
+    Параметры:
+        personality_sun_lon: эклиптическая долгота Солнца Личности
+        design_sun_lon: эклиптическая долгота Солнца Дизайна
+
+    Возвращает:
+        словарь с 4 переменными и их описаниями
+    """
+    # Определяем Цвет и Тон для обоих Солнц
+    p_gate, p_line, p_color, p_tone = longitude_to_color_tone(personality_sun_lon)
+    d_gate, d_line, d_color, d_tone = longitude_to_color_tone(design_sun_lon)
+
+    # ── 1. Пищеварение (Design Sun Color) ──
+    digestion_left_right = 'Left (Активное)' if d_color <= 3 else 'Right (Восприимчивое)'
+    digestion_color_name = DIGESTION_COLOR_NAMES.get(d_color, '?')
+
+    # ── 2. Среда (Personality Sun Color) ──
+    environment_left_right = 'Left (Выбранная)' if p_color <= 3 else 'Right (Обнаруженная)'
+    environment_color_name = ENVIRONMENT_COLOR_NAMES.get(p_color, '?')
+
+    # ── 3. Перспектива (Personality Sun Tone) ──
+    perspective_left_right = 'Left (Фокусированная)' if p_tone <= 3 else 'Right (Периферийная)'
+    perspective_tone_name = PERSPECTIVE_TONE_NAMES.get(p_tone, '?')
+
+    # ── 4. Мотивация (Design Sun Tone) ──
+    motivation_left_right = 'Left (Личная)' if d_tone <= 3 else 'Right (Трансцендентная)'
+    motivation_tone_name = MOTIVATION_TONE_NAMES.get(d_tone, '?')
 
     return {
-        # Верхняя правая: Мозг/Ум (Personality Sun)
-        'brain': 'Right (Восприимчивый)' if personality_sun_pos_in_gate >= half_gate
-                 else 'Left (Стратегический)',
-        # Верхняя левая: Перспектива (Personality Earth)
-        'perspective': 'Right (Восприимчивая)' if personality_earth_pos_in_gate >= half_gate
-                       else 'Left (Стратегическая)',
-        # Нижняя правая: Осознанность (Design Sun)
-        'awareness': 'Right (Восприимчивая)' if design_sun_pos_in_gate >= half_gate
-                     else 'Left (Стратегическая)',
-        # Нижняя левая: Среда (Design Earth)
-        'environment': 'Right (Восприимчивая)' if design_earth_pos_in_gate >= half_gate
-                       else 'Left (Стратегическая)',
+        'digestion': {
+            'arrow': 'top-left',
+            'direction': digestion_left_right,
+            'color': d_color,
+            'color_name': digestion_color_name,
+            'tone': d_tone,
+            'tone_name': TONE_NAMES.get(d_tone, '?'),
+            'description': (
+                f'Пищеварение: {digestion_left_right}, Цвет {d_color} — {digestion_color_name}. '
+                f'Тон {d_tone} — {TONE_NAMES.get(d_tone, "?")}. '
+                f'Определяется Цветом Солнца Дизайна.'
+            ),
+        },
+        'environment': {
+            'arrow': 'top-right',
+            'direction': environment_left_right,
+            'color': p_color,
+            'color_name': environment_color_name,
+            'tone': p_tone,
+            'tone_name': TONE_NAMES.get(p_tone, '?'),
+            'description': (
+                f'Среда: {environment_left_right}, Цвет {p_color} — {environment_color_name}. '
+                f'Тон {p_tone} — {TONE_NAMES.get(p_tone, "?")}. '
+                f'Определяется Цветом Солнца Личности.'
+            ),
+        },
+        'perspective': {
+            'arrow': 'bottom-right',
+            'direction': perspective_left_right,
+            'color': p_color,
+            'color_name': COLOR_NAMES.get(p_color, '?'),
+            'tone': p_tone,
+            'tone_name': perspective_tone_name,
+            'description': (
+                f'Перспектива: {perspective_left_right}, Тон {p_tone} — {perspective_tone_name}. '
+                f'Цвет {p_color} — {COLOR_NAMES.get(p_color, "?")}. '
+                f'Определяется Тоном Солнца Личности.'
+            ),
+        },
+        'motivation': {
+            'arrow': 'bottom-left',
+            'direction': motivation_left_right,
+            'color': d_color,
+            'color_name': COLOR_NAMES.get(d_color, '?'),
+            'tone': d_tone,
+            'tone_name': motivation_tone_name,
+            'description': (
+                f'Мотивация: {motivation_left_right}, Тон {d_tone} — {motivation_tone_name}. '
+                f'Цвет {d_color} — {COLOR_NAMES.get(d_color, "?")}. '
+                f'Определяется Тоном Солнца Дизайна.'
+            ),
+        },
+        # Сводка для быстрого доступа
+        'summary': {
+            'digestion_direction': digestion_left_right,
+            'environment_direction': environment_left_right,
+            'perspective_direction': perspective_left_right,
+            'motivation_direction': motivation_left_right,
+            'personality_sun_color': p_color,
+            'personality_sun_tone': p_tone,
+            'design_sun_color': d_color,
+            'design_sun_tone': d_tone,
+        },
     }
 
 
@@ -1015,10 +1303,13 @@ def calculate_bodygraph(
             if body_name in personality_positions:
                 lon = personality_positions[body_name]
                 gate, line, pos = longitude_to_gate_line(lon)
+                _, _, color, tone = longitude_to_color_tone(lon)
                 personality_gates[body_name] = {
                     'longitude': round(lon, 4),
                     'gate': gate,
                     'line': line,
+                    'color': color,
+                    'tone': tone,
                     'position_in_gate': round(pos, 4),
                     'center': GATE_CENTER.get(gate, 'unknown'),
                 }
@@ -1028,10 +1319,13 @@ def calculate_bodygraph(
             if body_name in design_positions:
                 lon = design_positions[body_name]
                 gate, line, pos = longitude_to_gate_line(lon)
+                _, _, color, tone = longitude_to_color_tone(lon)
                 design_gates[body_name] = {
                     'longitude': round(lon, 4),
                     'gate': gate,
                     'line': line,
+                    'color': color,
+                    'tone': tone,
                     'position_in_gate': round(pos, 4),
                     'center': GATE_CENTER.get(gate, 'unknown'),
                 }
@@ -1079,12 +1373,10 @@ def calculate_bodygraph(
         result['profile'] = profile
         result['profile_description'] = PROFILE_DESCRIPTIONS_RU.get(profile, '')
 
-        # ── Переменные ──
-        p_sun_pos = personality_gates.get('sun', {}).get('position_in_gate', 0)
-        p_earth_pos = personality_gates.get('earth', {}).get('position_in_gate', 0)
-        d_sun_pos = design_gates.get('sun', {}).get('position_in_gate', 0)
-        d_earth_pos = design_gates.get('earth', {}).get('position_in_gate', 0)
-        variables = _determine_variables(p_sun_pos, p_earth_pos, d_sun_pos, d_earth_pos)
+        # ── Переменные (Цвет, Тон, Пищеварение, Среда, Перспектива, Мотивация) ──
+        p_sun_lon = personality_positions.get('sun', 0.0)
+        d_sun_lon = design_positions.get('sun', 0.0)
+        variables = determine_variables(p_sun_lon, d_sun_lon)
         result['variables'] = variables
 
         # ── Инкарнационный Крест ──
@@ -1181,12 +1473,40 @@ def build_hd_calculated_context(
 
     # ── ПЕРЕМЕННЫЕ ──
     lines.append("")
-    lines.append("── ПЕРЕМЕННЫЕ (4 стрелки) ──")
+    lines.append("── ПЕРЕМЕННЫЕ (4 стрелки: Цвет, Тон) ──")
     variables = data.get('variables', {})
-    lines.append(f"  ↗ Мозг/Ум:          {variables.get('brain', '?')}")
-    lines.append(f"  ↖ Перспектива:       {variables.get('perspective', '?')}")
-    lines.append(f"  ↘ Осознанность:      {variables.get('awareness', '?')}")
-    lines.append(f"  ↙ Среда:             {variables.get('environment', '?')}")
+
+    # Пищеварение
+    dig = variables.get('digestion', {})
+    lines.append(f"  ↖ Пищеварение:       {dig.get('direction', '?')} | "
+                 f"Цвет {dig.get('color', '?')}: {dig.get('color_name', '?')} | "
+                 f"Тон {dig.get('tone', '?')}: {dig.get('tone_name', '?')}")
+    if dig.get('description'):
+        lines.append(f"    {dig['description']}")
+
+    # Среда
+    env = variables.get('environment', {})
+    lines.append(f"  ↗ Среда:             {env.get('direction', '?')} | "
+                 f"Цвет {env.get('color', '?')}: {env.get('color_name', '?')} | "
+                 f"Тон {env.get('tone', '?')}: {env.get('tone_name', '?')}")
+    if env.get('description'):
+        lines.append(f"    {env['description']}")
+
+    # Перспектива
+    per = variables.get('perspective', {})
+    lines.append(f"  ↘ Перспектива:       {per.get('direction', '?')} | "
+                 f"Тон {per.get('tone', '?')}: {per.get('tone_name', '?')} | "
+                 f"Цвет {per.get('color', '?')}: {per.get('color_name', '?')}")
+    if per.get('description'):
+        lines.append(f"    {per['description']}")
+
+    # Мотивация
+    mot = variables.get('motivation', {})
+    lines.append(f"  ↙ Мотивация:         {mot.get('direction', '?')} | "
+                 f"Тон {mot.get('tone', '?')}: {mot.get('tone_name', '?')} | "
+                 f"Цвет {mot.get('color', '?')}: {mot.get('color_name', '?')}")
+    if mot.get('description'):
+        lines.append(f"    {mot['description']}")
 
     # ── ОПРЕДЕЛЁННОСТЬ ──
     lines.append("")
@@ -1232,8 +1552,8 @@ def build_hd_calculated_context(
     # ── ПОЗИЦИИ ЛИЧНОСТИ ──
     lines.append("")
     lines.append("── ЛИЧНОСТЬ (Осознанные / Conscious) ──")
-    lines.append("  Планета              Долгота    Ворота  Линия  Центр")
-    lines.append("  " + "─" * 56)
+    lines.append("  Планета              Долгота    Ворота  Линия  Цвет  Тон  Центр")
+    lines.append("  " + "─" * 70)
     p_gates = data.get('personality_gates', {})
     for body in ['sun', 'earth', 'moon', 'north_node', 'south_node',
                  'mercury', 'venus', 'mars', 'jupiter', 'saturn',
@@ -1243,13 +1563,13 @@ def build_hd_calculated_context(
             name = PLANET_NAMES_RU.get(body, body)
             center_name = CENTER_NAMES_RU.get(g.get('center', ''), g.get('center', ''))
             lines.append(f"  {name:22s} {g['longitude']:8.4f}°  "
-                         f"  {g['gate']:2d}      {g['line']}    {center_name}")
+                         f"  {g['gate']:2d}      {g['line']}     {g.get('color', '?')}     {g.get('tone', '?')}   {center_name}")
 
     # ── ПОЗИЦИИ ДИЗАЙНА ──
     lines.append("")
     lines.append("── ДИЗАЙН (Неосознанные / Unconscious) ──")
-    lines.append("  Планета              Долгота    Ворота  Линия  Центр")
-    lines.append("  " + "─" * 56)
+    lines.append("  Планета              Долгота    Ворота  Линия  Цвет  Тон  Центр")
+    lines.append("  " + "─" * 70)
     d_gates = data.get('design_gates', {})
     for body in ['sun', 'earth', 'moon', 'north_node', 'south_node',
                  'mercury', 'venus', 'mars', 'jupiter', 'saturn',
@@ -1259,7 +1579,7 @@ def build_hd_calculated_context(
             name = PLANET_NAMES_RU.get(body, body)
             center_name = CENTER_NAMES_RU.get(g.get('center', ''), g.get('center', ''))
             lines.append(f"  {name:22s} {g['longitude']:8.4f}°  "
-                         f"  {g['gate']:2d}      {g['line']}    {center_name}")
+                         f"  {g['gate']:2d}      {g['line']}     {g.get('color', '?')}     {g.get('tone', '?')}   {center_name}")
 
     # ── ВСЕ АКТИВИРОВАННЫЕ ВОРОТА ──
     lines.append("")
@@ -1298,7 +1618,11 @@ def build_hd_calculated_context(
     lines.append("5. Опиши определённые/открытые центры и их влияние")
     lines.append("6. Опиши полные каналы и их качества")
     lines.append("7. Упомяни висячие вороты и их потенциал")
-    lines.append("8. Опиши Переменные (4 стрелки) и их значение")
+    lines.append("8. Опиши Переменные (4 стрелки) и их значение:")
+    lines.append("   - Пищеварение: как правильно питаться (Design Sun Color)")
+    lines.append("   - Среда: какие условия среды оптимальны (Personality Sun Color)")
+    lines.append("   - Перспектива: как видеть мир (Personality Sun Tone)")
+    lines.append("   - Мотивация: что мотивирует (Design Sun Tone)")
     lines.append("9. Всё на русском языке, тёплым и понятным тоном")
     lines.append("═" * 60)
 

@@ -105,6 +105,44 @@ _PRODUCT_SEARCH_PREFIXES = [
     "подскажи", "посоветуй", "рекомендуй", "выбери", "какие ",
 ]
 
+# v60: Consultation keyword detection - auto-detect consultation requests in regular chat
+_CONSULTATION_KEYWORDS = {
+    "humandesign": [
+        "бодиграф", "дизайн человека", "дизайн челов", "bodygraph", "human design",
+        "ворота", "каналы", "определённост", "определенност", "центры",
+        "профиль", "авторитет", "стратегия", "тип энер",
+        "проектор", "генератор", "манифестор", "рефлектор", "манифестирующий",
+    ],
+    "astro": [
+        "натальн", "гороскоп", "асцендент", "знак зодиак",
+        "планет", "дом астрол", "аспект", "транзит", "соляр", "прогресс",
+    ],
+    "numerology": [
+        "матриц судьб", "матрицу судьб", "число жизнен", "кармическ",
+        "число судьб", "пиковое числ", "нумеролог",
+    ],
+    "jyotish": [
+        "джйотиш", "ведическая астрол", "накшатра", "даша", "лагна", "джанма",
+    ],
+    "health": [
+        "доша", "аюрвед", "психосоматик", "конституци", "капха", "вата", "питта",
+    ],
+}
+
+# Words that should NOT trigger consultation detection on their own (too ambiguous)
+_CONSULTATION_FALSE_POSITIVE_WORDS = {
+    "ворота",  # could mean physical gates
+    "каналы",  # could mean TV channels
+    "центры",  # could mean shopping centers
+    "профиль",  # could mean social profile
+    "стратегия",  # could mean business strategy
+    "авторитет",  # could mean authority figure
+    "прогресс",  # could mean general progress
+    "аспект",  # could mean general aspect
+    "транзит",  # could mean public transit
+    "планет",  # without context could be vague, but usually astrology
+}
+
 # v42: Per-user message dedup - track ACTIVE AI tasks per user
 _user_processing: dict = {}  # user_id -> asyncio.Task (active AI task) or None
 
@@ -2728,10 +2766,527 @@ async def _save_simple_exchange(message: Message, user_text: str, bot_text: str,
         pass
 
 
+# ════════════════════════════════════════════════════════════
+#  v60: CONSULTATION AUTO-DETECTION - route consultation
+#  requests from regular chat to proper handlers
+# ════════════════════════════════════════════════════════════
+
+def _detect_consultation_request(text: str):
+    """Detect if a user's message is a consultation request in natural language.
+
+    Returns (consultation_type, confidence) or None.
+    consultation_type is one of: "humandesign", "astro", "numerology", "jyotish", "health"
+    confidence is "high" (unambiguous keyword match) or "low" (ambiguous keyword)
+    """
+    if not text:
+        return None
+
+    text_lower = text.lower()
+
+    # Score each consultation type by keyword matches
+    scores = {}
+    for ctype, keywords in _CONSULTATION_KEYWORDS.items():
+        matched_keywords = [kw for kw in keywords if kw in text_lower]
+        if matched_keywords:
+            # Weight: ambiguous keywords count less
+            total_weight = 0
+            for kw in matched_keywords:
+                if kw in _CONSULTATION_FALSE_POSITIVE_WORDS:
+                    total_weight += 0.5  # ambiguous
+                else:
+                    total_weight += 1.0  # unambiguous
+            scores[ctype] = total_weight
+
+    if not scores:
+        return None
+
+    # Pick the highest scoring consultation type
+    best_type = max(scores, key=scores.get)
+    best_score = scores[best_type]
+
+    # Need at least one unambiguous keyword or two ambiguous ones
+    if best_score < 0.75:
+        return None
+
+    confidence = "high" if best_score >= 1.0 else "low"
+    return (best_type, confidence)
+
+
+def _extract_birth_data_from_text(text: str):
+    """Extract birth date, time, and place from a message.
+
+    Returns (day, month, year, birth_time, birth_place) or None.
+    """
+    from bot.consultations import parse_birth_date
+
+    # Try to find a date in the text
+    birth_date = parse_birth_date(text)
+    if not birth_date:
+        return None
+
+    day, month, year = birth_date
+
+    # Extract time
+    birth_time = ""
+    time_match = re.search(r'(\d{1,2}[:.]\d{2})', text)
+    if time_match:
+        birth_time = time_match.group(1).replace(".", ":")
+
+    # Extract place (text after the date that's not a number)
+    birth_place = ""
+    # Try to find the date pattern in text and take what's after it
+    date_patterns = [
+        r'\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4}',
+        r'\d{4}[./\-]\d{1,2}[./\-]\d{1,2}',
+    ]
+    for dp in date_patterns:
+        dm = re.search(dp, text)
+        if dm:
+            after_date = text[dm.end():].strip()
+            # Remove time if present
+            if time_match:
+                after_date = after_date.replace(time_match.group(0), "").strip()
+            # If there's remaining text that looks like a place name
+            parts = after_date.split()
+            if parts:
+                potential_place = " ".join(parts)
+                if not potential_place.replace(".", "").replace("/", "").replace("-", "").replace(" ", "").isdigit():
+                    birth_place = potential_place
+            break
+
+    return (day, month, year, birth_time, birth_place)
+
+
+async def _handle_consultation_from_chat(
+    message: Message, text: str, consultation_type: str,
+    db, ai_router, confidence: str = "high"
+) -> bool:
+    """Handle a consultation request detected in regular chat.
+
+    Routes to the appropriate consultation handler logic.
+    Returns True if consultation was handled, False if it should fall through to general AI.
+    """
+    user_id = message.from_user.id
+
+    # Try to extract birth data from the message
+    extracted = _extract_birth_data_from_text(text)
+    day = month = year = None
+    birth_time = ""
+    birth_place = ""
+
+    if extracted:
+        day, month, year, birth_time, birth_place = extracted
+
+    # Fall back to stored birth data
+    if not day and db:
+        try:
+            stored = await db.get_user_birth_data(user_id)
+            if stored and stored.get("birth_day"):
+                day, month, year = stored["birth_day"], stored["birth_month"], stored["birth_year"]
+                if not birth_time:
+                    birth_time = stored.get("birth_time", "")
+                if not birth_place:
+                    birth_place = stored.get("birth_place", "")
+        except Exception:
+            pass
+
+    # ── HUMAN DESIGN ──
+    if consultation_type == "humandesign":
+        if not day:
+            # No birth data — ask for it, but in a natural chat way
+            await message.answer(
+                "О, Дизайн Человека! Классная тема! 🧬✨\n\n"
+                "Чтобы составить твой бодиграф, нужна дата рождения.\n"
+                "Напиши так: /humandesign 15.06.2001\n"
+                "С временем точнее: /humandesign 15.06.2001 14:30 Москва\n\n"
+                "Или просто скажи дату, и Настя разберётся! 💅"
+            )
+            return True
+
+        if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2020):
+            await message.answer("Капец, дата какая-то странная... Проверь и попробуй снова! 🤔")
+            return True
+
+        if not ai_router:
+            await message.answer("Настя пока не может составить Дизайн Человека... Попробуй позже! 🧬💅")
+            return True
+
+        # Save birth data
+        if db:
+            try:
+                await db.save_user_birth_data(
+                    user_id, day, month, year,
+                    birth_time=birth_time,
+                    birth_place=birth_place,
+                    consultation_type="humandesign",
+                )
+            except Exception:
+                pass
+
+        await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        await message.answer("Настя составляет твой Дизайн Человека! Это глубокая работа... 🧬✨")
+
+        try:
+            from bot.consultations import HD_SYSTEM_PROMPT_V3, build_humandesign_context
+
+            hd_context = build_humandesign_context(day, month, year, birth_time, birth_place)
+
+            prompt_parts = [f"Дата рождения: {day:02d}.{month:02d}.{year}"]
+            if birth_time:
+                prompt_parts.append(f"Время рождения: {birth_time}")
+            if birth_place:
+                prompt_parts.append(f"Место рождения: {birth_place}")
+
+            if birth_time and birth_place:
+                prompt_parts.append(
+                    "\nВНИМАНИЕ: Указано время и место рождения! Ниже передан ПОЛНЫЙ РАСЧЁТ БОДИГРАФА "
+                    "с точными Типом, Авторитетом, Профилем, Центрами, Каналами, Воротами и Переменными. "
+                    "Используй ТОЛЬКО эти рассчитанные данные! НЕ придумывай другие ворота, каналы или типы! "
+                    "Дай максимально развёрнутую ИНТЕРПРЕТАЦИЮ рассчитанных данных."
+                )
+            else:
+                prompt_parts.append(
+                    "\nВремя и место не указаны — расчёт основан только на дате рождения. "
+                    "Ниже передан РАСЧЁТ БОДИГРАФА — используй ТОЛЬКО рассчитанные данные! "
+                    "НЕ придумывай свои типы, ворота или каналы! "
+                    "Для более точного расчёта (особенно Авторитета и центров) порекомендуй указать время рождения."
+                )
+
+            result = await ai_router.chat(
+                prompt=f"Составь профессиональный разбор Дизайна Человека.\n\n" + "\n".join(prompt_parts) + f"\n\n{hd_context}",
+                system_prompt=HD_SYSTEM_PROMPT_V3,
+                max_tokens=3000,
+            )
+
+            if result and result.text:
+                from ai.router import AIRouter
+                cleaned = AIRouter.clean_ai_response(result.text)
+                if cleaned:
+                    response = f"🧬 Дизайн Человека: {day:02d}.{month:02d}.{year}\n\n{cleaned}"
+                    await _send_long_message(message, response)
+                    if db:
+                        await _save_simple_exchange(message, text[:200], cleaned[:300], db)
+                    return True
+        except Exception as e:
+            logger.error(f"Auto-detected HD consultation error: {e}")
+
+        await message.answer("Ой, Настя не смогла прочитать Дизайн... Попробуй позже! 🧬😔")
+        return True
+
+    # ── ASTROLOGY ──
+    elif consultation_type == "astro":
+        if not day:
+            await message.answer(
+                "Астрология! Настя обожает! ⭐🔮\n\n"
+                "Для натальной карты нужна дата рождения.\n"
+                "Напиши: /astro 15.06.2001\n"
+                "С временем точнее: /astro 15.06.2001 14:30 Москва\n\n"
+                "Или просто скажи дату! 💅"
+            )
+            return True
+
+        if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2020):
+            await message.answer("Капец, дата какая-то странная... Проверь и попробуй снова! 🤔")
+            return True
+
+        if not ai_router:
+            await message.answer("Настя пока не может составить натальную карту... Попробуй позже! ⭐💅")
+            return True
+
+        if db:
+            try:
+                await db.save_user_birth_data(
+                    user_id, day, month, year,
+                    birth_time=birth_time,
+                    birth_place=birth_place,
+                    consultation_type="astro",
+                )
+            except Exception:
+                pass
+
+        await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        await message.answer("Настя составляет натальную карту! Серьёзная астрология, подожди... ⭐🔮")
+
+        try:
+            from bot.consultations import (
+                get_zodiac_sign, ZODIAC_DETAILS, ASTRO_SYSTEM_PROMPT_V3,
+                calculate_life_path_number, SOLAR_RETURN_INFO, build_astrology_context,
+            )
+
+            zodiac = get_zodiac_sign(day, month)
+            sign_name = zodiac.capitalize() if zodiac else "Неизвестно"
+            life_path = calculate_life_path_number(day, month, year)
+
+            astro_context = build_astrology_context(day, month, year, birth_time, birth_place)
+
+            prompt_parts = [f"Дата рождения: {day:02d}.{month:02d}.{year}"]
+            if birth_time:
+                prompt_parts.append(f"Время рождения: {birth_time}")
+            if birth_place:
+                prompt_parts.append(f"Место рождения: {birth_place}")
+            prompt_parts.append(f"Знак зодиака: {sign_name}")
+            prompt_parts.append(f"Число жизненного пути: {life_path}")
+
+            if birth_time and birth_place:
+                prompt_parts.append(
+                    "\nВНИМАНИЕ: Указано время и место рождения! Составь НАИБОЛЕЕ ТОЧНЫЙ разбор натальной карты. "
+                    "Рассчитай примерный Асцендент на основе времени и места рождения. "
+                    "Определи положение планет в знаках и домах. Укажи ключевые аспекты. "
+                    "Рассмотри текущие транзиты и солярное возвращение."
+                )
+            else:
+                prompt_parts.append(
+                    "\nВремя и место рождения НЕ указаны. Составь разбор на основе известных данных. "
+                    "Определи вероятный Асцендент и общие характеристики. "
+                    "Без точного времени дома и Асцендент приблизительны."
+                )
+
+            result = await ai_router.chat(
+                prompt=f"Составь профессиональный астрологический разбор.\n\n" + "\n".join(prompt_parts) + f"\n\n{astro_context}",
+                system_prompt=ASTRO_SYSTEM_PROMPT_V3,
+                max_tokens=3000,
+            )
+
+            if result and result.text:
+                from ai.router import AIRouter
+                cleaned = AIRouter.clean_ai_response(result.text)
+                if cleaned:
+                    response = f"⭐ Натальная карта: {sign_name}, {day:02d}.{month:02d}.{year}\n\n{cleaned}"
+                    await _send_long_message(message, response)
+                    if db:
+                        await _save_simple_exchange(message, text[:200], cleaned[:300], db)
+                    return True
+        except Exception as e:
+            logger.error(f"Auto-detected Astro consultation error: {e}")
+
+        await message.answer("Ой, Настя не смогла прочитать звёзды... Попробуй позже! ⭐😔")
+        return True
+
+    # ── NUMEROLOGY / MATRIX ──
+    elif consultation_type == "numerology":
+        if not day:
+            await message.answer(
+                "О, нумерология! Настя обожает числа! 🔮✨\n\n"
+                "Для разбора нужна дата рождения.\n"
+                "Напиши: /matrix 15.06.2001 — для Матрицы Судьбы\n"
+                "Или: /numerology 15.06.2001 — для полного нумерологического разбора\n\n"
+                "Или просто скажи дату! 💅"
+            )
+            return True
+
+        if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2020):
+            await message.answer("Капец, дата какая-то странная... Проверь и попробуй снова! 🤔")
+            return True
+
+        if not ai_router:
+            await message.answer("Настя пока не может провести разбор... Попробуй позже! 🔮💅")
+            return True
+
+        if db:
+            try:
+                await db.save_user_birth_data(
+                    user_id, day, month, year,
+                    consultation_type="matrix",
+                )
+            except Exception:
+                pass
+
+        await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        await message.answer("О, Настя составляет Матрицу Судьбы! Это серьёзная работа, подожди немного... 🔮✨")
+
+        try:
+            from bot.consultations import (
+                calculate_matrix_of_destiny, get_matrix_prompt_params,
+                MATRIX_SYSTEM_PROMPT, build_numerology_context,
+            )
+
+            matrix = calculate_matrix_of_destiny(day, month, year)
+            prompt_data = get_matrix_prompt_params(matrix)
+            numerology_context = build_numerology_context(day, month, year)
+
+            result = await ai_router.chat(
+                prompt=f"Составь профессиональный разбор Матрицы Судьбы.\n\n{prompt_data}\n\n{numerology_context}",
+                system_prompt=MATRIX_SYSTEM_PROMPT,
+                max_tokens=3000,
+            )
+
+            if result and result.text:
+                from ai.router import AIRouter
+                cleaned = AIRouter.clean_ai_response(result.text)
+                if cleaned:
+                    response = f"🔮 Матрица Судьбы для {day:02d}.{month:02d}.{year}\n\n{cleaned}"
+                    await _send_long_message(message, response)
+                    if db:
+                        await _save_simple_exchange(message, text[:200], cleaned[:300], db)
+                    return True
+        except Exception as e:
+            logger.error(f"Auto-detected Numerology consultation error: {e}")
+
+        await message.answer("Ой, Настя не смогла прочитать Матрицу... Попробуй позже! 🔮😔")
+        return True
+
+    # ── JYOTISH ──
+    elif consultation_type == "jyotish":
+        if not day:
+            await message.answer(
+                "Джйотиш! Ведическая астрология! 🕉️✨\n\n"
+                "Для карты Джанма-Кундали нужна дата рождения.\n"
+                "Напиши: /jyotish 15.06.2001\n"
+                "С временем и местом точнее: /jyotish 15.06.2001 14:30 Москва\n\n"
+                "Или просто скажи дату! 💅"
+            )
+            return True
+
+        if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2020):
+            await message.answer("Капец, дата какая-то странная... Проверь и попробуй снова! 🤔")
+            return True
+
+        if not ai_router:
+            await message.answer("Настя пока не может составить карту Джйотиш... Попробуй позже! 🕉️💅")
+            return True
+
+        if db:
+            try:
+                await db.save_user_birth_data(
+                    user_id, day, month, year,
+                    birth_time=birth_time,
+                    birth_place=birth_place,
+                    consultation_type="jyotish",
+                )
+            except Exception:
+                pass
+
+        await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        await message.answer("Настя составляет карту Джанма-Кундали! Это серьёзная Ведическая астрология, подожди... 🕉️✨")
+
+        try:
+            from bot.consultations import (
+                get_zodiac_sign, get_jyotish_rashi_approx,
+                JYOTISH_SYSTEM_PROMPT, build_jyotish_context,
+            )
+
+            western_sign = get_zodiac_sign(day, month)
+            vedic_rashi = get_jyotish_rashi_approx(western_sign)
+            rashi_info = {"symbol": "", "ruler": "", "element": "", "quality": "", "traits": ""}
+            jyotish_context = build_jyotish_context(day, month, year, birth_time, birth_place)
+            try:
+                from bot.consultations import JYOTISH_RASHIS
+                rashi_info = JYOTISH_RASHIS.get(vedic_rashi, rashi_info)
+            except Exception:
+                pass
+
+            prompt_parts = [
+                f"Дата рождения: {day:02d}.{month:02d}.{year}",
+                f"Западный знак зодиака: {western_sign.capitalize() if western_sign else 'Неизвестно'}",
+                f"Приблизительный ведический Раши (сидерический): {vedic_rashi} ({rashi_info.get('symbol', '')})",
+            ]
+            if birth_time:
+                prompt_parts.append(f"Время рождения: {birth_time}")
+            if birth_place:
+                prompt_parts.append(f"Место рождения: {birth_place}")
+
+            if birth_time and birth_place:
+                prompt_parts.append(
+                    "\nВНИМАНИЕ: Указано время и место рождения! Составь НАИБОЛЕЕ точный разбор карты Джанма-Кундали. "
+                    "Рассчитай примерную Лагну на основе времени и места рождения. "
+                    "Определи положение всех Грах в Раши и Бхавах. "
+                    "Укажи Джанма-Накшатру. Определи Атма-караку. Найди ключевые Йоги. "
+                    "Определи текущую Махадашу. Рассмотри текущие транзиты Гочара."
+                )
+            else:
+                prompt_parts.append(
+                    "\nВремя и место рождения НЕ указаны. Составь разбор на основе известных данных. "
+                    "Определи вероятную Лагну и общие характеристики. "
+                    "Без точного времени Лагна и Бхавы приблизительны."
+                )
+
+            result = await ai_router.chat(
+                prompt=f"Составь профессиональный разбор карты Джанма-Кундали (Джйотиш / Ведическая астрология).\n\n" + "\n".join(prompt_parts) + f"\n\n{jyotish_context}",
+                system_prompt=JYOTISH_SYSTEM_PROMPT,
+                max_tokens=3000,
+            )
+
+            if result and result.text:
+                from ai.router import AIRouter
+                cleaned = AIRouter.clean_ai_response(result.text)
+                if cleaned:
+                    response = f"🕉️ Джйотиш: {vedic_rashi} ({rashi_info.get('symbol', '')}), {day:02d}.{month:02d}.{year}\n\n{cleaned}"
+                    await _send_long_message(message, response)
+                    if db:
+                        await _save_simple_exchange(message, text[:200], cleaned[:300], db)
+                    return True
+        except Exception as e:
+            logger.error(f"Auto-detected Jyotish consultation error: {e}")
+
+        await message.answer("Ой, Настя не смогла составить карту Джйотиш... Попробуй позже! 🕉️😔")
+        return True
+
+    # ── HEALTH / AYURVEDA ──
+    elif consultation_type == "health":
+        if not ai_router:
+            await message.answer("Настя пока не может проконсультировать... Попробуй позже! 🌿💅")
+            return True
+
+        await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        await message.answer("Настя анализирует твоё здоровье! Секунду... 🌿✨")
+
+        try:
+            from bot.consultations import HEALTH_SYSTEM_PROMPT_V3, build_health_context
+
+            # Try to detect blood type from query
+            blood_type_hint = ""
+            blood_keywords = {
+                "1 группа": "I (O)", "первая группа": "I (O)", "i группа": "I (O)", "0 группа": "I (O)",
+                "2 группа": "II (A)", "вторая группа": "II (A)", "ii группа": "II (A)", "а группа": "II (A)",
+                "3 группа": "III (B)", "третья группа": "III (B)", "iii группа": "III (B)", "b группа": "III (B)",
+                "4 группа": "IV (AB)", "четвёртая группа": "IV (AB)", "четвертая группа": "IV (AB)", "iv группа": "IV (AB)", "ab группа": "IV (AB)",
+            }
+            for keyword, btype in blood_keywords.items():
+                if keyword in text.lower():
+                    blood_type_hint = btype
+                    break
+
+            health_context = build_health_context(symptoms=text, blood_type=blood_type_hint)
+
+            result = await ai_router.chat(
+                prompt=(
+                    f"Опиши человека и дай профессиональную консультацию по здоровью.\n\n"
+                    f"Описание человека: {text}\n\n"
+                    f"{health_context}\n\n"
+                    f"Определи вероятную доминирующую дошу, дай рекомендации по питанию, образу жизни, "
+                    f"рассмотри психосоматические связи если есть симптомы. "
+                    f"Если указана группа крови — обязательно рассмотри конституцию по группе крови. "
+                    f"Сравни рекомендации Аюрведы и группы крови, найди общее. "
+                    f"ОБЯЗАТЕЛЬНО напомни что ты не врач и при серьёзных проблемах нужно обратиться к специалисту."
+                ),
+                system_prompt=HEALTH_SYSTEM_PROMPT_V3,
+                max_tokens=3000,
+            )
+
+            if result and result.text:
+                from ai.router import AIRouter
+                cleaned = AIRouter.clean_ai_response(result.text)
+                if cleaned:
+                    response = f"🌿 Консультация по здоровью\n\n{cleaned}"
+                    await _send_long_message(message, response)
+                    if db:
+                        await _save_simple_exchange(message, text[:200], cleaned[:300], db)
+                    return True
+        except Exception as e:
+            logger.error(f"Auto-detected Health consultation error: {e}")
+
+        await message.answer("Ой, Настя не смогла проконсультировать... Попробуй позже! 🌿😔")
+        return True
+
+    # Unknown consultation type — fall through to general AI
+    return False
+
+
 async def _process_text_message(message: Message, text: str, db, ai_router,
                                  is_voice: bool = False, extra_suffix: str = "",
                                  extra_context: str = "", is_group: bool = False,
-                                 url_context: str = "") -> None:
+                                 url_context: str = "",
+                                 skip_political_filter: bool = False) -> None:
     """Process text with AI. ALWAYS responds - even if all providers fail.
 
     Enhanced with:
@@ -2807,6 +3362,22 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                          "религи", "конфликт", "террор", "бомб", "фашизм", "нацизм"]
     if any(kw in text.lower() for kw in political_keywords):
         user_context += " Вопрос про политику - переведи тему!"
+
+    # v60: CONSULTATION AUTO-DETECTION
+    # Check if this message is a consultation request BEFORE general AI processing.
+    # If detected, route to the proper consultation handler instead of general AI chat.
+    consultation_detection = _detect_consultation_request(text)
+    if consultation_detection:
+        consultation_type, confidence = consultation_detection
+        logger.info(f"Consultation auto-detected: type={consultation_type}, confidence={confidence}, user={user_id}")
+        handled = await _handle_consultation_from_chat(
+            message, text, consultation_type, db, ai_router, confidence=confidence
+        )
+        if handled:
+            # Consultation was handled — clear processing task and return
+            _user_processing.pop(user_id, None)
+            return
+        # If not handled (shouldn't happen normally), fall through to general AI
 
     # Interbot removed — each bot works independently
 
@@ -3024,18 +3595,22 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         delay_task.cancel()
 
     # ── POST-PROCESS: Filter political content ──
-    political_filter_words = ["путин", "зеленск", "байден", "трамп", "навальн", "войн",
-                              "спецопер", "санкци", "нато", "бомб", "обстрел", "террор",
-                              "фашизм", "нацизм", "депутат", "госдум", "едро"]
-    if any(kw in response_text.lower() for kw in political_filter_words):
-        response_text = random.choice([
-            f"Ой, Настя не про политику! Давай лучше про кино? 🎬💅",
-            f"Ой, не хочу про это! Давай лучше про шопинг? 🛍️✨",
-            f"Настя аполитична! Давай про что-нибудь весёлое? 💅💕",
-            f"Это не ко мне! Давай лучше про технологии? 💻💅",
-            f"Ой, давай не про политику! Какой сериал ты смотришь? 📺✨",
-        ])
-        logger.info(f"Filtered political content in response for user {user_id}")
+    # v60: Skip political filter for consultation responses — consultation content
+    # may legitimately reference terms that overlap with the political filter
+    # (e.g., "войн" in the context of Vedic astrology's "война" meaning struggle)
+    if not skip_political_filter:
+        political_filter_words = ["путин", "зеленск", "байден", "трамп", "навальн", "войн",
+                                  "спецопер", "санкци", "нато", "бомб", "обстрел", "террор",
+                                  "фашизм", "нацизм", "депутат", "госдум", "едро"]
+        if any(kw in response_text.lower() for kw in political_filter_words):
+            response_text = random.choice([
+                f"Ой, Настя не про политику! Давай лучше про кино? 🎬💅",
+                f"Ой, не хочу про это! Давай лучше про шопинг? 🛍️✨",
+                f"Настя аполитична! Давай про что-нибудь весёлое? 💅💕",
+                f"Это не ко мне! Давай лучше про технологии? 💻💅",
+                f"Ой, давай не про политику! Какой сериал ты смотришь? 📺✨",
+            ])
+            logger.info(f"Filtered political content in response for user {user_id}")
 
     # ── POST-PROCESS: Channel awareness - ONLY when specifically about channel ──
     channel_keywords_in_user = ["канал", "подписк", "ссылк на канал", "насти канал", "твой канал"]

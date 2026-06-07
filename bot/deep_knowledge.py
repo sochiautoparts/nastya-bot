@@ -18,8 +18,11 @@
   ТКМ (традиционная китайская медицина), Спиральная динамика
 """
 import math
+import logging
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, date
+
+logger = logging.getLogger(__name__)
 
 
 # ════════════════════════════════════════════════════════════════
@@ -756,28 +759,111 @@ def build_deep_numerology_context(day: int, month: int, year: int, name_translit
         lines.append("\n\n═══ РАСШИРЁННЫЕ РАСЧЁТЫ НУМЕРОЛОГИИ (ВЫЧИСЛЕНО ПРОГРАММНО) ═══")
 
         # Кармические долги (детальные)
-        if full_calc.get('karmic_debts'):
+        kd_data = full_calc.get('karmic_debts', {})
+        if kd_data and kd_data.get('has_karmic_debt'):
             lines.append("\nКАРМИЧЕСКИЕ ДОЛГИ (ДЕТАЛЬНО):")
-            for debt in full_calc['karmic_debts']:
-                lines.append(f"  Долг {debt['number']} ({debt['source']}): {debt.get('meaning', '')}")
+            for debt_num, debt_desc in kd_data.get('descriptions', {}).items():
+                lines.append(f"  Долг {debt_num}: {debt_desc}")
 
-        # Пиковые числа (детальные)
-        if full_calc.get('pinnacles'):
+        # Именные расчёты
+        if name_translit and full_calc.get('destiny', {}).get('number'):
+            lines.append("\nИМЕННЫЕ РАСЧЁТЫ (ПО ФАМИЛИИ ИМЕНИ ОТЧЕСТВУ):")
+            lines.append(f"  Число Судьбы: {full_calc['destiny'].get('number', '')}")
+            lines.append(f"  Число Души: {full_calc.get('soul_urge', {}).get('number', '')}")
+            lines.append(f"  Число Личности: {full_calc.get('personality', {}).get('number', '')}")
+
+            # Скрытая страсть
+            hp_data = full_calc.get('hidden_passion', {})
+            if hp_data and hp_data.get('hidden_passions'):
+                for passion in hp_data['hidden_passions']:
+                    lines.append(f"  Скрытая страсть: {passion.get('number', '')} (частота: {passion.get('frequency', '')}) — {passion.get('meaning', '')}")
+
+            # Кармические уроки
+            kl_data = full_calc.get('karmic_lessons', {})
+            if kl_data and kl_data.get('karmic_lessons'):
+                missing_nums = [str(l.get('number', '')) for l in kl_data['karmic_lessons']]
+                lines.append(f"  Кармические уроки (отсутствующие числа): {', '.join(missing_nums)}")
+
+            # Подсознательное Я
+            sub = full_calc.get('subconscious_self', {})
+            if sub:
+                lines.append(f"  Подсознательное Я: {sub.get('number', '')} — {sub.get('meaning', '')}")
+
+            # Число равновесия
+            bal = full_calc.get('balance_number', {})
+            if bal:
+                lines.append(f"  Число Равновесия: {bal.get('number', '')} — {bal.get('meaning', '')}")
+
+            # ═══ Новые профессиональные расчёты ═══
+
+            # Транзитные буквы
+            tl = full_calc.get('transit_letters', {})
+            if tl and tl.get('transits'):
+                lines.append("\nТРАНЗИТНЫЕ БУКВЫ (ТЕКУЩИЙ ВОЗРАСТ):")
+                for t in tl['transits']:
+                    lines.append(
+                        f"  {t['word_label']}: буква {t['current_letter']} "
+                        f"(значение {t['current_value']}, осталось ~{t['years_remaining_in_transit']} лет) "
+                        f"— {t['meaning']}"
+                    )
+
+            # Число Сущности
+            en = full_calc.get('essence_number', {})
+            if en and en.get('number'):
+                transits_str = " + ".join(str(v) for v in en.get('transit_values', []))
+                lines.append(f"\nЧИСЛО СУЩНОСТИ: {en['number']} (транзиты: {transits_str})")
+                lines.append(f"  {en.get('meaning', '')}")
+
+            # Краеугольный и Завершающий Камни
+            cc = full_calc.get('cornerstone_capstone', {})
+            if cc and cc.get('cornerstone', {}).get('letter'):
+                cs = cc['cornerstone']
+                cp = cc['capstone']
+                lines.append(f"\nКРАЕУГОЛЬНЫЙ КАМЕНЬ: {cs['letter']} (значение {cs['value']})")
+                lines.append(f"  {cs.get('meaning', '')}")
+                lines.append(f"ЗАВЕРШАЮЩИЙ КАМЕНЬ: {cp['letter']} (значение {cp['value']})")
+                lines.append(f"  {cp.get('meaning', '')}")
+
+            # Подсознательное «Я» (по имени, формула 9 - missing)
+            ssn = full_calc.get('subconscious_self_name', {})
+            if ssn and ssn.get('number'):
+                lines.append(
+                    f"\nПОДСОЗНАТЕЛЬНОЕ «Я» (по имени): {ssn['number']} "
+                    f"(присутствуют: {ssn.get('present_numbers', [])}, "
+                    f"отсутствуют: {ssn.get('missing_numbers', [])})"
+                )
+                lines.append(f"  {ssn.get('meaning', '')}")
+
+            # Рациональное мышление (по имени)
+            rtn = full_calc.get('rational_thought_name', {})
+            if rtn and rtn.get('number'):
+                lines.append(
+                    f"\nЧИСЛО РАЦИОНАЛЬНОГО МЫШЛЕНИЯ (по имени): {rtn['number']} "
+                    f"(гласные «{rtn.get('first_word', '')}» = {rtn.get('vowel_sum', 0)} "
+                    f"+ первая буква = {rtn.get('first_letter_value', 0)})"
+                )
+                lines.append(f"  {rtn.get('meaning', '')}")
+
+        # Периодные циклы (из расширенных расчётов)
+        pc_data = full_calc.get('period_cycles', {})
+        if pc_data and pc_data.get('period_cycles'):
+            lines.append("\nПЕРИОДНЫЕ ЦИКЛЫ ЖИЗНИ (ДЕТАЛЬНО):")
+            for pc in pc_data['period_cycles']:
+                lines.append(f"  {pc.get('name', '')} ({pc.get('age_range', '')}): число {pc['number']} — {pc.get('meaning', '')}")
+
+        # Пиковые числа (из расширенных расчётов)
+        pin_data = full_calc.get('pinnacle_numbers', {})
+        if pin_data and pin_data.get('pinnacles'):
             lines.append("\nПИКОВЫЕ ЧИСЛА (ДЕТАЛЬНО):")
-            for p in full_calc['pinnacles']:
+            for p in pin_data['pinnacles']:
                 lines.append(f"  Период {p.get('age_range', '')}: число {p['number']} — {p.get('meaning', '')}")
 
-        # Числа вызова (детальные)
-        if full_calc.get('challenges'):
+        # Числа вызова (из расширенных расчётов)
+        ch_data = full_calc.get('challenge_numbers', {})
+        if ch_data and ch_data.get('challenges'):
             lines.append("\nЧИСЛА ВЫЗОВА (ДЕТАЛЬНО):")
-            for c in full_calc['challenges']:
-                lines.append(f"  Период {c.get('age_range', '')}: число {c['number']} — {c.get('meaning', '')}")
-
-        # Периодные циклы
-        if full_calc.get('period_cycles'):
-            lines.append("\nПЕРИОДНЫЕ ЦИКЛЫ ЖИЗНИ:")
-            for pc in full_calc['period_cycles']:
-                lines.append(f"  {pc.get('age_range', '')}: число {pc['number']} — {pc.get('meaning', '')}")
+            for c in ch_data['challenges']:
+                lines.append(f"  {c.get('name', '')}: число {c['number']} — {c.get('meaning', '')}")
 
         # Число дня рождения
         if full_calc.get('birthday_number'):
@@ -789,33 +875,10 @@ def build_deep_numerology_context(day: int, month: int, year: int, name_translit
             an = full_calc['attitude_number']
             lines.append(f"\nЧИСЛО ОТНОШЕНИЯ: {an.get('number', '')} — {an.get('meaning', '')}")
 
-        # Число рационального мышления
+        # Число рационального мышления (по дню)
         if full_calc.get('rational_thought'):
             rt = full_calc['rational_thought']
-            lines.append(f"\nЧИСЛО РАЦИОНАЛЬНОГО МЫШЛЕНИЯ: {rt.get('number', '')} — {rt.get('meaning', '')}")
-
-        # Именные расчёты
-        if name_translit and full_calc.get('destiny_number'):
-            lines.append("\nИМЕННЫЕ РАСЧЁТЫ (ПО ФАМИЛИИ ИМЕНИ ОТЧЕСТВУ):")
-            lines.append(f"  Число Судьбы: {full_calc['destiny_number'].get('number', '')}")
-            lines.append(f"  Число Души: {full_calc.get('soul_number', {}).get('number', '')}")
-            lines.append(f"  Число Личности: {full_calc.get('personality_number', {}).get('number', '')}")
-            lines.append(f"  Скрытая страсть: {full_calc.get('hidden_passion', {}).get('number', '')} — {full_calc.get('hidden_passion', {}).get('meaning', '')}")
-
-            # Кармические уроки
-            lessons = full_calc.get('karmic_lessons', [])
-            if lessons:
-                lines.append(f"  Кармические уроки (отсутствующие числа): {', '.join(str(l.get('number','')) for l in lessons)}")
-
-            # Подсознательное Я
-            sub = full_calc.get('subconscious_self', {})
-            if sub:
-                lines.append(f"  Подсознательное Я: {sub.get('number', '')} — {sub.get('meaning', '')}")
-
-            # Число равновесия
-            bal = full_calc.get('balance_number', {})
-            if bal:
-                lines.append(f"  Число Равновесия: {bal.get('number', '')} — {bal.get('meaning', '')}")
+            lines.append(f"\nЧИСЛО РАЦИОНАЛЬНОГО МЫШЛЕНИЯ (по дню рождения): {rt.get('number', '')} — {rt.get('meaning', '')}")
 
         lines.append("\n⚠️ ВАЖНО: Все числа выше РАССЧИТАНЫ ПРОГРАММНО. Используй ТОЛЬКО их для интерпретации!")
     except Exception as e:
@@ -998,17 +1061,19 @@ def build_deep_humandesign_context(day: int, month: int, year: int, birth_time: 
 def build_deep_health_context(symptoms: str = "", blood_type: str = "", day: int = 0, month: int = 0, year: int = 0) -> str:
     """Build comprehensive health context with deep knowledge.
 
-    v5.0: Использует health_calc.py для расширенных расчётов:
-    ТКМ 5 элементов, Спиральная динамика, Чакры, Циркадные ритмы.
+    v6.0: Использует health_calc.py для расширенных расчётов:
+    ТКМ 5 элементов, Спиральная динамика, Чакры, Циркадные ритмы,
+    Доша-скоринг, ТКМ по году, Ритучарья, Группа крови + доша,
+    Расширенная психосоматика (30+ состояний).
     """
     lines = []
-    lines.append("=== РАСШИРЁННАЯ КОНСУЛЬТАЦИЯ ПО ЗДОРОВЬЮ (ПРОФЕССИОНАЛЬНЫЙ УРОВЕНЬ) ===")
+    lines.append("=== РАСШИРЁННАЯ КОНСУЛЬТАЦИЯ ПО ЗДОРОВЬЮ (ПРОФЕССИОНАЛЬНЫЙ УРОВЕНЬ v6.0) ===")
     if symptoms:
         lines.append(f"Симптомы/жалобы: {symptoms}")
     if blood_type:
         lines.append(f"Группа крови: {blood_type}")
     
-    # Expanded psychosomatics (3 sources)
+    # Expanded psychosomatics (3 sources) — из существующей базы
     lines.append("\nРАСШИРЁННАЯ ПСИХОСОМАТИКА (3 источника):")
     symptom_key = ""
     for key in EXPANDED_PSYCHOSOMATICS:
@@ -1031,6 +1096,33 @@ def build_deep_health_context(symptoms: str = "", blood_type: str = "", day: int
             lines.append(f"    Бурбо: {info.get('bourbeau', '')}")
             lines.append(f"    Синельников: {info.get('sinelnikov', '')}")
             lines.append(f"    Рекомендация: {info.get('recommendation', '')}")
+
+    # Расширенная психосоматика V2 (30+ состояний) из health_calc
+    try:
+        from bot.health_calc import get_psychosomatic_analysis, EXPANDED_PSYCHOSOMATICS_V2
+        if symptoms:
+            lines.append("\nРАСШИРЁННАЯ ПСИХОСОМАТИКА V2 (30+ состояний):")
+            ps_analysis = get_psychosomatic_analysis(symptoms)
+            if ps_analysis.get('found'):
+                lines.append(f"\n  {symptoms.upper()} — НАЙДЕНО:")
+                lines.append(f"    Луиза Хей: {ps_analysis.get('hay', '')}")
+                lines.append(f"    Лиз Бурбо: {ps_analysis.get('bourbeau', '')}")
+                lines.append(f"    В. Синельников: {ps_analysis.get('sinelnikov', '')}")
+                lines.append(f"    Рекомендация: {ps_analysis.get('recommendation', '')}")
+            # Пробуем разбить симптомы и найти каждый
+            for word in symptoms.lower().replace(',', ' ').split():
+                word = word.strip()
+                if len(word) > 2:
+                    ps = get_psychosomatic_analysis(word)
+                    if ps.get('found'):
+                        lines.append(f"\n  {word.upper()} — НАЙДЕНО В V2:")
+                        lines.append(f"    Хей: {ps.get('hay', '')}")
+                        lines.append(f"    Бурбо: {ps.get('bourbeau', '')}")
+                        lines.append(f"    Синельников: {ps.get('sinelnikov', '')}")
+                        lines.append(f"    Рекомендация: {ps.get('recommendation', '')}")
+        lines.append(f"\n  Доступные симптомы V2: {', '.join(sorted(EXPANDED_PSYCHOSOMATICS_V2.keys()))}")
+    except Exception as e:
+        logger.warning(f"Psychosomatics V2 failed: {e}")
     
     # Subdoshas
     lines.append("\nСУБДОШИ АЮРВЕДЫ:")
@@ -1056,56 +1148,117 @@ def build_deep_health_context(symptoms: str = "", blood_type: str = "", day: int
 
     # ═══ НОВЫЕ РАСЧЁТЫ из health_calc.py ═══
     try:
-        from bot.health_calc import calculate_all_health
-        full_calc = calculate_all_health(day, month, year, symptoms=symptoms, blood_type=blood_type)
+        from bot.health_calc import calculate_all_health, calculate_tcm_year_constitution, calculate_seasonal_recommendations, calculate_circadian_by_dosha, calculate_blood_dosha_compatibility
+
+        # Вызываем с answers=None если symptoms — это строка, не dict
+        full_calc = calculate_all_health(day, month, year, answers=None, blood_type=blood_type)
 
         lines.append("\n\n═══ РАСШИРЁННЫЕ РАСЧЁТЫ ЗДОРОВЬЯ (ВЫЧИСЛЕНО ПРОГРАММНО) ═══")
 
         # ТКМ 5 элементов
-        if full_calc.get('tcm_constitution'):
-            tcm = full_calc['tcm_constitution']
+        if full_calc.get('tcm'):
+            tcm = full_calc['tcm']
             lines.append(f"\nТКМ (ТРАДИЦИОННАЯ КИТАЙСКАЯ МЕДИЦИНА) — КОНСТИТУЦИЯ:")
             lines.append(f"  Доминирующий элемент: {tcm.get('dominant_element', '')}")
             lines.append(f"  Слабый элемент: {tcm.get('weakest_element', '')}")
             lines.append(f"  Тип конституции: {tcm.get('constitution_type', '')}")
             if tcm.get('recommendations'):
-                lines.append(f"  Рекомендации: {tcm['recommendations']}")
+                recs = tcm['recommendations']
+                if isinstance(recs, dict):
+                    for rk, rv in recs.items():
+                        lines.append(f"  {rk}: {rv}")
+                else:
+                    lines.append(f"  Рекомендации: {recs}")
+
+        # ТКМ конституция по году рождения
+        if full_calc.get('tcm_year_constitution'):
+            tcm_year = full_calc['tcm_year_constitution']
+            lines.append(f"\nТКМ КОНСТИТУЦИЯ ПО ГОДУ РОЖДЕНИЯ:")
+            lines.append(f"  Год: {tcm_year.get('year', '')}")
+            lines.append(f"  Элемент: {tcm_year.get('constitution', {}).get('name', '')}")
+            lines.append(f"  Животное: {tcm_year.get('constitution', {}).get('animal', '')}")
+            lines.append(f"  Органы: {tcm_year.get('constitution', {}).get('organs', '')}")
+            lines.append(f"  Инь/Ян: {tcm_year.get('yin_yang', '')}")
+            lines.append(f"  Связанная доша: {tcm_year.get('related_ayurvedic_dosha', '')}")
+            if tcm_year.get('yin_yang_description'):
+                lines.append(f"  {tcm_year['yin_yang_description']}")
 
         # Чакры
-        if full_calc.get('chakra_analysis'):
-            chakras = full_calc['chakra_analysis']
+        if full_calc.get('chakras'):
+            chakras = full_calc['chakras']
             lines.append(f"\nАНАЛИЗ ЧАКР:")
-            if chakras.get('strongest'):
-                lines.append(f"  Сильнейшая чакра: {chakras['strongest']}")
-            if chakras.get('weakest'):
-                lines.append(f"  Слабейшая чакра: {chakras['weakest']}")
-            if chakras.get('recommendations'):
-                for rec in chakras['recommendations'][:5]:
-                    lines.append(f"  → {rec}")
+            sc = chakras.get('strongest_chakra', {})
+            wc = chakras.get('weakest_chakra', {})
+            if sc:
+                lines.append(f"  Сильнейшая: {sc.get('info', {}).get('name', '?')} ({sc.get('score', '?')}/10)")
+            if wc:
+                lines.append(f"  Слабейшая: {wc.get('info', {}).get('name', '?')} ({wc.get('score', '?')}/10)")
+            if chakras.get('scores'):
+                lines.append(f"  Баланс: {chakras['scores']}")
 
         # Циркадные ритмы
         if full_calc.get('circadian'):
             circ = full_calc['circadian']
             lines.append(f"\nЦИРКАДНЫЕ РЕКОМЕНДАЦИИ:")
-            if circ.get('schedule'):
-                for entry in circ['schedule'][:8]:
-                    lines.append(f"  {entry}")
+            if circ.get('analysis'):
+                lines.append(f"  {circ['analysis']}")
+
+        # Детальный циркадный ритм по дошe
+        if full_calc.get('circadian_by_dosha'):
+            cbd = full_calc['circadian_by_dosha']
+            lines.append(f"\nДЕТАЛЬНЫЙ ЦИРКАДНЫЙ РИТМ ({cbd.get('name', '')}):")
+            lines.append(f"  Принцип: {cbd.get('key_principle', '')}")
+            lines.append(f"  Подъём: {cbd.get('wake_time', '')}")
+            lines.append(f"  Отбой: {cbd.get('sleep_time', '')}")
+            lines.append(f"  Утро: {cbd.get('morning_routine', '')}")
+            lines.append(f"  День: {cbd.get('midday_routine', '')}")
+            lines.append(f"  Вечер: {cbd.get('evening_routine', '')}")
+            lines.append(f"  Избегать: {cbd.get('avoid', '')}")
+            lines.append(f"  Суперфуды: {cbd.get('super_foods', '')}")
+
+        # Сезонные рекомендации (Ритучарья)
+        if full_calc.get('seasonal'):
+            seasonal = full_calc['seasonal']
+            lines.append(f"\nСЕЗОННЫЕ РЕКОМЕНДАЦИИ (РИТУЧАРЬЯ):")
+            lines.append(f"  Сезон: {seasonal.get('season_name', '')}")
+            lines.append(f"  Обостряется доша: {seasonal.get('dosha_aggravated', '')}")
+            lines.append(f"  Накапливается: {seasonal.get('dosha_accumulated', '')}")
+            lines.append(f"  Диета: {seasonal.get('diet_tips', '')}")
+            lines.append(f"  Режим: {seasonal.get('daily_routine', '')}")
+            lines.append(f"  Травы: {seasonal.get('recommended_herbs', '')}")
 
         # Спиральная динамика
         if full_calc.get('spiral_dynamics'):
             sd = full_calc['spiral_dynamics']
             lines.append(f"\nСПИРАЛЬНАЯ ДИНАМИКА:")
             lines.append(f"  Текущий уровень: {sd.get('current_stage', '')}")
-            if sd.get('description'):
-                lines.append(f"  Описание: {sd['description']}")
+            if sd.get('analysis'):
+                lines.append(f"  {sd['analysis']}")
 
         # Позвоночник
-        if full_calc.get('spinal_health'):
-            spine = full_calc['spinal_health']
+        if full_calc.get('spinal'):
+            spine = full_calc['spinal']
             lines.append(f"\nЗДОРОВЬЕ ПОЗВОНОЧНИКА:")
-            if spine.get('risk_segments'):
-                for seg in spine['risk_segments'][:5]:
-                    lines.append(f"  {seg}")
+            lines.append(f"  Возрастная группа: {spine.get('age_group', '')}")
+            if spine.get('analysis'):
+                lines.append(f"  {spine['analysis']}")
+
+        # Совместимость группы крови с дошой
+        if full_calc.get('blood_dosha_compatibility'):
+            bdc = full_calc['blood_dosha_compatibility']
+            if bdc.get('found'):
+                lines.append(f"\nСОВМЕСТИМОСТЬ ГРУППЫ КРОВИ С ДОШОЙ:")
+                lines.append(f"  Группа: {bdc.get('blood_name', '')}")
+                lines.append(f"  Доша: {bdc.get('dosha', '')}")
+                lines.append(f"  Совместимость: {bdc.get('compatibility_score', '?')}/10")
+                lines.append(f"  Общее: {bdc.get('common_ground', '')}")
+                lines.append(f"  Противоречия: {bdc.get('contradictions', '')}")
+                lines.append(f"  Рекомендация: {bdc.get('recommendation', '')}")
+
+        # Сводка
+        if full_calc.get('summary'):
+            lines.append(f"\nСВОДНАЯ АНАЛИТИКА:")
+            lines.append(full_calc['summary'])
 
         lines.append("\n⚠️ ВАЖНО: Все данные выше основаны на расчётах и справочниках. "
                       "Ты НЕ врач — напоминай обращаться к специалисту!")
@@ -1117,42 +1270,61 @@ def build_deep_health_context(symptoms: str = "", blood_type: str = "", day: int
 
 
 def build_deep_jyotish_context(day: int, month: int, year: int, birth_time: str = "", birth_place: str = "") -> str:
-    """Build comprehensive Jyotish context with deep knowledge."""
-    from bot.consultations import get_zodiac_sign, get_jyotish_rashi_approx
-    
+    """Build comprehensive Jyotish context with deep knowledge.
+
+    Сначала пробует использовать РЕАЛЬНЫЕ расчёты из jyotish_calc.py.
+    Если не удалось — fallback на справочные таблицы.
+    """
     lines = []
+
+    # ═══ ПОПЫТКА РЕАЛЬНЫХ РАСЧЁТОВ ═══
+    calc_success = False
+    try:
+        from bot.jyotish_calc import build_jyotish_calc_context
+        calc_context = build_jyotish_calc_context(day, month, year, birth_time, birth_place)
+        if calc_context and not calc_context.startswith("⚠️"):
+            lines.append(calc_context)
+            calc_success = True
+    except Exception as e:
+        logger.warning(f"Jyotish calculation engine failed: {e}")
+
+    # ═══ СПРАВОЧНЫЕ ТАБЛИЦЫ (всегда добавляются) ═══
+    from bot.consultations import get_zodiac_sign, get_jyotish_rashi_approx
     sign = get_zodiac_sign(day, month)
     jyotish_rashi = get_jyotish_rashi_approx(sign)
-    
-    lines.append("=== РАСШИРЁННЫЙ ДЖЙОТИШ (ВЕДИЧЕСКАЯ АСТРОЛОГИЯ) ===")
-    lines.append(f"Дата рождения: {day:02d}.{month:02d}.{year}")
-    if birth_time:
-        lines.append(f"Время рождения: {birth_time}")
-    if birth_place:
-        lines.append(f"Место рождения: {birth_place}")
-    lines.append(f"Западный знак: {sign.capitalize()}")
-    lines.append(f"Приблизительный Джанма-Раши: {jyotish_rashi}")
-    
-    # Atma-Karaka
-    lines.append("\nАТМА-КАРАКА (ПЛАНЕТА ДУШИ):")
+
+    if not calc_success:
+        # Fallback: базовые данные без расчётов
+        lines.append("=== РАСШИРЁННЫЙ ДЖЙОТИШ (ВЕДИЧЕСКАЯ АСТРОЛОГИЯ) ===")
+        lines.append(f"Дата рождения: {day:02d}.{month:02d}.{year}")
+        if birth_time:
+            lines.append(f"Время рождения: {birth_time}")
+        if birth_place:
+            lines.append(f"Место рождения: {birth_place}")
+        lines.append(f"Западный знак: {sign.capitalize()}")
+        lines.append(f"Приблизительный Джанма-Раши: {jyotish_rashi}")
+        lines.append("\n⚠️ Точные расчёты недоступны — используются справочные данные.")
+
+    # Atma-Karaka — справочник (дополняет реальный расчёт интерпретациями для всех планет)
+    lines.append("\nАТМА-КАРАКА — СПРАВОЧНИК (все варианты):")
     for ak, desc in ATMA_KARAKA_INFO.items():
         lines.append(f"  {ak}: {desc}")
-    
-    # Panchang
-    lines.append("\nПАНЧАНГ (5 ЭЛЕМЕНТОВ ВЕДИЧЕСКОГО ДНЯ):")
+
+    # Panchang — справочник
+    lines.append("\nПАНЧАНГ — СПРАВОЧНИК (5 ЭЛЕМЕНТОВ):")
     for element, desc in PANCHANG_ELEMENTS.items():
         lines.append(f"  {element}: {desc}")
-    
-    # Expanded Yogas
-    lines.append("\nРАСШИРЁННЫЕ ЙОГИ:")
+
+    # Expanded Yogas — справочник
+    lines.append("\nРАСШИРЁННЫЕ ЙОГИ — СПРАВОЧНИК:")
     for yoga, desc in EXPANDED_JYOTISH_YOGAS.items():
         lines.append(f"  {yoga}: {desc}")
-    
-    # Current Mahadasha hint
+
+    # Current transits
     lines.append("\nТЕКУЩИЕ ТРАНЗИТЫ (ГОЧАРА) 2025-2026:")
     for transit, desc in TRANSIT_INFO_2025_2026.items():
         lines.append(f"  {transit}: {desc}")
-    
+
     return "\n".join(lines)
 
 
