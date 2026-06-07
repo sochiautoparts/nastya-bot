@@ -595,6 +595,7 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
     extras.append("⭐ /astro - Астрологический разбор")
     extras.append("🧬 /humandesign - Дизайн Человека")
     extras.append("🌿 /health - Здоровье и Аюрведа")
+    extras.append("🕉️ /jyotish - Джйотиш (Ведическая астрология)")
     extras.append("🔮 /horoscope - гороскоп на сегодня")
     extras.append("🔢 /numerology - число судьбы")
     if CHANNEL_USERNAME:
@@ -1623,6 +1624,188 @@ async def cmd_health(message: Message, db=None, ai_router=None) -> None:
         logger.error(f"Health consultation error: {e}")
 
     await message.answer("Ой, Настя не смогла проконсультировать... Попробуй позже! 🌿😔")
+
+
+@router.message(Command("jyotish"))
+async def cmd_jyotish(message: Message, db=None, ai_router=None) -> None:
+    """Professional Jyotish (Vedic Astrology) consultation — Джанма-Кундали."""
+    from bot.consultations import (
+        parse_birth_date, get_zodiac_sign, get_jyotish_rashi_approx,
+        JYOTISH_RASHIS, JYOTISH_GRAHAS, JYOTISH_BHAVAS, JYOTISH_NAKSHATRAS,
+        JYOTISH_DASHAS, JYOTISH_YOGAS, JYOTISH_SYSTEM_PROMPT,
+    )
+
+    query = message.text.replace("/jyotish", "").strip()
+
+    if not query:
+        await message.answer(
+            "🕉️ Джйотиш — Ведическая астрология (карта Джанма-Кундали)!\n\n"
+            "Это древнейшая система астрологии, использующая сидерический зодиак.\n"
+            "Настя составит профессиональный разбор:\n"
+            "- Лагна (Асцендент) и Бхавы (дома)\n"
+            "- Грахи (планеты) в Раши (знаках)\n"
+            "- Накшатра (лунная стоянка рождения)\n"
+            "- Атма-карака (задача души)\n"
+            "- Йоги (Раджа, Дхана, Мангал-доша)\n"
+            "- Махадаша (текущий планетный период)\n"
+            "- Транзиты (Гочара)\n"
+            "- Рекомендации: мантры, камни, ритуалы\n\n"
+            "Пример: /jyotish 15.06.2001\n"
+            "С временем и местом точнее: /jyotish 15.06.2001 14:30 Москва\n\n"
+            "⚠️ Без времени рождения Лагна и дома — приблизительные!"
+        )
+        return
+
+    # Extract time and place
+    birth_time = ""
+    birth_place = ""
+    date_part = query
+
+    time_match = re.search(r'(\d{1,2}[:.]\d{2})', query)
+    if time_match:
+        birth_time = time_match.group(1).replace(".", ":")
+        date_part = date_part.replace(time_match.group(0), "").strip()
+
+    parts = date_part.split()
+    if len(parts) > 1:
+        potential_place = " ".join(parts[1:])
+        if not potential_place.replace(".", "").replace("/", "").replace("-", "").replace(" ", "").isdigit():
+            birth_place = potential_place
+            date_part = parts[0]
+
+    birth_date = parse_birth_date(date_part)
+    if not birth_date:
+        await message.answer(
+            "Ой, Настя не разобралась с датой! 😅\n\n"
+            "Напиши в формате: DD.MM.YYYY\n"
+            "Пример: /jyotish 15.06.2001\n"
+            "С временем: /jyotish 15.06.2001 14:30 Москва"
+        )
+        return
+
+    day, month, year = birth_date
+
+    if not ai_router:
+        await message.answer("Настя пока не может составить карту Джйотиш... Попробуй позже! 🕉️💅")
+        return
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    await message.answer("Настя составляет карту Джанма-Кундали! Это серьёзная Ведическая астрология, подожди... 🕉️✨")
+
+    try:
+        # Determine Western zodiac sign and approximate Vedic Rashi
+        western_sign = get_zodiac_sign(day, month)
+        vedic_rashi = get_jyotish_rashi_approx(western_sign)
+        rashi_info = JYOTISH_RASHIS.get(vedic_rashi, {})
+
+        # Build comprehensive knowledge context for AI
+        rashis_desc = "\n".join([
+            f"- {name}: управитель {info['ruler']}, стихия {info['element']}, качество {info['quality']}, "
+            f"западный аналог {info['symbol']}, черты: {info['traits']}, часть тела: {info['body_part']}"
+            for name, info in JYOTISH_RASHIS.items()
+        ])
+
+        grahas_desc = "\n".join([
+            f"- {name}: природа {info['nature']}, показатель {info['significator']}, "
+            f"экзальтация {info['exalted']}, падение {info['debilitated']}, описание: {info['description']}"
+            for name, info in JYOTISH_GRAHAS.items()
+        ])
+
+        bhavas_desc = "\n".join([
+            f"- Дом {num} ({info['name']}): {info['meaning']}"
+            for num, info in JYOTISH_BHAVAS.items()
+        ])
+
+        nakshatras_desc = "\n".join([
+            f"- {name}: управитель {info['ruler']}, символ {info['symbol']}, значение: {info['meaning']}"
+            for name, info in JYOTISH_NAKSHATRAS.items()
+        ])
+
+        dashas_desc = "\n".join([
+            f"- {name}: {info['years']} лет, значение: {info['meaning']}"
+            for name, info in JYOTISH_DASHAS.items()
+        ])
+
+        yogas_desc = "\n".join([
+            f"- {name}: {desc}"
+            for name, desc in JYOTISH_YOGAS.items()
+        ])
+
+        prompt_parts = [
+            f"Дата рождения: {day:02d}.{month:02d}.{year}",
+            f"Западный знак зодиака: {western_sign.capitalize()}",
+            f"Приблизительный ведический Раши (сидерический): {vedic_rashi} ({rashi_info.get('symbol', '')})",
+            f"Управитель Раши: {rashi_info.get('ruler', '')}",
+            f"Стихия: {rashi_info.get('element', '')}",
+            f"Качество: {rashi_info.get('quality', '')}",
+            f"Черты: {rashi_info.get('traits', '')}",
+        ]
+
+        if birth_time:
+            prompt_parts.append(f"Время рождения: {birth_time}")
+        if birth_place:
+            prompt_parts.append(f"Место рождения: {birth_place}")
+
+        prompt_parts.append(f"\nСПРАВОЧНИК РАШИ (12 ведических знаков):\n{rashis_desc}")
+        prompt_parts.append(f"\nСПРАВОЧНИК ГРАХ (9 планет):\n{grahas_desc}")
+        prompt_parts.append(f"\nСПРАВОЧНИК БХАВ (12 домов):\n{bhavas_desc}")
+        prompt_parts.append(f"\nСПРАВОЧНИК НАКШАТР (27 лунных стоянок):\n{nakshatras_desc}")
+        prompt_parts.append(f"\nСПРАВОЧНИК ДАШ (планетные периоды):\n{dashas_desc}")
+        prompt_parts.append(f"\nСПРАВОЧНИК ЙОГ:\n{yogas_desc}")
+
+        if birth_time and birth_place:
+            prompt_parts.append(
+                "\nВНИМАНИЕ: Указано время и место рождения! Составь НАИБОЛЕЕ точный разбор карты Джанма-Кундали. "
+                "Рассчитай примерную Лагну на основе времени и места рождения. "
+                "Определи положение всех Грах в Раши и Бхавах. "
+                "Укажи Джанма-Накшатру (лунную стоянку). "
+                "Определи Атма-караку. Найди ключевые Йоги. "
+                "Определи текущую Махадашу на основе возраста. "
+                "Рассмотри текущие транзиты Гочара."
+            )
+        else:
+            prompt_parts.append(
+                "\nВремя и место рождения НЕ указаны. Составь разбор на основе известных данных (дата рождения). "
+                "Определи вероятную Лагну и общие характеристики. "
+                "Укажи что Лагна и Бхавы приблизительны без точного времени. "
+                "Без точного времени нельзя точно определить Атма-караку и дома. "
+                "Сделай максимально подробный разбор того что можно определить по дате."
+            )
+
+        result = await ai_router.chat(
+            prompt=f"Составь профессиональный разбор карты Джанма-Кундали (Джйотиш / Ведическая астрология).\n\n" + "\n".join(prompt_parts),
+            system_prompt=JYOTISH_SYSTEM_PROMPT,
+            max_tokens=2000,
+        )
+
+        if result and result.text:
+            from ai.router import AIRouter
+            cleaned = AIRouter.clean_ai_response(result.text)
+            if cleaned:
+                response = f"🕉️ Джйотиш: {vedic_rashi} ({rashi_info.get('symbol', '')}), {day:02d}.{month:02d}.{year}\n\n{cleaned}"
+
+                if len(response) > 4000:
+                    parts = []
+                    while len(response) > 4000:
+                        split_at = response.rfind("\n\n", 3000, 4000)
+                        if split_at == -1:
+                            split_at = 3900
+                        parts.append(response[:split_at])
+                        response = response[split_at:].lstrip("\n")
+                    parts.append(response)
+                    for i, part in enumerate(parts):
+                        await message.answer(part)
+                        if i < len(parts) - 1:
+                            await asyncio.sleep(0.5)
+                else:
+                    await message.answer(response)
+                if db:
+                    await _save_simple_exchange(message, f"/jyotish {query}", cleaned[:300], db)
+                return
+    except Exception as e:
+        logger.error(f"Jyotish consultation error: {e}")
+
+    await message.answer("Ой, Настя не смогла прочитать карту Джйотиш... Попробуй позже! 🕉️😔")
 
 
 # ── Voice handler ────────────────────────────────────────────
