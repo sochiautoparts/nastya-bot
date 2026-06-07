@@ -585,12 +585,18 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
     extras.append("🔍 /find - найти товар, лучшую цену!")
     extras.append("🎬 /films - подборка фильмов от Насти!")
     extras.append("🍳 /recipe - рецепт от Насти!")
-    extras.append("🔮 /horoscope - гороскоп на сегодня")
-    extras.append("🔢 /numerology - число судьбы")
     extras.append("🌤️ /weather - погода в любом городе")
     extras.append("🎫 /events - мероприятия и афиша")
     extras.append("🍽️ /places - заведения и рестораны")
     extras.append("🎨 /image - Настя нарисует что хочешь!")
+    extras.append("")
+    extras.append("🔮 КОНСУЛЬТАЦИИ:")
+    extras.append("🔮 /matrix - Матрица Судьбы")
+    extras.append("⭐ /astro - Астрологический разбор")
+    extras.append("🧬 /humandesign - Дизайн Человека")
+    extras.append("🌿 /health - Здоровье и Аюрведа")
+    extras.append("🔮 /horoscope - гороскоп на сегодня")
+    extras.append("🔢 /numerology - число судьбы")
     if CHANNEL_USERNAME:
         extras.append(f"📺 Мой канал: t.me/{CHANNEL_USERNAME.replace('@', '')}")
 
@@ -1185,6 +1191,438 @@ async def cmd_image(message: Message, db=None, ai_router=None) -> None:
         logger.error(f"Image generation error: {e}")
 
     await message.answer(f"Ой, Настя не смогла нарисовать '{query}'... Попробуй другой запрос! 🎨😔")
+
+
+# ════════════════════════════════════════════════════════════════
+#  ПРОФЕССИОНАЛЬНЫЕ КОНСУЛЬТАЦИИ - Матрица, Астрология, Дизайн Человека, Здоровье
+# ════════════════════════════════════════════════════════════════
+
+# Per-user consultation state tracker (birth data collection)
+_consultation_state: dict = {}  # user_id -> {"type": "matrix"|"astro"|"humandesign"|"health", "step": int, "data": dict}
+
+
+@router.message(Command("matrix"))
+async def cmd_matrix(message: Message, db=None, ai_router=None) -> None:
+    """Professional Matrix of Destiny consultation."""
+    from bot.consultations import parse_birth_date, calculate_matrix_of_destiny, get_matrix_prompt_params, MATRIX_SYSTEM_PROMPT
+
+    query = message.text.replace("/matrix", "").strip()
+
+    if not query:
+        await message.answer(
+            "🔮 Матрица Судьбы — это профессиональный разбор по дате рождения!\n\n"
+            "Напиши дату рождения, и Настя составит полный разбор:\n"
+            "- Личность и предназначение\n"
+            "- Карма прошлых жизней\n"
+            "- Любовь, финансы, таланты\n"
+            "- Мужская и женская линии\n\n"
+            "Пример: /matrix 15.06.2001"
+        )
+        return
+
+    birth_date = parse_birth_date(query)
+    if not birth_date:
+        await message.answer(
+            "Ой, Настя не разобралась с датой! 😅\n\n"
+            "Напиши в формате: DD.MM.YYYY\n"
+            "Пример: /matrix 15.06.2001"
+        )
+        return
+
+    day, month, year = birth_date
+
+    if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2020):
+        await message.answer("Капец, дата какая-то странная... Проверь и попробуй снова! 🤔")
+        return
+
+    if not ai_router:
+        await message.answer("Настя пока не может составить Матрицу... Попробуй позже! 🔮💅")
+        return
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    await message.answer("О, Настя составляет Матрицу Судьбы! Это серьёзная работа, подожди немного... 🔮✨")
+
+    try:
+        matrix = calculate_matrix_of_destiny(day, month, year)
+        prompt_data = get_matrix_prompt_params(matrix)
+
+        result = await ai_router.chat(
+            prompt=f"Составь профессиональный разбор Матрицы Судьбы. Вот расчёт:\n\n{prompt_data}",
+            system_prompt=MATRIX_SYSTEM_PROMPT,
+            max_tokens=2000,
+        )
+
+        if result and result.text:
+            from ai.router import AIRouter
+            cleaned = AIRouter.clean_ai_response(result.text)
+            if cleaned:
+                response = f"🔮 Матрица Судьбы для {day:02d}.{month:02d}.{year}\n\n{cleaned}"
+                # Split if too long for Telegram
+                if len(response) > 4000:
+                    parts = []
+                    while len(response) > 4000:
+                        # Find a good split point (paragraph break)
+                        split_at = response.rfind("\n\n", 3000, 4000)
+                        if split_at == -1:
+                            split_at = 3900
+                        parts.append(response[:split_at])
+                        response = response[split_at:].lstrip("\n")
+                    parts.append(response)
+                    for i, part in enumerate(parts):
+                        await message.answer(part)
+                        if i < len(parts) - 1:
+                            await asyncio.sleep(0.5)
+                else:
+                    await message.answer(response)
+                if db:
+                    await _save_simple_exchange(message, f"/matrix {query}", cleaned[:300], db)
+                return
+    except Exception as e:
+        logger.error(f"Matrix consultation error: {e}")
+
+    await message.answer("Ой, Настя не смогла прочитать Матрицу... Попробуй позже! 🔮😔")
+
+
+@router.message(Command("astro"))
+async def cmd_astro(message: Message, db=None, ai_router=None) -> None:
+    """Professional astrology consultation."""
+    from bot.consultations import parse_birth_date, get_zodiac_sign, ZODIAC_DETAILS, ASTRO_SYSTEM_PROMPT, calculate_life_path_number
+
+    query = message.text.replace("/astro", "").strip()
+
+    if not query:
+        await message.answer(
+            "⭐ Профессиональный астрологический разбор!\n\n"
+            "Напиши дату рождения, и Настя составит натальную карту:\n"
+            "- Солнце, Луна, Асцендент\n"
+            "- Планеты в знаках и домах\n"
+            "- Ключевые аспекты\n"
+            "- Прогноз на текущий период\n\n"
+            "Пример: /astro 15.06.2001\n"
+            "С временем точнее: /astro 15.06.2001 14:30 Москва"
+        )
+        return
+
+    # Try to extract time and place too
+    birth_time = ""
+    birth_place = ""
+    date_part = query
+
+    # Extract time (HH:MM pattern)
+    time_match = re.search(r'(\d{1,2}[:.]\d{2})', query)
+    if time_match:
+        birth_time = time_match.group(1).replace(".", ":")
+        date_part = date_part.replace(time_match.group(0), "").strip()
+
+    # Extract place (everything after date that's not time)
+    parts = date_part.split()
+    if len(parts) > 1:
+        # First part is likely the date
+        potential_place = " ".join(parts[1:])
+        if not potential_place.replace(".", "").replace("/", "").replace("-", "").replace(" ", "").isdigit():
+            birth_place = potential_place
+            date_part = parts[0]
+
+    birth_date = parse_birth_date(date_part)
+    if not birth_date:
+        await message.answer(
+            "Ой, Настя не разобралась с датой! 😅\n\n"
+            "Напиши в формате: DD.MM.YYYY\n"
+            "Пример: /astro 15.06.2001\n"
+            "С временем: /astro 15.06.2001 14:30 Москва"
+        )
+        return
+
+    day, month, year = birth_date
+
+    if not ai_router:
+        await message.answer("Настя пока не может составить натальную карту... Попробуй позже! ⭐💅")
+        return
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    await message.answer("Настя составляет натальную карту! Серьёзная астрология, подожди... ⭐🔮")
+
+    try:
+        zodiac_sign = get_zodiac_sign(day, month)
+        zodiac_info = ZODIAC_DETAILS.get(zodiac_sign, {})
+        life_path = calculate_life_path_number(day, month, year)
+
+        prompt_parts = [
+            f"Дата рождения: {day:02d}.{month:02d}.{year}",
+            f"Знак зодиака: {zodiac_sign.capitalize()} ({zodiac_info.get('dates', '')})",
+            f"Стихия: {zodiac_info.get('element', '')}",
+            f"Качество: {zodiac_info.get('quality', '')}",
+            f"Управитель: {zodiac_info.get('ruler', '')}",
+            f"Черты: {zodiac_info.get('traits', '')}",
+            f"Тень: {zodiac_info.get('shadow', '')}",
+            f"Число жизненного пути: {life_path}",
+        ]
+
+        if birth_time:
+            prompt_parts.append(f"Время рождения: {birth_time}")
+        if birth_place:
+            prompt_parts.append(f"Место рождения: {birth_place}")
+
+        if birth_time and birth_place:
+            prompt_parts.append(
+                "\nВНИМАНИЕ: Указано время и место рождения! Составь НАИБОЛЕЕ точный разбор с учётом Асцендента, "
+                "домов и точных позиций планет. Рассчитай примерный Асцендент на основе времени и места."
+            )
+        else:
+            prompt_parts.append(
+                "\nВремя и место рождения не указаны. Составь разбор на основе известных данных (Солнце, Луна по дате). "
+                "Укажи что для полного разбора с Асцендентом и домами нужно время и место рождения."
+            )
+
+        result = await ai_router.chat(
+            prompt=f"Составь профессиональный астрологический разбор.\n\n" + "\n".join(prompt_parts),
+            system_prompt=ASTRO_SYSTEM_PROMPT,
+            max_tokens=2000,
+        )
+
+        if result and result.text:
+            from ai.router import AIRouter
+            cleaned = AIRouter.clean_ai_response(result.text)
+            if cleaned:
+                zodiac_emoji = {"овен": "♈", "телец": "♉", "близнецы": "♊", "рак": "♋",
+                                "лев": "♌", "дева": "♍", "весы": "♎", "скорпион": "♏",
+                                "стрелец": "♐", "козерог": "♑", "водолей": "♒", "рыбы": "♓"}.get(zodiac_sign, "⭐")
+
+                response = f"{zodiac_emoji} Астрологический разбор: {zodiac_sign.capitalize()}, {day:02d}.{month:02d}.{year}\n\n{cleaned}"
+
+                if len(response) > 4000:
+                    parts = []
+                    while len(response) > 4000:
+                        split_at = response.rfind("\n\n", 3000, 4000)
+                        if split_at == -1:
+                            split_at = 3900
+                        parts.append(response[:split_at])
+                        response = response[split_at:].lstrip("\n")
+                    parts.append(response)
+                    for i, part in enumerate(parts):
+                        await message.answer(part)
+                        if i < len(parts) - 1:
+                            await asyncio.sleep(0.5)
+                else:
+                    await message.answer(response)
+                if db:
+                    await _save_simple_exchange(message, f"/astro {query}", cleaned[:300], db)
+                return
+    except Exception as e:
+        logger.error(f"Astro consultation error: {e}")
+
+    await message.answer("Ой, Настя не смогла прочитать звёзды... Попробуй позже! ⭐😔")
+
+
+@router.message(Command("humandesign"))
+async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
+    """Professional Human Design consultation."""
+    from bot.consultations import (
+        parse_birth_date, HD_TYPES, HD_AUTHORITIES, HD_PROFILES, HD_CENTERS, HD_SYSTEM_PROMPT
+    )
+
+    query = message.text.replace("/humandesign", "").strip()
+
+    if not query:
+        await message.answer(
+            "🧬 Дизайн Человека — твоя энергетическая карта!\n\n"
+            "Напиши дату рождения, и Настя составит разбор:\n"
+            "- Тип и Стратегия\n"
+            "- Авторитет\n"
+            "- Профиль\n"
+            "- Центры\n"
+            "- Рекомендации\n\n"
+            "Пример: /humandesign 15.06.2001\n"
+            "С временем точнее: /humandesign 15.06.2001 14:30 Москва"
+        )
+        return
+
+    # Extract time and place
+    birth_time = ""
+    birth_place = ""
+    date_part = query
+
+    time_match = re.search(r'(\d{1,2}[:.]\d{2})', query)
+    if time_match:
+        birth_time = time_match.group(1).replace(".", ":")
+        date_part = date_part.replace(time_match.group(0), "").strip()
+
+    parts = date_part.split()
+    if len(parts) > 1:
+        potential_place = " ".join(parts[1:])
+        if not potential_place.replace(".", "").replace("/", "").replace("-", "").replace(" ", "").isdigit():
+            birth_place = potential_place
+            date_part = parts[0]
+
+    birth_date = parse_birth_date(date_part)
+    if not birth_date:
+        await message.answer(
+            "Ой, Настя не разобралась с датой! 😅\n\n"
+            "Напиши в формате: DD.MM.YYYY\n"
+            "Пример: /humandesign 15.06.2001"
+        )
+        return
+
+    day, month, year = birth_date
+
+    if not ai_router:
+        await message.answer("Настя пока не может составить Дизайн Человека... Попробуй позже! 🧬💅")
+        return
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    await message.answer("Настя составляет твой Дизайн Человека! Это глубокая работа... 🧬✨")
+
+    try:
+        # Build knowledge context for AI
+        types_desc = "\n".join([
+            f"- {name}: стратегия '{info['strategy']}', сигнатура '{info['signature']}', не-я '{info['not_self']}' ({info['percentage']})"
+            for name, info in HD_TYPES.items()
+        ])
+        auth_desc = "\n".join([f"- {name}: {desc}" for name, desc in HD_AUTHORITIES.items()])
+        profiles_desc = "\n".join([f"- {name}: {desc}" for name, desc in HD_PROFILES.items()])
+        centers_desc = "\n".join([f"- {name}: {desc}" for name, desc in HD_CENTERS.items()])
+
+        prompt_parts = [
+            f"Дата рождения: {day:02d}.{month:02d}.{year}",
+        ]
+        if birth_time:
+            prompt_parts.append(f"Время рождения: {birth_time}")
+        if birth_place:
+            prompt_parts.append(f"Место рождения: {birth_place}")
+
+        prompt_parts.append(f"\nСПРАВОЧНИК ТИПОВ:\n{types_desc}")
+        prompt_parts.append(f"\nСПРАВОЧНИК АВТОРИТЕТОВ:\n{auth_desc}")
+        prompt_parts.append(f"\nСПРАВОЧНИК ПРОФИЛЕЙ:\n{profiles_desc}")
+        prompt_parts.append(f"\nСПРАВОЧНИК ЦЕНТРОВ:\n{centers_desc}")
+
+        if birth_time and birth_place:
+            prompt_parts.append(
+                "\nВНИМАНИЕ: Указано время и место рождения! Определи наиболее вероятный Тип, Авторитет, Профиль "
+                "и состояние центров на основе даты, времени и места. Дай максимально точный разбор."
+            )
+        else:
+            prompt_parts.append(
+                "\nВремя и место не указаны. Определи наиболее вероятный Тип и общие характеристики на основе даты. "
+                "Укажи что для точного определения Авторитета и центров нужно время рождения."
+            )
+
+        result = await ai_router.chat(
+            prompt=f"Составь профессиональный разбор Дизайна Человека.\n\n" + "\n".join(prompt_parts),
+            system_prompt=HD_SYSTEM_PROMPT,
+            max_tokens=2000,
+        )
+
+        if result and result.text:
+            from ai.router import AIRouter
+            cleaned = AIRouter.clean_ai_response(result.text)
+            if cleaned:
+                response = f"🧬 Дизайн Человека: {day:02d}.{month:02d}.{year}\n\n{cleaned}"
+
+                if len(response) > 4000:
+                    parts = []
+                    while len(response) > 4000:
+                        split_at = response.rfind("\n\n", 3000, 4000)
+                        if split_at == -1:
+                            split_at = 3900
+                        parts.append(response[:split_at])
+                        response = response[split_at:].lstrip("\n")
+                    parts.append(response)
+                    for i, part in enumerate(parts):
+                        await message.answer(part)
+                        if i < len(parts) - 1:
+                            await asyncio.sleep(0.5)
+                else:
+                    await message.answer(response)
+                if db:
+                    await _save_simple_exchange(message, f"/humandesign {query}", cleaned[:300], db)
+                return
+    except Exception as e:
+        logger.error(f"Human Design consultation error: {e}")
+
+    await message.answer("Ой, Настя не смогла прочитать Дизайн... Попробуй позже! 🧬😔")
+
+
+@router.message(Command("health"))
+async def cmd_health(message: Message, db=None, ai_router=None) -> None:
+    """Health and wellness consultation - Ayurveda, psychosomatics."""
+    from bot.consultations import AYURVEDA_DOSHAS, PSYCHOSOMATICS, HEALTH_SYSTEM_PROMPT
+
+    query = message.text.replace("/health", "").strip()
+
+    if not query:
+        await message.answer(
+            "🌿 Здоровье и самочувствие с Настей!\n\n"
+            "Расскажи о себе, и Настя поможет:\n"
+            "- Определить Аюрведическую конституцию (доша)\n"
+            "- Рекомендации по питанию\n"
+            "- Психосоматика симптомов\n"
+            "- Советы по гармонизации\n\n"
+            "Примеры:\n"
+            "/health Я худощавый, часто мёрзну, тревожный\n"
+            "/health У меня проблемы со сном и стресс\n"
+            "/health Я полный, спокойный, ленивый"
+        )
+        return
+
+    if not ai_router:
+        await message.answer("Настя пока не может проконсультировать... Попробуй позже! 🌿💅")
+        return
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    await message.answer("Настя анализирует твоё здоровье! Секунду... 🌿✨")
+
+    try:
+        # Build knowledge context
+        doshas_desc = "\n".join([
+            f"- {name}: стихия {info['element']}, качества: {info['qualities']}, тело: {info['body_type']}, "
+            f"ум: {info['mind']}, сильные стороны: {info['strengths']}, слабости: {info['weaknesses']}, "
+            f"баланс: {info['balance_tips']}, еда+: {info['best_food']}, еда-: {info['avoid_food']}"
+            for name, info in AYURVEDA_DOSHAS.items()
+        ])
+        psycho_desc = "\n".join([f"- {symptom}: {meaning}" for symptom, meaning in PSYCHOSOMATICS.items()])
+
+        result = await ai_router.chat(
+            prompt=(
+                f"Опиши человека и дай профессиональную консультацию по здоровью.\n\n"
+                f"Описание человека: {query}\n\n"
+                f"СПРАВОЧНИК ДОШ (Аюрведа):\n{doshas_desc}\n\n"
+                f"СПРАВОЧНИК ПСИХОСОМАТИКИ:\n{psycho_desc}\n\n"
+                f"Определи вероятную доминирующую дошу, дай рекомендации по питанию, образу жизни, "
+                f"рассмотри психосоматические связи если есть симптомы. "
+                f"ОБЯЗАТЕЛЬНО напомни что ты не врач и при серьёзных проблемах нужно обратиться к специалисту."
+            ),
+            system_prompt=HEALTH_SYSTEM_PROMPT,
+            max_tokens=2000,
+        )
+
+        if result and result.text:
+            from ai.router import AIRouter
+            cleaned = AIRouter.clean_ai_response(result.text)
+            if cleaned:
+                response = f"🌿 Консультация по здоровью\n\n{cleaned}"
+
+                if len(response) > 4000:
+                    parts = []
+                    while len(response) > 4000:
+                        split_at = response.rfind("\n\n", 3000, 4000)
+                        if split_at == -1:
+                            split_at = 3900
+                        parts.append(response[:split_at])
+                        response = response[split_at:].lstrip("\n")
+                    parts.append(response)
+                    for i, part in enumerate(parts):
+                        await message.answer(part)
+                        if i < len(parts) - 1:
+                            await asyncio.sleep(0.5)
+                else:
+                    await message.answer(response)
+                if db:
+                    await _save_simple_exchange(message, f"/health {query[:100]}", cleaned[:300], db)
+                return
+    except Exception as e:
+        logger.error(f"Health consultation error: {e}")
+
+    await message.answer("Ой, Настя не смогла проконсультировать... Попробуй позже! 🌿😔")
 
 
 # ── Voice handler ────────────────────────────────────────────
