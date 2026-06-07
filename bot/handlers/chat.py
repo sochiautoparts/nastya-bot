@@ -132,6 +132,54 @@ def _cleanup_trackers():
         del _proactive_tracker[uid]
 
 
+async def _send_long_message(message: Message, text: str, max_chars: int = 4000) -> None:
+    """Send a long message, splitting it across multiple Telegram messages.
+    
+    Telegram limits single messages to ~4096 chars. This function splits
+    at paragraph boundaries when possible.
+    """
+    if len(text) <= max_chars:
+        await message.answer(text)
+        return
+    
+    parts = []
+    remaining = text
+    while len(remaining) > max_chars:
+        # Try to split at paragraph break
+        split_at = remaining.rfind("\n\n", max_chars - 1000, max_chars)
+        if split_at == -1:
+            # Try single newline
+            split_at = remaining.rfind("\n", max_chars - 1000, max_chars)
+        if split_at == -1:
+            # Try sentence boundary
+            split_at = remaining.rfind(". ", max_chars - 1000, max_chars)
+        if split_at == -1:
+            # Force split
+            split_at = max_chars - 100
+        parts.append(remaining[:split_at + 1])
+        remaining = remaining[split_at + 1:].lstrip("\n")
+    
+    if remaining:
+        parts.append(remaining)
+    
+    for i, part in enumerate(parts):
+        try:
+            await message.answer(part.strip())
+            if i < len(parts) - 1:
+                await asyncio.sleep(0.7)
+        except Exception as e:
+            logger.error(f"Failed to send message part {i}: {e}")
+            # If part is too long, try harder to split
+            if len(part) > 4096:
+                # Emergency split
+                for j in range(0, len(part), 3900):
+                    try:
+                        await message.answer(part[j:j+3900].strip())
+                        await asyncio.sleep(0.5)
+                    except Exception:
+                        pass
+
+
 # ════════════════════════════════════════════════════════════
 #  URL UNDERSTANDING - Настя читает ссылки!
 # ════════════════════════════════════════════════════════════
@@ -901,6 +949,16 @@ async def cmd_numerology(message: Message, db=None, ai_router=None) -> None:
         await message.answer("Капец, дата какая-то странная... Проверь и попробуй снова! 🤔")
         return
 
+    # Save birth data so Nastya remembers
+    if db:
+        try:
+            await db.save_user_birth_data(
+                message.from_user.id, day, month, year,
+                consultation_type="numerology",
+            )
+        except Exception:
+            pass
+
     if not ai_router:
         await message.answer("Настя пока не может провести нумерологический разбор... Попробуй позже! 🔢💅")
         return
@@ -950,21 +1008,7 @@ async def cmd_numerology(message: Message, db=None, ai_router=None) -> None:
             if cleaned:
                 response = f"🔢 Нумерологический разбор: ЖВП={life_path}, {day:02d}.{month:02d}.{year}\n\n{cleaned}"
 
-                if len(response) > 4000:
-                    parts = []
-                    while len(response) > 4000:
-                        split_at = response.rfind("\n\n", 3000, 4000)
-                        if split_at == -1:
-                            split_at = 3900
-                        parts.append(response[:split_at])
-                        response = response[split_at:].lstrip("\n")
-                    parts.append(response)
-                    for i, part in enumerate(parts):
-                        await message.answer(part)
-                        if i < len(parts) - 1:
-                            await asyncio.sleep(0.5)
-                else:
-                    await message.answer(response)
+                await _send_long_message(message, response)
                 if db:
                     await _save_simple_exchange(message, f"/numerology {query}", cleaned[:300], db)
                 return
@@ -1375,6 +1419,16 @@ async def cmd_matrix(message: Message, db=None, ai_router=None) -> None:
         await message.answer("Капец, дата какая-то странная... Проверь и попробуй снова! 🤔")
         return
 
+    # Save birth data so Nastya remembers
+    if db:
+        try:
+            await db.save_user_birth_data(
+                message.from_user.id, day, month, year,
+                consultation_type="matrix",
+            )
+        except Exception:
+            pass
+
     if not ai_router:
         await message.answer("Настя пока не может составить Матрицу... Попробуй позже! 🔮💅")
         return
@@ -1397,23 +1451,7 @@ async def cmd_matrix(message: Message, db=None, ai_router=None) -> None:
             cleaned = AIRouter.clean_ai_response(result.text)
             if cleaned:
                 response = f"🔮 Матрица Судьбы для {day:02d}.{month:02d}.{year}\n\n{cleaned}"
-                # Split if too long for Telegram
-                if len(response) > 4000:
-                    parts = []
-                    while len(response) > 4000:
-                        # Find a good split point (paragraph break)
-                        split_at = response.rfind("\n\n", 3000, 4000)
-                        if split_at == -1:
-                            split_at = 3900
-                        parts.append(response[:split_at])
-                        response = response[split_at:].lstrip("\n")
-                    parts.append(response)
-                    for i, part in enumerate(parts):
-                        await message.answer(part)
-                        if i < len(parts) - 1:
-                            await asyncio.sleep(0.5)
-                else:
-                    await message.answer(response)
+                await _send_long_message(message, response)
                 if db:
                     await _save_simple_exchange(message, f"/matrix {query}", cleaned[:300], db)
                 return
@@ -1480,6 +1518,18 @@ async def cmd_astro(message: Message, db=None, ai_router=None) -> None:
 
     day, month, year = birth_date
 
+    # Save birth data so Nastya remembers
+    if db:
+        try:
+            await db.save_user_birth_data(
+                message.from_user.id, day, month, year,
+                birth_time=birth_time,
+                birth_place=birth_place,
+                consultation_type="astro",
+            )
+        except Exception:
+            pass
+
     if not ai_router:
         await message.answer("Настя пока не может составить натальную карту... Попробуй позже! ⭐💅")
         return
@@ -1543,21 +1593,7 @@ async def cmd_astro(message: Message, db=None, ai_router=None) -> None:
 
                 response = f"{zodiac_emoji} Астрологический разбор: {zodiac_sign.capitalize()}, {day:02d}.{month:02d}.{year}\n\n{cleaned}"
 
-                if len(response) > 4000:
-                    parts = []
-                    while len(response) > 4000:
-                        split_at = response.rfind("\n\n", 3000, 4000)
-                        if split_at == -1:
-                            split_at = 3900
-                        parts.append(response[:split_at])
-                        response = response[split_at:].lstrip("\n")
-                    parts.append(response)
-                    for i, part in enumerate(parts):
-                        await message.answer(part)
-                        if i < len(parts) - 1:
-                            await asyncio.sleep(0.5)
-                else:
-                    await message.answer(response)
+                await _send_long_message(message, response)
                 if db:
                     await _save_simple_exchange(message, f"/astro {query}", cleaned[:300], db)
                 return
@@ -1619,6 +1655,18 @@ async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
         return
 
     day, month, year = birth_date
+
+    # Save birth data so Nastya remembers
+    if db:
+        try:
+            await db.save_user_birth_data(
+                message.from_user.id, day, month, year,
+                birth_time=birth_time,
+                birth_place=birth_place,
+                consultation_type="humandesign",
+            )
+        except Exception:
+            pass
 
     if not ai_router:
         await message.answer("Настя пока не может составить Дизайн Человека... Попробуй позже! 🧬💅")
@@ -1685,21 +1733,7 @@ async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
             if cleaned:
                 response = f"🧬 Дизайн Человека: {day:02d}.{month:02d}.{year}\n\n{cleaned}"
 
-                if len(response) > 4000:
-                    parts = []
-                    while len(response) > 4000:
-                        split_at = response.rfind("\n\n", 3000, 4000)
-                        if split_at == -1:
-                            split_at = 3900
-                        parts.append(response[:split_at])
-                        response = response[split_at:].lstrip("\n")
-                    parts.append(response)
-                    for i, part in enumerate(parts):
-                        await message.answer(part)
-                        if i < len(parts) - 1:
-                            await asyncio.sleep(0.5)
-                else:
-                    await message.answer(response)
+                await _send_long_message(message, response)
                 if db:
                     await _save_simple_exchange(message, f"/humandesign {query}", cleaned[:300], db)
                 return
@@ -1781,6 +1815,35 @@ async def cmd_health(message: Message, db=None, ai_router=None) -> None:
                 f"Реакция на стресс: {bt_info['stress_response']}\n"
             )
 
+        # Save health consultation data
+        if db and blood_type_hint:
+            try:
+                birth_data = await db.get_user_birth_data(message.from_user.id)
+                if birth_data:
+                    await db.save_user_birth_data(
+                        message.from_user.id,
+                        birth_data["birth_day"], birth_data["birth_month"], birth_data["birth_year"],
+                        blood_type=blood_type_hint,
+                        consultation_type="health",
+                    )
+                else:
+                    # No birth data yet, just save blood type
+                    await db.save_user_birth_data(
+                        message.from_user.id, 0, 0, 0,
+                        blood_type=blood_type_hint,
+                        consultation_type="health",
+                    )
+            except Exception:
+                pass
+        elif db:
+            try:
+                await db.save_user_birth_data(
+                    message.from_user.id, 0, 0, 0,
+                    consultation_type="health",
+                )
+            except Exception:
+                pass
+
         result = await ai_router.chat(
             prompt=(
                 f"Опиши человека и дай профессиональную консультацию по здоровью.\n\n"
@@ -1805,21 +1868,7 @@ async def cmd_health(message: Message, db=None, ai_router=None) -> None:
             if cleaned:
                 response = f"🌿 Консультация по здоровью\n\n{cleaned}"
 
-                if len(response) > 4000:
-                    parts = []
-                    while len(response) > 4000:
-                        split_at = response.rfind("\n\n", 3000, 4000)
-                        if split_at == -1:
-                            split_at = 3900
-                        parts.append(response[:split_at])
-                        response = response[split_at:].lstrip("\n")
-                    parts.append(response)
-                    for i, part in enumerate(parts):
-                        await message.answer(part)
-                        if i < len(parts) - 1:
-                            await asyncio.sleep(0.5)
-                else:
-                    await message.answer(response)
+                await _send_long_message(message, response)
                 if db:
                     await _save_simple_exchange(message, f"/health {query[:100]}", cleaned[:300], db)
                 return
@@ -1887,6 +1936,18 @@ async def cmd_jyotish(message: Message, db=None, ai_router=None) -> None:
         return
 
     day, month, year = birth_date
+
+    # Save birth data so Nastya remembers
+    if db:
+        try:
+            await db.save_user_birth_data(
+                message.from_user.id, day, month, year,
+                birth_time=birth_time,
+                birth_place=birth_place,
+                consultation_type="jyotish",
+            )
+        except Exception:
+            pass
 
     if not ai_router:
         await message.answer("Настя пока не может составить карту Джйотиш... Попробуй позже! 🕉️💅")
@@ -1987,21 +2048,7 @@ async def cmd_jyotish(message: Message, db=None, ai_router=None) -> None:
             if cleaned:
                 response = f"🕉️ Джйотиш: {vedic_rashi} ({rashi_info.get('symbol', '')}), {day:02d}.{month:02d}.{year}\n\n{cleaned}"
 
-                if len(response) > 4000:
-                    parts = []
-                    while len(response) > 4000:
-                        split_at = response.rfind("\n\n", 3000, 4000)
-                        if split_at == -1:
-                            split_at = 3900
-                        parts.append(response[:split_at])
-                        response = response[split_at:].lstrip("\n")
-                    parts.append(response)
-                    for i, part in enumerate(parts):
-                        await message.answer(part)
-                        if i < len(parts) - 1:
-                            await asyncio.sleep(0.5)
-                else:
-                    await message.answer(response)
+                await _send_long_message(message, response)
                 if db:
                     await _save_simple_exchange(message, f"/jyotish {query}", cleaned[:300], db)
                 return
@@ -2620,6 +2667,29 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     # v44: URL context
     if url_context:
         system_prompt += f" {url_context}"
+
+    # Add user birth data if available (for consultation context)
+    if db:
+        try:
+            birth_data = await db.get_user_birth_data(user_id)
+            if birth_data and birth_data.get("birth_day"):
+                birth_context = (
+                    f"\n\nДАННЫЕ ПОЛЬЗОВАТЕЛЯ (запомни, не переспрашивай): "
+                    f"Дата рождения: {birth_data['birth_day']:02d}.{birth_data['birth_month']:02d}.{birth_data['birth_year']}"
+                )
+                if birth_data.get("birth_time"):
+                    birth_context += f", Время: {birth_data['birth_time']}"
+                if birth_data.get("birth_place"):
+                    birth_context += f", Место: {birth_data['birth_place']}"
+                if birth_data.get("blood_type"):
+                    birth_context += f", Группа крови: {birth_data['blood_type']}"
+                birth_context += (
+                    f"\nКогда пользователь спрашивает про астрологию, нумерологию, Дизайн Человека или здоровье — "
+                    f"используй эти данные и НЕ переспрашивай. Давай развёрнутые профессиональные ответы."
+                )
+                system_prompt += birth_context
+        except Exception:
+            pass
 
     # Group chat: active participation
     if is_group:

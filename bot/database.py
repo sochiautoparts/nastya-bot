@@ -93,6 +93,21 @@ CREATE INDEX IF NOT EXISTS idx_news_category ON news_items(category, created_at)
 CREATE INDEX IF NOT EXISTS idx_news_unposted ON news_items(posted_to_channel, created_at);
 CREATE INDEX IF NOT EXISTS idx_channel_posts_type ON channel_posts(post_type, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_cache_key ON ai_cache(cache_key);
+
+CREATE TABLE IF NOT EXISTS user_consultations (
+    user_id INTEGER PRIMARY KEY,
+    birth_day INTEGER,
+    birth_month INTEGER,
+    birth_year INTEGER,
+    birth_time TEXT DEFAULT '',
+    birth_place TEXT DEFAULT '',
+    blood_type TEXT DEFAULT '',
+    last_consultation TEXT DEFAULT '',
+    consultation_count INTEGER DEFAULT 0,
+    updated_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_consultations ON user_consultations(user_id);
 """
 
 MOODS = [
@@ -176,6 +191,7 @@ class Database:
                 "ALTER TABLE users ADD COLUMN last_mood TEXT DEFAULT 'капризная'",
                 "ALTER TABLE users ADD COLUMN last_mood_change REAL DEFAULT 0",
                 "ALTER TABLE users ADD COLUMN subscribed_channel INTEGER DEFAULT 0",
+                "ALTER TABLE user_consultations ADD COLUMN blood_type TEXT DEFAULT ''",
             ]:
                 try:
                     await conn.execute(col_def)
@@ -686,6 +702,88 @@ class Database:
                 return cursor.rowcount
         except Exception:
             return 0
+
+    # ── User Consultations ──────────────────────────────────
+
+    async def save_user_birth_data(self, user_id: int, day: int, month: int, year: int,
+                                    birth_time: str = "", birth_place: str = "",
+                                    consultation_type: str = "", blood_type: str = "") -> None:
+        """Save or update user birth data for consultations. Nastya remembers!"""
+        conn = await self._get_conn()
+        try:
+            now = time.time()
+            async with self._write_lock:
+                # Check if record exists
+                async with conn.execute(
+                    "SELECT user_id FROM user_consultations WHERE user_id = ?", (user_id,)
+                ) as cur:
+                    exists = await cur.fetchone()
+
+                if exists:
+                    updates = ["updated_at = ?"]
+                    values = [now]
+                    if day:
+                        updates.append("birth_day = ?")
+                        values.append(day)
+                    if month:
+                        updates.append("birth_month = ?")
+                        values.append(month)
+                    if year:
+                        updates.append("birth_year = ?")
+                        values.append(year)
+                    if birth_time:
+                        updates.append("birth_time = ?")
+                        values.append(birth_time)
+                    if birth_place:
+                        updates.append("birth_place = ?")
+                        values.append(birth_place)
+                    if consultation_type:
+                        updates.append("last_consultation = ?")
+                        values.append(consultation_type)
+                        updates.append("consultation_count = consultation_count + 1")
+                    if blood_type:
+                        updates.append("blood_type = ?")
+                        values.append(blood_type)
+                    values.append(user_id)
+                    await conn.execute(
+                        f"UPDATE user_consultations SET {', '.join(updates)} WHERE user_id = ?",
+                        values,
+                    )
+                else:
+                    await conn.execute(
+                        """INSERT INTO user_consultations 
+                        (user_id, birth_day, birth_month, birth_year, birth_time, birth_place, 
+                         blood_type, last_consultation, consultation_count, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+                        (user_id, day, month, year, birth_time, birth_place,
+                         blood_type, consultation_type, now),
+                    )
+                await conn.commit()
+        except Exception as e:
+            logger.error(f"save_user_birth_data error: {e}")
+
+    async def get_user_birth_data(self, user_id: int) -> Optional[Dict]:
+        """Get stored birth data for a user. Returns None if not found."""
+        conn = await self._get_conn()
+        try:
+            async with conn.execute(
+                """SELECT birth_day, birth_month, birth_year, birth_time, birth_place, 
+                          blood_type, last_consultation, consultation_count
+                FROM user_consultations WHERE user_id = ?""",
+                (user_id,),
+            ) as cur:
+                row = await cur.fetchone()
+                if row and row[0]:  # Has birth_day
+                    return {
+                        "birth_day": row[0], "birth_month": row[1], "birth_year": row[2],
+                        "birth_time": row[3] or "", "birth_place": row[4] or "",
+                        "blood_type": row[5] or "", "last_consultation": row[6] or "",
+                        "consultation_count": row[7] or 0,
+                    }
+            return None
+        except Exception as e:
+            logger.error(f"get_user_birth_data error: {e}")
+            return None
 
     # ── Stats ───────────────────────────────────────────────
 
