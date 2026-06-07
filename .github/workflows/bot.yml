@@ -1,21 +1,20 @@
-name: Nastya Bot — POLLINATIONS-ONLY v62
+name: Nastya Bot — DEEP CONSULTATIONS v63
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v62.0 — POLLINATIONS-ONLY
+# Nastya Bot v63.0 — DEEP PROFESSIONAL CONSULTATIONS ENGINE
 #
 #   - Pollinations.ai (44+ models, weighted round-robin) — ALL routes
 #   - DUAL API KEY FAILOVER: KEY1 → KEY2 → static fallback
 #   - ALL ROUTING: Pollinations → static fallback
-#     - Chat → Pollinations (weighted models)
-#     - Posts & functions → Pollinations (best quality models)
-#     - Comments → Pollinations (fast/cheap models)
-#     - Vision → Pollinations vision models
-#     - Background → Pollinations (quality posts)
-#   - Local model DISABLED (restorable via ENABLE_LOCAL_MODEL)
-#   - DATE AWARENESS: All prompts include current Moscow date/time
-#   - IMAGE GENERATION — Настя РИСУЕТ! (flux model)
-#   - Persona: Настя — москвичка, владеет BMW M3!
-#   - INLINE MODE — Настя работает в любом чате!
+#   - DEEP KNOWLEDGE ENGINE: Expanded numerology, astrology, HD, Jyotish, health
+#   - NEW: /compatibility command for pair analysis
+#   - NEW: Subdoshas, Dhatus, Agni types, expanded psychosomatics (3 sources)
+#   - NEW: Lunar nodes, decanates, Arabic parts, progressions
+#   - NEW: Incarnation crosses, determination nutrition, definition types
+#   - NEW: Extended Matrix lines (wealth, spiritual, career, health, etc.)
+#   - NEW: Personal year/month/day calculations
+#   - Smart message splitting with continuation markers
+#   - MAX_TOKENS increased to 4096 for deep consultations
 #
 # Schedule (UTC, Moscow = UTC+3):
 #   Every 5 hours: 00:00, 05:00, 10:00, 15:00, 20:00
@@ -115,7 +114,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v62
+          key: nastya-db-v63
           restore-keys: |
             nastya-db-
 
@@ -146,17 +145,16 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v62.0 POLLINATIONS-ONLY ==="
+          echo "=== Starting Nastya Bot v63.0 DEEP CONSULTATIONS ==="
           echo "ALL ROUTES: Pollinations.ai (44+ models, dual-key failover)"
-          echo "CHAT: Pollinations → Static fallback"
-          echo "POSTS/FUNCTIONS: Pollinations (best quality) → Static fallback"
-          echo "COMMENTS: Pollinations (fast models) → Static fallback"
-          echo "VISION: Pollinations vision models"
-          echo "BACKGROUND: Pollinations for quality posts"
-          echo "STRATEGY: Pollinations-only, dual-key=KEY1+KEY2, circuit-break"
+          echo "DEEP KNOWLEDGE: Expanded numerology, astrology, HD, Jyotish, health"
+          echo "NEW: /compatibility, subdoshas, dhatus, agni, psychosomatics (3 sources)"
+          echo "NEW: Lunar nodes, decanates, Arabic parts, progressions"
+          echo "NEW: Incarnation crosses, determination nutrition, definition types"
+          echo "NEW: Extended Matrix lines, personal year/month/day"
+          echo "SMART SPLIT: Message splitting with continuation markers"
+          echo "MAX_TOKENS: 4096 for deep professional consultations"
           echo "DATE AWARENESS: All prompts include current Moscow date/time"
-          echo "PERSONA: Настя — москвичка, владеет BMW M3!"
-          echo "INLINE: @asnastya_bot works in any chat!"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -197,7 +195,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v62-${{ github.run_id }}
+          key: nastya-db-v63-${{ github.run_id }}
 
       - name: Save database to git
         if: always()

@@ -136,7 +136,7 @@ async def _send_long_message(message: Message, text: str, max_chars: int = 4000)
     """Send a long message, splitting it across multiple Telegram messages.
     
     Telegram limits single messages to ~4096 chars. This function splits
-    at paragraph boundaries when possible.
+    at paragraph boundaries when possible and adds continuation markers.
     """
     if len(text) <= max_chars:
         await message.answer(text)
@@ -162,10 +162,21 @@ async def _send_long_message(message: Message, text: str, max_chars: int = 4000)
     if remaining:
         parts.append(remaining)
     
+    total = len(parts)
     for i, part in enumerate(parts):
         try:
-            await message.answer(part.strip())
-            if i < len(parts) - 1:
+            # Add continuation marker for multi-part messages
+            chunk = part.strip()
+            if total > 1:
+                if i == 0:
+                    chunk = chunk + f"\n\n... ({total} частей, продолжение →)"
+                elif i < total - 1:
+                    chunk = f"(продолжение {i+1}/{total})\n\n" + chunk + f"\n\n... (ещё →)"
+                else:
+                    chunk = f"(окончание {i+1}/{total})\n\n" + chunk
+            
+            await message.answer(chunk)
+            if i < total - 1:
                 await asyncio.sleep(0.7)
         except Exception as e:
             logger.error(f"Failed to send message part {i}: {e}")
@@ -646,6 +657,7 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
     extras.append("🕉️ /jyotish - Джйотиш (Ведическая астрология)")
     extras.append("🔮 /horoscope - гороскоп на сегодня")
     extras.append("🔢 /numerology - профессиональная нумерология (ЖВП, кармические долги, пики, совместимость)")
+    extras.append("💕 /compatibility - совместимость пары (нумерология + зодиак + Матрица)")
     if CHANNEL_USERNAME:
         extras.append(f"📺 Мой канал: t.me/{CHANNEL_USERNAME.replace('@', '')}")
 
@@ -2095,6 +2107,107 @@ async def cmd_jyotish(message: Message, db=None, ai_router=None) -> None:
         logger.error(f"Jyotish consultation error: {e}")
 
     await message.answer("Ой, Настя не смогла прочитать карту Джйотиш... Попробуй позже! 🕉️😔")
+
+
+# ── /compatibility - PROFESSIONAL Pair Compatibility ──
+
+@router.message(Command("compatibility"))
+async def cmd_compatibility(message: Message, db=None, ai_router=None) -> None:
+    """Professional compatibility analysis — numerology + zodiac + Matrix of Destiny."""
+    from bot.consultations import parse_birth_date, get_zodiac_sign, calculate_life_path_number
+    from bot.deep_knowledge import build_compatibility_context
+
+    query = message.text.replace("/compatibility", "").strip()
+
+    if not query:
+        await message.answer(
+            "💕 Настя делает профессиональный разбор совместимости!\n\n"
+            "Формат: /compatibility ДД.ММ.ГГГГ ДД.ММ.ГГГГ\n\n"
+            "Пример: /compatibility 15.06.2001 22.11.1998\n\n"
+            "Анализирую: нумерологическую совместимость (ЖВП), "
+            "зодиакальную совместимость (знаки + стихии), "
+            "совместимость по Матрице Судьбы!"
+        )
+        return
+
+    # Parse two dates from query
+    parts = query.split()
+    if len(parts) < 2:
+        await message.answer("Нужно две даты! Пример: /compatibility 15.06.2001 22.11.1998")
+        return
+
+    date1_str = parts[0]
+    date2_str = parts[1]
+
+    d1 = parse_birth_date(date1_str)
+    d2 = parse_birth_date(date2_str)
+
+    if not d1 or not d2:
+        await message.answer(
+            "Не смогла распознать одну из дат 😕\n"
+            "Формат: ДД.ММ.ГГГГ\n"
+            "Пример: /compatibility 15.06.2001 22.11.1998"
+        )
+        return
+
+    await message.answer("💕 Настя анализирует вашу совместимость... Это глубокий разбор, подожди немного!")
+
+    try:
+        # Build comprehensive compatibility context
+        compat_context = build_compatibility_context(date1_str, date2_str)
+
+        # Get AI analysis
+        if ai_router:
+            system_prompt = """Ты Настя - москвичка, 23 года, блогер, которая профессионально анализирует совместимость пар.
+Ты МАСТЕР — разбираешься в нумерологической совместимости (ЖВП), зодиакальной (знаки + стихии), и совместимости по Матрице Судьбы.
+
+АБСОЛЮТНЫЕ ПРАВИЛА:
+1. Тебе ПЕРЕДАЛИ ПОЛНЫЙ РАСЧЁТ совместимости. ИСПОЛЬЗУЙ ЕГО!
+2. Пиши МАКСИМАЛЬНО РАЗВЁРНУТО — каждый раздел 7-10 предложений
+3. Если ответ длинный — НЕ СОКРАЩАЙ, тебя отправят частями
+4. Дай КОНКРЕТНЫЕ рекомендации как улучшить отношения
+5. Укажи СИЛЬНЫЕ стороны пары и СЛАБЫЕ места
+6. НЕ суди — каждый союз уникален и имеет потенциал
+
+СТРУКТУРА ОТВЕТА:
+- Общее впечатление от пары (3-5 предложений)
+- Нумерологическая совместимость (7-10 предложений — ЖВП каждого + совместимость)
+- Зодиакальная совместимость (7-10 предложений — знаки + стихии + динамика)
+- Совместимость по Матрице Судьбы (7-10 предложений — ключевые линии)
+- Сильные стороны пары (7-10 предложений)
+- Слабые места и вызовы (7-10 предложений)
+- Как улучшить отношения (7-10 предложений — конкретные рекомендации)
+- Итоговая оценка и пожелание (3-5 предложений)
+
+Пиши ОТ СЕБЯ, живо, с эмоциями. Без markdown, без буллитов — сплошной текст с абзацами.
+Если текст не помещается в одно сообщение — НЕ ОБРЕЗАЙ, тебя отправят несколькими сообщениями."""
+
+            result = await ai_router.chat(
+                prompt=f"Составь профессиональный анализ совместимости пары.\n\n{compat_context}",
+                system_prompt=system_prompt,
+                user_id=message.from_user.id,
+            )
+
+            if result:
+                cleaned = result.strip()
+                # Remove AI thinking blocks
+                import re
+                cleaned = re.sub(r'<think.*?</think\s*>', '', cleaned, flags=re.DOTALL).strip()
+                if not cleaned:
+                    cleaned = result[:500]
+
+                await _send_long_message(message, cleaned, max_chars=4000)
+
+                if db:
+                    try:
+                        await _save_simple_exchange(message, "/compatibility", cleaned[:300], db)
+                    except Exception:
+                        pass
+                return
+    except Exception as e:
+        logger.error(f"Compatibility consultation error: {e}")
+
+    await message.answer("Ой, Настя не смогла проанализировать совместимость... Попробуй позже! 💕😔")
 
 
 # ── Voice handler ────────────────────────────────────────────
