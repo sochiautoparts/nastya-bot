@@ -597,7 +597,7 @@ async def cmd_start(message: Message, db=None, ai_router=None) -> None:
     extras.append("🌿 /health - Здоровье и Аюрведа")
     extras.append("🕉️ /jyotish - Джйотиш (Ведическая астрология)")
     extras.append("🔮 /horoscope - гороскоп на сегодня")
-    extras.append("🔢 /numerology - число судьбы")
+    extras.append("🔢 /numerology - профессиональная нумерология (ЖВП, кармические долги, пики, совместимость)")
     if CHANNEL_USERNAME:
         extras.append(f"📺 Мой канал: t.me/{CHANNEL_USERNAME.replace('@', '')}")
 
@@ -857,49 +857,188 @@ async def cmd_recipe(message: Message, db=None, ai_router=None) -> None:
     await message.answer("\n".join(lines))
 
 
-# ── /numerology - Numerology by date ──
+# ── /numerology - PROFESSIONAL Numerology by date ──
 
 @router.message(Command("numerology"))
 async def cmd_numerology(message: Message, db=None, ai_router=None) -> None:
-    """Calculate numerology from a date or number."""
-    from bot.nastya import calculate_numerology
+    """Professional numerology consultation — Life Path, Karmic Debts, Pinnacles, Challenges."""
+    from bot.consultations import (
+        parse_birth_date, calculate_life_path_number, calculate_karmic_debts,
+        calculate_pinnacle_numbers, calculate_challenge_numbers,
+        LIFE_PATH_MEANINGS, KARMIC_DEBTS, NUMEROLOGY_SYSTEM_PROMPT,
+    )
 
     query = message.text.replace("/numerology", "").strip()
     if not query:
         await message.answer(
-            "Напиши дату рождения или число для нумерологии! 🔢✨\n\n"
+            "🔢 Профессиональная нумерология от Насти!\n\n"
+            "Полный разбор по дате рождения:\n"
+            "- Число Жизненного Пути\n"
+            "- Кармические долги (13, 14, 16, 19)\n"
+            "- Пиковые числа (4 периода)\n"
+            "- Числа вызова (4 урока)\n\n"
+            "Пример: /numerology 15.06.2001\n\n"
+            "Совместимость: /numerology совм 15.06.2001 22.11.1998"
+        )
+        return
+
+    # Check if compatibility mode
+    if query.lower().startswith("совм"):
+        await _handle_numerology_compatibility(message, query, db, ai_router)
+        return
+
+    birth_date = parse_birth_date(query)
+    if not birth_date:
+        await message.answer(
+            "Ой, Настя не разобралась с датой! 😅\n\n"
+            "Напиши в формате: DD.MM.YYYY\n"
             "Пример: /numerology 15.06.2001"
         )
         return
 
-    result = calculate_numerology(query)
-    number = result.get("number", 0)
-    meaning = result.get("meaning", "Что-то загадочное...")
+    day, month, year = birth_date
+    if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2020):
+        await message.answer("Капец, дата какая-то странная... Проверь и попробуй снова! 🤔")
+        return
 
-    # Enhance with AI
-    if ai_router:
-        try:
-            ai_result = await ai_router.chat(
-                prompt=f"Число судьбы: {number}. Значение: {meaning}. Распиши подробнее что значит число {number} в нумерологии.",
-                system_prompt=(
-                    "Ты Настя - москвичка, 23 года, блогер, увлекаешься нумерологией. "
-                    "Расскажи подробно и интересно. 4-6 предложений. Без markdown. "
-                    "Говори живо: 'прикинь', 'офигеть', 'круто'."
-                ),
-                max_tokens=300,
-            )
-            if ai_result and ai_result.text:
-                from ai.router import AIRouter
-                cleaned = AIRouter.clean_ai_response(ai_result.text)
-                if cleaned:
-                    await message.answer(f"🔢 Число судьбы: {number}\n\n{cleaned}")
-                    if db:
-                        await _save_simple_exchange(message, f"/numerology {query}", cleaned[:200], db)
-                    return
-        except Exception:
-            pass
+    if not ai_router:
+        await message.answer("Настя пока не может провести нумерологический разбор... Попробуй позже! 🔢💅")
+        return
 
-    await message.answer(f"🔢 Число судьбы: {number}\n\n{meaning}")
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    await message.answer("Настя проводит профессиональный нумерологический разбор! Подожди немного... 🔢✨")
+
+    try:
+        life_path = calculate_life_path_number(day, month, year)
+        lp_meaning = LIFE_PATH_MEANINGS.get(life_path, "Уникальный путь развития")
+        karmic = calculate_karmic_debts(day, month, year)
+        pinnacles = calculate_pinnacle_numbers(day, month, year)
+        challenges = calculate_challenge_numbers(day, month, year)
+
+        prompt_parts = [
+            f"Дата рождения: {day:02d}.{month:02d}.{year}",
+            f"Число Жизненного Пути: {life_path}",
+            f"Значение ЖВП: {lp_meaning}",
+        ]
+
+        if karmic:
+            debt_desc = "; ".join([f"{num} (через {src})" for src, num in karmic])
+            debt_details = "\n".join([f"- Кармический долг {num} ({src}): {KARMIC_DEBTS[num]}" for src, num in karmic])
+            prompt_parts.append(f"\nКАРМИЧЕСКИЕ ДОЛГИ НАЙДЕНЫ:\n{debt_details}")
+        else:
+            prompt_parts.append("\nКармических долгов не обнаружено — чистая карма!")
+
+        prompt_parts.append("\nПИКОВЫЕ ЧИСЛА (периоды максимальной реализации):")
+        for key in ["first", "second", "third", "fourth"]:
+            p = pinnacles[key]
+            prompt_parts.append(f"- {p['age']}: число {p['number']} — {p['meaning']}")
+
+        prompt_parts.append("\nЧИСЛА ВЫЗОВА (уроки для проработки):")
+        for key in ["first", "second", "third", "fourth"]:
+            c = challenges[key]
+            prompt_parts.append(f"- Урок {c['number']}: {c['lesson']}")
+
+        result = await ai_router.chat(
+            prompt=f"Составь профессиональный нумерологический разбор.\n\n" + "\n".join(prompt_parts),
+            system_prompt=NUMEROLOGY_SYSTEM_PROMPT,
+            max_tokens=2000,
+        )
+
+        if result and result.text:
+            from ai.router import AIRouter
+            cleaned = AIRouter.clean_ai_response(result.text)
+            if cleaned:
+                response = f"🔢 Нумерологический разбор: ЖВП={life_path}, {day:02d}.{month:02d}.{year}\n\n{cleaned}"
+
+                if len(response) > 4000:
+                    parts = []
+                    while len(response) > 4000:
+                        split_at = response.rfind("\n\n", 3000, 4000)
+                        if split_at == -1:
+                            split_at = 3900
+                        parts.append(response[:split_at])
+                        response = response[split_at:].lstrip("\n")
+                    parts.append(response)
+                    for i, part in enumerate(parts):
+                        await message.answer(part)
+                        if i < len(parts) - 1:
+                            await asyncio.sleep(0.5)
+                else:
+                    await message.answer(response)
+                if db:
+                    await _save_simple_exchange(message, f"/numerology {query}", cleaned[:300], db)
+                return
+    except Exception as e:
+        logger.error(f"Numerology consultation error: {e}")
+
+    await message.answer("Ой, Настя не смогла провести нумерологический разбор... Попробуй позже! 🔢😔")
+
+
+async def _handle_numerology_compatibility(message, query, db, ai_router) -> None:
+    """Handle numerology compatibility: /numerology совм DD.MM.YYYY DD.MM.YYYY"""
+    from bot.consultations import (
+        parse_birth_date, calculate_life_path_number,
+        calculate_compatibility, NUMEROLOGY_SYSTEM_PROMPT,
+    )
+
+    # Extract two dates
+    date_texts = query.lower().replace("совм", "").replace("совместимость", "").strip()
+    dates = re.findall(r'\d{1,2}[./\-]\d{1,2}[./\-]\d{4}', date_texts)
+
+    if len(dates) < 2:
+        await message.answer(
+            "Для совместимости нужны ДВЕ даты рождения! 💑\n\n"
+            "Пример: /numerology совм 15.06.2001 22.11.1998"
+        )
+        return
+
+    birth1 = parse_birth_date(dates[0])
+    birth2 = parse_birth_date(dates[1])
+
+    if not birth1 or not birth2:
+        await message.answer("Ой, Настя не разобралась с одной из дат! 😅 Проверь формат DD.MM.YYYY")
+        return
+
+    if not ai_router:
+        await message.answer("Настя пока не может рассчитать совместимость... Попробуй позже! 💑💅")
+        return
+
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    await message.answer("Настя рассчитывает совместимость! 💑✨")
+
+    try:
+        lp1 = calculate_life_path_number(*birth1)
+        lp2 = calculate_life_path_number(*birth2)
+        compat = calculate_compatibility(lp1, lp2)
+
+        result = await ai_router.chat(
+            prompt=(
+                f"Рассчитай совместимость двух людей в нумерологии.\n\n"
+                f"Человек 1: {birth1[0]:02d}.{birth1[1]:02d}.{birth1[2]}, ЖВП = {lp1}\n"
+                f"Человек 2: {birth2[0]:02d}.{birth2[1]:02d}.{birth2[2]}, ЖВП = {lp2}\n"
+                f"Совместимость: {compat['score']}/10\n"
+                f"Описание: {compat['description']}\n\n"
+                f"Рассмотри совместимость подробно: любовь, общение, финансы, духовный рост. "
+                f"Дай советы как улучшить отношения."
+            ),
+            system_prompt=NUMEROLOGY_SYSTEM_PROMPT,
+            max_tokens=1500,
+        )
+
+        if result and result.text:
+            from ai.router import AIRouter
+            cleaned = AIRouter.clean_ai_response(result.text)
+            if cleaned:
+                hearts = "❤️" * min(compat['score'], 10)
+                response = f"💑 Совместимость: ЖВП {lp1} + ЖВП {lp2}\n{hearts} ({compat['score']}/10)\n\n{cleaned}"
+                await message.answer(response)
+                if db:
+                    await _save_simple_exchange(message, f"/numerology совм", cleaned[:200], db)
+                return
+    except Exception as e:
+        logger.error(f"Compatibility error: {e}")
+
+    await message.answer("Ой, Настя не смогла рассчитать совместимость... Попробуй позже! 💑😔")
 
 
 # ── /films - Film recommendations from Nastya! ──
@@ -1287,7 +1426,10 @@ async def cmd_matrix(message: Message, db=None, ai_router=None) -> None:
 @router.message(Command("astro"))
 async def cmd_astro(message: Message, db=None, ai_router=None) -> None:
     """Professional astrology consultation."""
-    from bot.consultations import parse_birth_date, get_zodiac_sign, ZODIAC_DETAILS, ASTRO_SYSTEM_PROMPT, calculate_life_path_number
+    from bot.consultations import (
+        parse_birth_date, get_zodiac_sign, ZODIAC_DETAILS, ASTRO_SYSTEM_PROMPT_V3,
+        calculate_life_path_number, SOLAR_RETURN_INFO,
+    )
 
     query = message.text.replace("/astro", "").strip()
 
@@ -1298,7 +1440,9 @@ async def cmd_astro(message: Message, db=None, ai_router=None) -> None:
             "- Солнце, Луна, Асцендент\n"
             "- Планеты в знаках и домах\n"
             "- Ключевые аспекты\n"
-            "- Прогноз на текущий период\n\n"
+            "- Текущие транзиты\n"
+            "- Солярное возвращение (тема года)\n"
+            "- Прогноз на 6-12 месяцев\n\n"
             "Пример: /astro 15.06.2001\n"
             "С временем точнее: /astro 15.06.2001 14:30 Москва"
         )
@@ -1364,6 +1508,14 @@ async def cmd_astro(message: Message, db=None, ai_router=None) -> None:
         if birth_place:
             prompt_parts.append(f"Место рождения: {birth_place}")
 
+        # Add Solar Return info for professional reading
+        _now = _moscow_now()
+        age = _now.year - year
+        prompt_parts.append(f"\nВОЗРАСТ: {age} лет")
+        prompt_parts.append(f"ТЕКУЩАЯ ДАТА: {_now.strftime('%d.%m.%Y')}")
+        prompt_parts.append(f"\nСПРАВКА ПО СОЛЯРНОМУ ВОЗВРАЩЕНИЮ:\n{SOLAR_RETURN_INFO['description']}")
+        prompt_parts.append(f"\nТЕМЫ ДОМОВ СОЛЯРА:\n" + "\n".join([f"Дом {k}: {v}" for k, v in SOLAR_RETURN_INFO['houses_theme'].items()]))
+
         if birth_time and birth_place:
             prompt_parts.append(
                 "\nВНИМАНИЕ: Указано время и место рождения! Составь НАИБОЛЕЕ точный разбор с учётом Асцендента, "
@@ -1377,7 +1529,7 @@ async def cmd_astro(message: Message, db=None, ai_router=None) -> None:
 
         result = await ai_router.chat(
             prompt=f"Составь профессиональный астрологический разбор.\n\n" + "\n".join(prompt_parts),
-            system_prompt=ASTRO_SYSTEM_PROMPT,
+            system_prompt=ASTRO_SYSTEM_PROMPT_V3,
             max_tokens=2000,
         )
 
@@ -1419,7 +1571,8 @@ async def cmd_astro(message: Message, db=None, ai_router=None) -> None:
 async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
     """Professional Human Design consultation."""
     from bot.consultations import (
-        parse_birth_date, HD_TYPES, HD_AUTHORITIES, HD_PROFILES, HD_CENTERS, HD_SYSTEM_PROMPT
+        parse_birth_date, HD_TYPES, HD_AUTHORITIES, HD_PROFILES, HD_CENTERS,
+        HD_CHANNELS, HD_GATES, HD_VARIABLES, HD_SYSTEM_PROMPT_V3,
     )
 
     query = message.text.replace("/humandesign", "").strip()
@@ -1431,8 +1584,9 @@ async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
             "- Тип и Стратегия\n"
             "- Авторитет\n"
             "- Профиль\n"
-            "- Центры\n"
-            "- Рекомендации\n\n"
+            "- Центры (определённые и открытые)\n"
+            "- Каналы и Ворота\n"
+            "- Переменные (Детерминация, Среда, Перспектива)\n\n"
             "Пример: /humandesign 15.06.2001\n"
             "С временем точнее: /humandesign 15.06.2001 14:30 Москва"
         )
@@ -1483,6 +1637,15 @@ async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
         profiles_desc = "\n".join([f"- {name}: {desc}" for name, desc in HD_PROFILES.items()])
         centers_desc = "\n".join([f"- {name}: {desc}" for name, desc in HD_CENTERS.items()])
 
+        # Channels, Gates, Variables — NEW professional data
+        channels_desc = "\n".join([f"- {name}: {desc}" for name, desc in HD_CHANNELS.items()])
+        gates_keys = sorted(HD_GATES.keys())
+        gates_desc = "\n".join([f"- Ворота {num}: {desc}" for num, desc in sorted(HD_GATES.items())])
+        variables_desc = "\n".join([
+            f"- {name}: {info['description']}. Варианты: " + "; ".join([f"{vname} — {vdesc}" for vname, vdesc in info['variants'].items()])
+            for name, info in HD_VARIABLES.items()
+        ])
+
         prompt_parts = [
             f"Дата рождения: {day:02d}.{month:02d}.{year}",
         ]
@@ -1495,6 +1658,9 @@ async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
         prompt_parts.append(f"\nСПРАВОЧНИК АВТОРИТЕТОВ:\n{auth_desc}")
         prompt_parts.append(f"\nСПРАВОЧНИК ПРОФИЛЕЙ:\n{profiles_desc}")
         prompt_parts.append(f"\nСПРАВОЧНИК ЦЕНТРОВ:\n{centers_desc}")
+        prompt_parts.append(f"\nСПРАВОЧНИК КАНАЛОВ:\n{channels_desc}")
+        prompt_parts.append(f"\nСПРАВОЧНИК ВОРОТ:\n{gates_desc}")
+        prompt_parts.append(f"\nСПРАВОЧНИК ПЕРЕМЕННЫХ:\n{variables_desc}")
 
         if birth_time and birth_place:
             prompt_parts.append(
@@ -1509,7 +1675,7 @@ async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
 
         result = await ai_router.chat(
             prompt=f"Составь профессиональный разбор Дизайна Человека.\n\n" + "\n".join(prompt_parts),
-            system_prompt=HD_SYSTEM_PROMPT,
+            system_prompt=HD_SYSTEM_PROMPT_V3,
             max_tokens=2000,
         )
 
@@ -1546,7 +1712,7 @@ async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
 @router.message(Command("health"))
 async def cmd_health(message: Message, db=None, ai_router=None) -> None:
     """Health and wellness consultation - Ayurveda, psychosomatics."""
-    from bot.consultations import AYURVEDA_DOSHAS, PSYCHOSOMATICS, HEALTH_SYSTEM_PROMPT
+    from bot.consultations import AYURVEDA_DOSHAS, PSYCHOSOMATICS, BLOOD_TYPE_CONSTITUTION, HEALTH_SYSTEM_PROMPT_V3
 
     query = message.text.replace("/health", "").strip()
 
@@ -1555,13 +1721,14 @@ async def cmd_health(message: Message, db=None, ai_router=None) -> None:
             "🌿 Здоровье и самочувствие с Настей!\n\n"
             "Расскажи о себе, и Настя поможет:\n"
             "- Определить Аюрведическую конституцию (доша)\n"
+            "- Конституцию по группе крови\n"
             "- Рекомендации по питанию\n"
             "- Психосоматика симптомов\n"
             "- Советы по гармонизации\n\n"
             "Примеры:\n"
             "/health Я худощавый, часто мёрзну, тревожный\n"
-            "/health У меня проблемы со сном и стресс\n"
-            "/health Я полный, спокойный, ленивый"
+            "/health У меня проблемы со сном и стресс, группа крови 2\n"
+            "/health Я полный, спокойный, ленивый, 3 группа крови"
         )
         return
 
@@ -1581,6 +1748,38 @@ async def cmd_health(message: Message, db=None, ai_router=None) -> None:
             for name, info in AYURVEDA_DOSHAS.items()
         ])
         psycho_desc = "\n".join([f"- {symptom}: {meaning}" for symptom, meaning in PSYCHOSOMATICS.items()])
+        blood_desc = "\n".join([
+            f"- {btype} ({info['name']}): {info['description']}. Питание: {info['diet']}. "
+            f"Упражнения: {info['exercise']}. Сильные стороны: {info['strengths']}. "
+            f"Слабости: {info['weaknesses']}. Реакция на стресс: {info['stress_response']}"
+            for btype, info in BLOOD_TYPE_CONSTITUTION.items()
+        ])
+
+        # Try to detect blood type from query
+        blood_type_hint = ""
+        blood_keywords = {
+            "1 группа": "I (O)", "первая группа": "I (O)", "i группа": "I (O)", "0 группа": "I (O)",
+            "2 группа": "II (A)", "вторая группа": "II (A)", "ii группа": "II (A)", "а группа": "II (A)",
+            "3 группа": "III (B)", "третья группа": "III (B)", "iii группа": "III (B)", "b группа": "III (B)",
+            "4 группа": "IV (AB)", "четвёртая группа": "IV (AB)", "четвертая группа": "IV (AB)", "iv группа": "IV (AB)", "ab группа": "IV (AB)",
+        }
+        for keyword, btype in blood_keywords.items():
+            if keyword in query.lower():
+                blood_type_hint = btype
+                break
+
+        blood_context = ""
+        if blood_type_hint and blood_type_hint in BLOOD_TYPE_CONSTITUTION:
+            bt_info = BLOOD_TYPE_CONSTITUTION[blood_type_hint]
+            blood_context = (
+                f"\nГРУППА КРОВИ УКАЗАНА: {blood_type_hint} ({bt_info['name']})\n"
+                f"Описание: {bt_info['description']}\n"
+                f"Питание: {bt_info['diet']}\n"
+                f"Упражнения: {bt_info['exercise']}\n"
+                f"Сильные стороны: {bt_info['strengths']}\n"
+                f"Слабости: {bt_info['weaknesses']}\n"
+                f"Реакция на стресс: {bt_info['stress_response']}\n"
+            )
 
         result = await ai_router.chat(
             prompt=(
@@ -1588,11 +1787,15 @@ async def cmd_health(message: Message, db=None, ai_router=None) -> None:
                 f"Описание человека: {query}\n\n"
                 f"СПРАВОЧНИК ДОШ (Аюрведа):\n{doshas_desc}\n\n"
                 f"СПРАВОЧНИК ПСИХОСОМАТИКИ:\n{psycho_desc}\n\n"
+                f"СПРАВОЧНИК КОНСТИТУЦИИ ПО ГРУППАМ КРОВИ:\n{blood_desc}\n\n"
+                f"{blood_context}"
                 f"Определи вероятную доминирующую дошу, дай рекомендации по питанию, образу жизни, "
                 f"рассмотри психосоматические связи если есть симптомы. "
+                f"Если указана группа крови — обязательно рассмотри конституцию по группе крови. "
+                f"Сравни рекомендации Аюрведы и группы крови, найди общее. "
                 f"ОБЯЗАТЕЛЬНО напомни что ты не врач и при серьёзных проблемах нужно обратиться к специалисту."
             ),
-            system_prompt=HEALTH_SYSTEM_PROMPT,
+            system_prompt=HEALTH_SYSTEM_PROMPT_V3,
             max_tokens=2000,
         )
 
