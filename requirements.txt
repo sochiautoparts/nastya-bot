@@ -4,3 +4,4 @@ aiosqlite>=0.20.0
 Pillow>=10.0.0
 feedparser>=6.0.0
 python-dotenv>=1.0.0
+pyswisseph>=2.10.3

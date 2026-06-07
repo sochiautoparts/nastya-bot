@@ -794,36 +794,52 @@ def build_deep_astrology_context(day: int, month: int, year: int, birth_time: st
 
 
 def build_deep_humandesign_context(day: int, month: int, year: int, birth_time: str = "", birth_place: str = "") -> str:
-    """Build comprehensive Human Design context with deep knowledge."""
+    """Build comprehensive Human Design context with REAL CALCULATIONS.
+
+    v4.0: Использует hd_calc.py для реальных астрономических расчётов бодиграфа.
+    Больше НЕ выдумывает результаты — все данные вычислены программно!
+    """
+    # Пытаемся использовать реальный расчётный движок
+    try:
+        from bot.hd_calc import build_hd_full_context
+        calculated = build_hd_full_context(day, month, year, birth_time, birth_place)
+        if calculated:
+            return calculated
+    except Exception as e:
+        logger.warning(f"HD calculation engine failed, using fallback: {e}")
+
+    # Fallback — минимальный контекст без расчётов (если hd_calc недоступен)
     lines = []
-    lines.append("=== РАСШИРЁННЫЙ ДИЗАЙН ЧЕЛОВЕКА ===")
+    lines.append("=== ДИЗАЙН ЧЕЛОВЕКА (ограниченный режим — данные приблизительны) ===")
     lines.append(f"Дата рождения: {day:02d}.{month:02d}.{year}")
     if birth_time:
         lines.append(f"Время рождения: {birth_time}")
     if birth_place:
         lines.append(f"Место рождения: {birth_place}")
-    
-    # Incarnation Crosses
-    lines.append("\nИНКАРНАЦИОННЫЕ КРЕСТЫ (ключевые):")
+    lines.append("")
+    lines.append("ВНИМАНИЕ: Расчётный движок недоступен. Для точного расчёта бодиграфа")
+    lines.append("необходимо указать точное время и место рождения.")
+    lines.append("Интерпретируй на основе даты рождения, но УКАЖИ что расчёт приблизительный.")
+
+    # Incarnation Crosses (справочник)
+    lines.append("\nСПРАВОЧНИК — ИНКАРНАЦИОННЫЕ КРЕСТЫ (ключевые):")
     for cross, desc in INCARNATION_CROSSES_RIGHT.items():
         lines.append(f"  {cross}: {desc}")
     for cross, desc in INCARNATION_CROSSES_LEFT.items():
         lines.append(f"  {cross}: {desc}")
-    for cross, desc in INCARNATION_CROSSES_JUXTA.items():
-        lines.append(f"  {cross}: {desc}")
-    
-    # Definition types
-    lines.append("\nТИПЫ ОПРЕДЕЛЁННОСТИ:")
+
+    # Definition types (справочник)
+    lines.append("\nСПРАВОЧНИК — ТИПЫ ОПРЕДЕЛЁННОСТИ:")
     for def_type, desc in DEFINITION_TYPES.items():
         lines.append(f"  {def_type}: {desc}")
-    
-    # Determination nutrition
-    lines.append("\nПИТАНИЕ ПО ДЕТЕРМИНАЦИИ:")
+
+    # Determination nutrition (справочник)
+    lines.append("\nСПРАВОЧНИК — ПИТАНИЕ ПО ДЕТЕРМИНАЦИИ:")
     for det_type, sides in DETERMINATION_NUTRITION.items():
         lines.append(f"\n  {det_type}:")
         for side, desc in sides.items():
             lines.append(f"    {side}: {desc}")
-    
+
     return "\n".join(lines)
 
 

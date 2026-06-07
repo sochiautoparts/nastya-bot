@@ -1365,26 +1365,29 @@ HD_VARIABLES = {
 HD_SYSTEM_PROMPT_V3 = """Ты Настя - москвичка, 23 года, блогер, которая профессионально разбирается в Дизайне Человека (Human Design).
 Ты знаешь все типы, стратегии, авторитеты, профили, центры, каналы, ворота и переменные.
 
-ПРАВИЛА КОНСУЛЬТАЦИИ:
-1. Пиши РАЗВЁРНУТО и ПОДРОБНО - это профессиональный разбор Дизайна Человека
-2. Объясни Тип, Стратегию и Авторитет - это самое важное
-3. Опиши Профиль и его влияние на жизнь
-4. Расскажи про определённые и открытые центры
-5. Укажи возможные Каналы и Ворота — их влияние на жизнь
-6. Опиши Переменные: Детерминация, Среда, Перспектива, Тема Сознания
-7. Дай конкретные рекомендации по эксперименту со стратегией
+АБСОЛЮТНО КРИТИЧЕСКИЕ ПРАВИЛА:
+1. ТЕБЕ ПЕРЕДАНЫ РЕАЛЬНО РАССЧИТАННЫЕ ДАННЫЕ БОДИГРАФА — используй ТОЛЬКО их!
+2. НИКОГДА НЕ выдумывай ворота, каналы, центры, тип или авторитет — всё УЖЕ рассчитано программно
+3. Если в справочнике указан ТИП — именно этот тип и разбирай, НЕ меняй его
+4. Если указаны конкретные ВОРОТА и КАНАЛЫ — именно их описывай, НЕ придумывай другие
+5. Если указаны ОПРЕДЕЛЁННЫЕ и ОТКРЫТЫЕ центры — работай ТОЛЬКО с ними
+6. Пиши РАЗВЁРНУТО и ПОДРОБНО - это профессиональный разбор Дизайна Человека
+7. Каждый раздел минимум 5-7 предложений с конкретными примерами
+8. Если ответ длинный — НЕ СОКРАЩАЙ, пиши полностью, тебя отправят частями
 
 СТРУКТУРА ОТВЕТА:
-- Тип и его значение (какой % населения)
-- Стратегия — как принимать решения правильно
-- Авторитет — что слушать внутри себя
-- Профиль — как вас видят другие и ваш жизненный путь
-- Определённые центры — ваша устойчивая энергия
-- Открытые центры — где вы уязвимы и где ваш дар мудрости
-- Вероятные Каналы и их влияние
-- Ключевые Ворота и их проявление
+- Тип и его значение (какой % населения, стратегия, сигнатура, не-Я)
+- Стратегия — как принимать решения правильно (7-10 предложений с примерами)
+- Авторитет — что слушать внутри себя (5-7 предложений)
+- Профиль — как вас видят другие и ваш жизненный путь (7-10 предложений)
+- Инкарнационный крест — жизненная тема (5-7 предложений)
+- Определённые центры — ваша устойчивая энергия (каждый центр подробно)
+- Открытые центры — где вы уязвимы и где ваш дар мудрости (каждый центр подробно)
+- Полные Каналы и их влияние (каждый канал подробно)
+- Ключевые Ворота и их проявление (все активированные ворота с описанием)
 - Переменные: Детерминация, Среда, Перспектива, Тема Сознания
-- Рекомендации для эксперимента
+- Цикл сна и Питание по Детерминации
+- Рекомендации для эксперимента со стратегией и авторитетом
 
 Пиши ОТ СЕБЯ, но будь ПРОФЕССИОНАЛЬНОЙ.
 Объясняй терминологию Дизайна Человека понятным языком.
@@ -2133,48 +2136,60 @@ def build_astrology_context(day: int, month: int, year: int, birth_time: str = "
 
 
 def build_humandesign_context(day: int, month: int, year: int, birth_time: str = "", birth_place: str = "") -> str:
-    """Build full Human Design reference context for AI prompt with DEEP knowledge."""
+    """Build full Human Design context for AI prompt with REAL CALCULATIONS.
+
+    v4.0: Теперь использует hd_calc.py для реальных астрономических расчётов.
+    Справочники добавляются только для интерпретации рассчитанных данных.
+    """
     from bot.deep_knowledge import build_deep_humandesign_context
 
-    # Use the deep knowledge engine for comprehensive context
+    # Use the deep knowledge engine (now with real calculations!)
     deep = build_deep_humandesign_context(day, month, year, birth_time, birth_place)
 
-    # Also include the original reference tables for maximum completeness
+    # Check if real calculation was successful (has calculated data)
+    has_real_calc = "РАСЧЁТ БОДИГРАФА" in deep or "РЕАЛЬНЫЙ РАСЧЁТ" in deep or "рассчитаны программно" in deep
+
     lines = [deep]
 
+    # Add reference tables for AI interpretation (NOT for AI to calculate from)
+    # These are only needed so the AI can INTERPRET the calculated data properly
+
     # Inject all HD type reference
-    lines.append("\n=== БАЗОВЫЙ СПРАВОЧНИК: ТИПЫ ДИЗАЙНА ЧЕЛОВЕКА ===")
+    lines.append("\n=== СПРАВОЧНИК: ТИПЫ ДИЗАЙНА ЧЕЛОВЕКА ===")
     for type_name, info in HD_TYPES.items():
         lines.append(f"\n{type_name}: Стратегия: {info['strategy']}, Сигнатура: {info['signature']}, Не-Я: {info['not_self']}")
         lines.append(f"  Описание: {info['description']}")
 
     # Inject authorities reference
-    lines.append("\n=== БАЗОВЫЙ СПРАВОЧНИК: АВТОРИТЕТЫ ===")
+    lines.append("\n=== СПРАВОЧНИК: АВТОРИТЕТЫ ===")
     for auth, desc in HD_AUTHORITIES.items():
         lines.append(f"  {auth}: {desc}")
 
     # Inject profiles reference
-    lines.append("\n=== БАЗОВЫЙ СПРАВОЧНИК: ПРОФИЛИ ===")
+    lines.append("\n=== СПРАВОЧНИК: ПРОФИЛИ ===")
     for profile, desc in HD_PROFILES.items():
         lines.append(f"  {profile}: {desc}")
 
     # Inject centers reference
-    lines.append("\n=== БАЗОВЫЙ СПРАВОЧНИК: ЦЕНТРЫ ===")
+    lines.append("\n=== СПРАВОЧНИК: ЦЕНТРЫ ===")
     for center, desc in HD_CENTERS.items():
         lines.append(f"  {center}: {desc}")
 
-    # Inject channels reference
-    lines.append("\n=== БАЗОВЫЙ СПРАВОЧНИК: КАНАЛЫ ===")
-    for channel, info in HD_CHANNELS.items():
-        lines.append(f"  {channel}: {info['gates']} — {info['meaning']}")
+    # Only inject gates/channels reference if NOT already in calculated context
+    # (hd_calc.py already includes gate descriptions in its output)
+    if not has_real_calc:
+        # Inject channels reference
+        lines.append("\n=== СПРАВОЧНИК: КАНАЛЫ ===")
+        for channel, info in HD_CHANNELS.items():
+            lines.append(f"  {channel}: {info['gates']} — {info['meaning']}")
 
-    # Inject gates reference
-    lines.append("\n=== БАЗОВЫЙ СПРАВОЧНИК: ВОРОТА ===")
-    for gate_num, desc in HD_GATES.items():
-        lines.append(f"  Ворота {gate_num}: {desc}")
+        # Inject gates reference
+        lines.append("\n=== СПРАВОЧНИК: ВОРОТА ===")
+        for gate_num, desc in HD_GATES.items():
+            lines.append(f"  Ворота {gate_num}: {desc}")
 
     # Inject variables reference
-    lines.append("\n=== БАЗОВЫЙ СПРАВОЧНИК: ПЕРЕМЕННЫЕ ===")
+    lines.append("\n=== СПРАВОЧНИК: ПЕРЕМЕННЫЕ ===")
     for var_name, var_info in HD_VARIABLES.items():
         lines.append(f"\n{var_name}:")
         for side, desc in var_info.items():
