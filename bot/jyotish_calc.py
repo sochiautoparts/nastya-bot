@@ -84,24 +84,21 @@ def calculate_lahiri_ayanamsa(year: float) -> float:
     Аянамша — разница между тропической и сидерической системами координат.
     Лахири (Chitrapaksha) — стандарт в Индии, утверждён правительством.
 
-    Формула: Ayanamsa = 23°51'11" + 50".2735 * (year - 1900)
-           + поправки за вековые изменения.
-
-    Более точная формула основана на юлианских столетиях:
-    T = (jd - 2451545.0) / 36525.0
-    Ayanamsa ≈ 23.85305556 + 0.01395556 * T + 2.0e-7 * T²
-
-    Возвращает аянамшу в градусах.
+    При наличии pyswisseph использует точный расчёт через Swiss Ephemeris.
     """
-    # Юлианское столетие от J2000.0
-    # Приближённо: 2000.0 → JD 2451545.0
-    # Для данного года считаем средний JD
+    # Попробуем Swiss Ephemeris сначала
+    try:
+        import swisseph as swe
+        # Вычисляем приблизительный JD для данного года
+        jan1_jd = swe.julday(int(year), 1, 1, 0.0)
+        swe.set_sid_mode(swe.SIDM_LAHIRI)
+        return swe.get_ayanamsa_ut(jan1_jd)
+    except (ImportError, Exception):
+        pass
+
+    # Fallback: математическая аппроксимация
     year_frac = year
     T = (year_frac - 2000.0) / 100.0
-
-    # Лахири аянамша (стандартная аппроксимация)
-    # Базовое значение на J2000.0: ~23°51'11" = 23.853°
-    # Прецессия: ~50.27"/год = 0.01396°/год
     ayanamsa = 23.85305556 + 0.01395556 * (year_frac - 2000.0) + 2.0e-7 * T * T
     return ayanamsa
 
@@ -109,8 +106,18 @@ def calculate_lahiri_ayanamsa(year: float) -> float:
 def calculate_lahiri_ayanamsa_jd(jd: float) -> float:
     """Рассчитать Лахири Аянамшу по Юлианскому дню.
 
-    Более точный метод, используемый Swiss Ephemeris.
+    Использует Swiss Ephemeris для максимальной точности.
+    При отсутствии pyswisseph — математическая аппроксимация.
     """
+    # Попробуем Swiss Ephemeris сначала (самый точный метод)
+    try:
+        import swisseph as swe
+        swe.set_sid_mode(swe.SIDM_LAHIRI)
+        return swe.get_ayanamsa_ut(jd)
+    except (ImportError, Exception):
+        pass
+
+    # Fallback: математическая аппроксимация
     T = (jd - 2451545.0) / 36525.0
     # Лахири аянамша на J2000.0 ≈ 23.85305556°
     # Прецессия ≈ 50.29"/год

@@ -890,8 +890,16 @@ SUBCONSCIOUS_SELF_MEANINGS: Dict[int, str] = {
 # ──────────────────────────────────────────────
 
 def calculate_life_path(day: int, month: int, year: int) -> int:
-    """Вычисляет Число Жизненного Пути (Life Path)."""
-    return _reduce(day + month + _reduce(year, keep_master=True), keep_master=True)
+    """Вычисляет Число Жизненного Пути (Life Path).
+    
+    Правильный Пифагорейский метод: сначала редуцируем день, месяц и год
+    по отдельности, затем суммируем и редуцируем результат.
+    Это позволяет сохранить мастер-числа (11, 22, 33) на промежуточных этапах.
+    """
+    r_day = _reduce(day, keep_master=True)
+    r_month = _reduce(month, keep_master=True)
+    r_year = _reduce(year, keep_master=True)
+    return _reduce(r_day + r_month + r_year, keep_master=True)
 
 
 def calculate_destiny_number(full_name_translit: str) -> int:

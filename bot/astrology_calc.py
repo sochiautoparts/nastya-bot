@@ -868,25 +868,63 @@ def calculate_midheaven_approx(birth_jd: float, latitude: float, longitude: floa
 # ════════════════════════════════════════════════════════════════
 
 def calculate_house_cusps_approx(ascendant_lon: float, midheaven_lon: float) -> List[Dict[str, Any]]:
-    """Рассчитать куспиды 12 домов (упрощённая система равных домов от Асцендента).
+    """Рассчитать куспиды 12 домов (система Порфирия с MC).
 
-    Каждый дом занимает ровно 30° эклиптической долготы.
-    Куспид I дома = Асцендент, куспид X дома = MC (корректируется).
+    Система Порфирия — одна из старейших систем домостроения.
+    Куспид I дома = Асцендент, куспид X дома = MC.
+    Куспид VII дома = Асцендент + 180°, куспид IV дома = MC + 180°.
+    Четыре квадранта между этими угловыми точками делятся на
+    равные части по 3 дома в каждом квадранте.
+
+    Это значительно точнее чем простая система равных домов,
+    особенно для высоких и низких широт, и правильно использует MC.
 
     Параметры:
         ascendant_lon: долгота Асцендента в градусах
         midheaven_lon: долгота MC в градусах
 
     Возвращает:
-        список из 12 словарей с информацией о каждом куспиде:
-        [
-            {'house': 1, 'cusp_degree': ..., 'cusp_sign': ..., 'formatted': ..., 'name': ..., 'description': ...},
-            ...
-        ]
+        список из 12 словарей с информацией о каждом куспиде
     """
+    # Угловые точки
+    asc = _deg_norm(ascendant_lon)
+    mc = _deg_norm(midheaven_lon)
+    desc = _deg_norm(asc + 180.0)  # Десцендент
+    ic = _deg_norm(mc + 180.0)     # Imum Coeli (Нижнее Небо)
+
+    # Квадранты (в градусах эклиптики):
+    # Q1: MC -> ASC (дома 10, 11, 12)
+    # Q2: ASC -> IC (дома 1, 2, 3)
+    # Q3: IC -> DESC (дома 4, 5, 6)
+    # Q4: DESC -> MC (дома 7, 8, 9)
+
+    def arc_size(start, end):
+        """Размер дуги от start до end в прямом направлении (0-360)."""
+        return (end - start) % 360.0
+
+    q1_size = arc_size(mc, asc)    # MC -> ASC
+    q2_size = arc_size(asc, ic)   # ASC -> IC
+    q3_size = arc_size(ic, desc)  # IC -> DESC
+    q4_size = arc_size(desc, mc)  # DESC -> MC
+
+    # Делим каждый квадрант на 3 равные части
+    cusps_lon = [0.0] * 12
+    cusps_lon[0] = asc          # House 1 = Ascendant
+    cusps_lon[1] = _deg_norm(asc + q2_size / 3.0)       # House 2
+    cusps_lon[2] = _deg_norm(asc + 2 * q2_size / 3.0)  # House 3
+    cusps_lon[3] = ic          # House 4 = IC
+    cusps_lon[4] = _deg_norm(ic + q3_size / 3.0)        # House 5
+    cusps_lon[5] = _deg_norm(ic + 2 * q3_size / 3.0)   # House 6
+    cusps_lon[6] = desc        # House 7 = Descendant
+    cusps_lon[7] = _deg_norm(desc + q4_size / 3.0)      # House 8
+    cusps_lon[8] = _deg_norm(desc + 2 * q4_size / 3.0) # House 9
+    cusps_lon[9] = mc          # House 10 = MC
+    cusps_lon[10] = _deg_norm(mc + q1_size / 3.0)       # House 11
+    cusps_lon[11] = _deg_norm(mc + 2 * q1_size / 3.0)  # House 12
+
     cusps = []
     for i in range(12):
-        cusp_lon = _deg_norm(ascendant_lon + i * 30.0)
+        cusp_lon = cusps_lon[i]
         sign, deg_in_sign, minutes = longitude_to_sign_degree(cusp_lon)
         house_num = i + 1
         cusps.append({
