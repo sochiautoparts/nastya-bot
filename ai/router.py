@@ -275,7 +275,11 @@ class AIRouter:
         route_type = kwargs.get("route_type", "chat")
 
         # Determine reasoning effort based on route_type and complexity
-        if route_type == "comment":
+        # v64: Allow caller to override reasoning_effort directly
+        caller_reasoning = kwargs.get("reasoning_effort", None)
+        if caller_reasoning:
+            reasoning = caller_reasoning
+        elif route_type == "comment":
             # Comments -> fast models (REASONING_CHAT)
             reasoning = REASONING_CHAT
         elif route_type == "function":

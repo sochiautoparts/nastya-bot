@@ -1074,7 +1074,8 @@ async def cmd_numerology(message: Message, db=None, ai_router=None) -> None:
         result = await ai_router.chat(
             prompt=f"Составь профессиональный нумерологический разбор.\n\n" + "\n".join(prompt_parts) + f"\n\n{numerology_context}",
             system_prompt=NUMEROLOGY_SYSTEM_PROMPT,
-            max_tokens=3000,
+            max_tokens=6000,
+                reasoning_effort="none",
         )
 
         if result and result.text:
@@ -1141,7 +1142,8 @@ async def _handle_numerology_compatibility(message, query, db, ai_router) -> Non
                 f"Дай советы как улучшить отношения."
             ),
             system_prompt=NUMEROLOGY_SYSTEM_PROMPT,
-            max_tokens=3000,
+            max_tokens=6000,
+                reasoning_effort="none",
         )
 
         if result and result.text:
@@ -1540,7 +1542,8 @@ async def cmd_matrix(message: Message, db=None, ai_router=None) -> None:
         result = await ai_router.chat(
             prompt=f"Составь профессиональный разбор Матрицы Судьбы.\n\n{prompt_data}\n\n{numerology_context}",
             system_prompt=MATRIX_SYSTEM_PROMPT,
-            max_tokens=3000,
+            max_tokens=6000,
+                reasoning_effort="none",
         )
 
         if result and result.text:
@@ -1705,7 +1708,8 @@ async def cmd_astro(message: Message, db=None, ai_router=None) -> None:
         result = await ai_router.chat(
             prompt=f"Составь профессиональный астрологический разбор.\n\n" + "\n".join(prompt_parts) + f"\n\n{astro_context}",
             system_prompt=ASTRO_SYSTEM_PROMPT_V3,
-            max_tokens=3000,
+            max_tokens=6000,
+                reasoning_effort="none",
         )
 
         if result and result.text:
@@ -1858,7 +1862,8 @@ async def cmd_humandesign(message: Message, db=None, ai_router=None) -> None:
         result = await ai_router.chat(
             prompt=f"Составь профессиональный разбор Дизайна Человека.\n\n" + "\n".join(prompt_parts) + f"\n\n{hd_context}",
             system_prompt=HD_SYSTEM_PROMPT_V3,
-            max_tokens=3000,
+            max_tokens=6000,
+                reasoning_effort="none",
         )
 
         if result and result.text:
@@ -1964,7 +1969,8 @@ async def cmd_health(message: Message, db=None, ai_router=None) -> None:
                 f"ОБЯЗАТЕЛЬНО напомни что ты не врач и при серьёзных проблемах нужно обратиться к специалисту."
             ),
             system_prompt=HEALTH_SYSTEM_PROMPT_V3,
-            max_tokens=3000,
+            max_tokens=6000,
+                reasoning_effort="none",
         )
 
         if result and result.text:
@@ -2134,7 +2140,8 @@ async def cmd_jyotish(message: Message, db=None, ai_router=None) -> None:
         result = await ai_router.chat(
             prompt=f"Составь профессиональный разбор карты Джанма-Кундали (Джйотиш / Ведическая астрология).\n\n" + "\n".join(prompt_parts) + f"\n\n{jyotish_context}",
             system_prompt=JYOTISH_SYSTEM_PROMPT,
-            max_tokens=3000,
+            max_tokens=6000,
+                reasoning_effort="none",
         )
 
         if result and result.text:
@@ -2955,7 +2962,8 @@ async def _handle_consultation_from_chat(
             result = await ai_router.chat(
                 prompt=f"Составь профессиональный разбор Дизайна Человека.\n\n" + "\n".join(prompt_parts) + f"\n\n{hd_context}",
                 system_prompt=HD_SYSTEM_PROMPT_V3,
-                max_tokens=3000,
+                max_tokens=6000,
+                reasoning_effort="none",
             )
 
             if result and result.text:
@@ -3044,7 +3052,8 @@ async def _handle_consultation_from_chat(
             result = await ai_router.chat(
                 prompt=f"Составь профессиональный астрологический разбор.\n\n" + "\n".join(prompt_parts) + f"\n\n{astro_context}",
                 system_prompt=ASTRO_SYSTEM_PROMPT_V3,
-                max_tokens=3000,
+                max_tokens=6000,
+                reasoning_effort="none",
             )
 
             if result and result.text:
@@ -3107,7 +3116,8 @@ async def _handle_consultation_from_chat(
             result = await ai_router.chat(
                 prompt=f"Составь профессиональный разбор Матрицы Судьбы.\n\n{prompt_data}\n\n{numerology_context}",
                 system_prompt=MATRIX_SYSTEM_PROMPT,
-                max_tokens=3000,
+                max_tokens=6000,
+                reasoning_effort="none",
             )
 
             if result and result.text:
@@ -3203,7 +3213,8 @@ async def _handle_consultation_from_chat(
             result = await ai_router.chat(
                 prompt=f"Составь профессиональный разбор карты Джанма-Кундали (Джйотиш / Ведическая астрология).\n\n" + "\n".join(prompt_parts) + f"\n\n{jyotish_context}",
                 system_prompt=JYOTISH_SYSTEM_PROMPT,
-                max_tokens=3000,
+                max_tokens=6000,
+                reasoning_effort="none",
             )
 
             if result and result.text:
@@ -3260,7 +3271,8 @@ async def _handle_consultation_from_chat(
                     f"ОБЯЗАТЕЛЬНО напомни что ты не врач и при серьёзных проблемах нужно обратиться к специалисту."
                 ),
                 system_prompt=HEALTH_SYSTEM_PROMPT_V3,
-                max_tokens=3000,
+                max_tokens=6000,
+                reasoning_effort="none",
             )
 
             if result and result.text:
