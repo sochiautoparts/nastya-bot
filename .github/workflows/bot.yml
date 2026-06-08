@@ -1,20 +1,16 @@
-name: Nastya Bot — DEEP CONSULTATIONS v63
+name: Nastya Bot — DEEP CONSULTATIONS v64
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v63.0 — DEEP PROFESSIONAL CONSULTATIONS ENGINE
+# Nastya Bot v64.0 — CRITICAL FIXES FOR HD CALCULATIONS + AI RESPONSES
 #
+#   - BUG FIX: HD Type now uses BFS for motor→throat paths (not just direct channels)
+#     This fixes Manifesting Generators being incorrectly typed as Generators
+#   - BUG FIX: max_tokens for consultations increased to 6000 + reasoning disabled
+#     This fixes AI responses being empty due to reasoning_tokens consuming all output
+#   - BUG FIX: Router now passes through reasoning_effort from caller
 #   - Pollinations.ai (44+ models, weighted round-robin) — ALL routes
 #   - DUAL API KEY FAILOVER: KEY1 → KEY2 → static fallback
-#   - ALL ROUTING: Pollinations → static fallback
-#   - DEEP KNOWLEDGE ENGINE: Expanded numerology, astrology, HD, Jyotish, health
-#   - NEW: /compatibility command for pair analysis
-#   - NEW: Subdoshas, Dhatus, Agni types, expanded psychosomatics (3 sources)
-#   - NEW: Lunar nodes, decanates, Arabic parts, progressions
-#   - NEW: Incarnation crosses, determination nutrition, definition types
-#   - NEW: Extended Matrix lines (wealth, spiritual, career, health, etc.)
-#   - NEW: Personal year/month/day calculations
-#   - Smart message splitting with continuation markers
-#   - MAX_TOKENS increased to 4096 for deep consultations
+#   - pyswisseph for accurate planetary positions
 #
 # Schedule (UTC, Moscow = UTC+3):
 #   Every 5 hours: 00:00, 05:00, 10:00, 15:00, 20:00
@@ -114,7 +110,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v63
+          key: nastya-db-v64
           restore-keys: |
             nastya-db-
 
@@ -145,16 +141,12 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v63.0 DEEP CONSULTATIONS ==="
+          echo "=== Starting Nastya Bot v64.0 CRITICAL FIXES ==="
+          echo "FIX: HD Type BFS for motor→throat paths (MG vs Generator)"
+          echo "FIX: max_tokens=6000 + reasoning disabled for consultations"
+          echo "FIX: Router reasoning_effort passthrough from caller"
           echo "ALL ROUTES: Pollinations.ai (44+ models, dual-key failover)"
-          echo "DEEP KNOWLEDGE: Expanded numerology, astrology, HD, Jyotish, health"
-          echo "NEW: /compatibility, subdoshas, dhatus, agni, psychosomatics (3 sources)"
-          echo "NEW: Lunar nodes, decanates, Arabic parts, progressions"
-          echo "NEW: Incarnation crosses, determination nutrition, definition types"
-          echo "NEW: Extended Matrix lines, personal year/month/day"
-          echo "SMART SPLIT: Message splitting with continuation markers"
-          echo "MAX_TOKENS: 4096 for deep professional consultations"
-          echo "DATE AWARENESS: All prompts include current Moscow date/time"
+          echo "MAX_TOKENS: 6000 for deep professional consultations"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -195,7 +187,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v63-${{ github.run_id }}
+          key: nastya-db-v64-${{ github.run_id }}
 
       - name: Save database to git
         if: always()
