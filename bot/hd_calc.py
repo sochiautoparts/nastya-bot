@@ -94,7 +94,7 @@ CENTER_NAMES_RU: Dict[str, str] = {
     'root':         'Корневой центр',
 }
 
-MOTOR_CENTERS: Set[str] = {'heart', 'solar_plexus', 'root'}
+MOTOR_CENTERS: Set[str] = {'heart', 'solar_plexus', 'root', 'sacral'}
 AWARENESS_CENTERS: Set[str] = {'ajna', 'spleen', 'solar_plexus'}
 
 # ════════════════════════════════════════════════════════════════
@@ -812,32 +812,28 @@ def _determine_type(
 
     Возвращает одно из:
       'Генератор', 'Манифестирующий Генератор', 'Проектор', 'Манифестор', 'Рефлектор'
+
+    Правила (по Ра Уру Ху):
+      - Рефлектор: ни один центр не определён
+      - Манифестирующий Генератор: Сакральный определён + мотор соединён с Горлом через канал
+        (моторы: Сакральный, Корневой, Солнечное Сплетение, Сердце/Воля)
+      - Генератор: Сакральный определён, НО нет мотор→горло канала
+      - Манифестор: мотор→горло канал, НО Сакральный НЕ определён
+      - Проектор: всё остальное
     """
     sacral_defined = 'sacral' in defined_centers
-    throat_defined = 'throat' in defined_centers
 
     # Проверяем связь Горла с мотором через канал
+    # В ДЧ моторные центры: Root, Solar Plexus, Heart, SACRAL
     throat_connected_to_motor = False
-    throat_connected_to_sacral_via_motor = False
 
     for ch in complete_channels:
         c1, c2 = ch[2], ch[3]
-        # Горло напрямую соединено с мотором?
-        if c1 == 'throat' and c2 in MOTOR_CENTERS:
+        # Горло напрямую соединено с мотором через канал?
+        if (c1 == 'throat' and c2 in MOTOR_CENTERS) or \
+           (c2 == 'throat' and c1 in MOTOR_CENTERS):
             throat_connected_to_motor = True
-            if c2 != 'sacral':
-                # Мотор (не сакральный) → горло, и сакральный определён
-                if sacral_defined:
-                    throat_connected_to_sacral_via_motor = True
-        elif c2 == 'throat' and c1 in MOTOR_CENTERS:
-            throat_connected_to_motor = True
-            if c1 != 'sacral':
-                if sacral_defined:
-                    throat_connected_to_sacral_via_motor = True
-
-    # Также проверяем: сакральный → мотор → горло (косвенная связь)
-    if sacral_defined and throat_connected_to_motor:
-        throat_connected_to_sacral_via_motor = True
+            break
 
     # Рефлектор: ни один центр не определён
     if not defined_centers:
@@ -845,13 +841,13 @@ def _determine_type(
 
     # Генераторы (сакральный определён)
     if sacral_defined:
-        if throat_connected_to_sacral_via_motor or throat_connected_to_motor:
+        if throat_connected_to_motor:
             return 'Манифестирующий Генератор'
         else:
             return 'Генератор'
 
     # Не-сакральные типы
-    # Манифестор: горло соединено с мотором, сакральный НЕ определён
+    # Манифестор: мотор→горло, сакральный НЕ определён
     if throat_connected_to_motor:
         return 'Манифестор'
 

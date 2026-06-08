@@ -3599,20 +3599,22 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
         delay_task.cancel()
 
     # ── POST-PROCESS: Filter political content ──
-    # v60: Skip political filter for consultation responses — consultation content
-    # may legitimately reference terms that overlap with the political filter
-    # (e.g., "войн" in the context of Vedic astrology's "война" meaning struggle)
-    # v61: Enhanced political filter - skip if user's request was a consultation
-    # Consultation responses (numerology, astrology, HD, jyotish, health)
-    # may legitimately contain words that overlap with political keywords
-    # (e.g., "войн" in Vedic context meaning "struggle", "министр" in spiritual context)
-    is_consultation_topic = any(kw in text.lower() for kws in _CONSULTATION_KEYWORDS.values() for kw in kws if kw not in _CONSULTATION_FALSE_POSITIVE_WORDS)
-    if not skip_political_filter and not is_consultation_topic:
+    # v62: Improved political filter - consultation responses are NEVER blocked.
+    # If the request was routed through consultation handler OR detected as consultation
+    # topic, the response should pass through regardless of keyword matches.
+    # Consultation content may legitimately reference terms that overlap with
+    # political keywords (e.g., "войн" in Vedic astrology context meaning "struggle",
+    # "министр" in spiritual context, historical references in HD/Jyotish)
+    _is_consultation_response = (
+        skip_political_filter
+        or _is_consultation_routed
+        or any(kw in text.lower() for kws in _CONSULTATION_KEYWORDS.values() for kw in kws)
+    )
+    if not _is_consultation_response:
         political_filter_words = ["путин", "зеленск", "байден", "трамп", "навальн", "войн",
                                   "спецопер", "санкци", "нато", "бомб", "обстрел", "террор",
                                   "фашизм", "нацизм", "депутат", "госдум", "едро"]
         if any(kw in response_text.lower() for kw in political_filter_words):
-            # For consultation topics, don't block - just log a warning
             response_text = random.choice([
                 f"Ой, Настя не про политику! Давай лучше про кино? 🎬💅",
                 f"Ой, не хочу про это! Давай лучше про шопинг? 🛍️✨",
@@ -3621,16 +3623,12 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
                 f"Ой, давай не про политику! Какой сериал ты смотришь? 📺✨",
             ])
             logger.info(f"Filtered political content in response for user {user_id}")
-    elif is_consultation_topic and not skip_political_filter:
-        # Log but don't block consultation responses that may contain overlapping words
-        political_filter_words = ["путин", "зеленск", "байден", "трамп", "навальн",
-                                  "спецопер", "санкци", "нато", "бомб", "обстрел", "террор",
-                                  "фашизм", "нацизм", "депутат", "госдум", "едро"]
-        # Only filter on the MOST clearly political words, not ambiguous ones like "войн"
+    elif not skip_political_filter:
+        # For consultation responses, only filter on STRICTLY political words
+        # (actual politician names, not ambiguous words like "войн" which appear in HD/Jyotish)
         strict_political_words = ["путин", "зеленск", "байден", "трамп", "навальн",
                                   "спецопер", "санкци", "госдум", "едро"]
         if any(kw in response_text.lower() for kw in strict_political_words):
-            # Even in consultations, if the AI mentions actual politicians, filter
             response_text = random.choice([
                 f"Ой, Настя не про политику! Давай лучше про кино? 🎬💅",
                 f"Настя аполитична! Давай про что-нибудь весёлое? 💅💕",
