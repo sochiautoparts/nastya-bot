@@ -1,9 +1,14 @@
-"""Human Design (Bodygraph) Calculation Engine v2.0
+"""Human Design (Bodygraph) Calculation Engine v3.0
 ====================================================
 
 Реальный астрономический движок расчёта Дизайна Человека.
 Использует Swiss Ephemeris (pyswisseph) для точных планетных позиций.
 При отсутствии pyswisseph — упрощённые орбитальные расчёты (НЕ галлюцинации).
+
+v3.0 ИСПРАВЛЕНИЯ:
+  - True Node вместо Mean Node (критично для точности ворот!)
+  - Центр определён если ЛЮБЫЕ ворота активированы (не только через каналы)
+  - Добавлен канал 19-49 (Подход/Революция)
 
 Расчёты:
   - Позиции 13 планет (Личность + Дизайн)
@@ -119,6 +124,7 @@ CHANNELS: List[Tuple[int, int, str, str, str]] = [
     (16, 48, 'throat',       'spleen',       'Канал Таланта'),
     (17, 62, 'ajna',         'throat',       'Канал Принятия'),
     (18, 58, 'spleen',       'root',         'Канал Суждения / Радости Жизни'),
+    (19, 49, 'root',         'solar_plexus', 'Канал Чувствительности / Революции'),
     (20, 34, 'throat',       'sacral',       'Канал Харизмы / Присутствия'),
     (21, 45, 'heart',        'throat',       'Канал Денег / Материи'),
     (23, 43, 'throat',       'ajna',         'Канал Структурирования / Гения-Фрика'),
@@ -136,7 +142,7 @@ CHANNELS: List[Tuple[int, int, str, str, str]] = [
     (42, 53, 'sacral',       'root',         'Канал Созревания / Циклов'),
     (47, 64, 'ajna',         'head',         'Канал Абстрагирования / Осознания'),
 ]
-assert len(CHANNELS) == 32, f"Expected 32 channels, got {len(CHANNELS)}"
+assert len(CHANNELS) == 33, f"Expected 33 channels, got {len(CHANNELS)}"
 
 # Быстрый поиск канала по воротам: {frozenset(g1,g2): channel_tuple}
 CHANNEL_MAP: Dict[frozenset, Tuple[int, int, str, str, str]] = {}
@@ -481,10 +487,13 @@ _SWE_BODIES = {
     'uranus':      7,   # swe.URANUS
     'neptune':     8,   # swe.NEPTUNE
     'pluto':       9,   # swe.PLUTO
-    'north_node':  10,  # swe.MEAN_NODE (Раху)
+    'north_node':  11,  # swe.TRUE_NODE (Раху) — True Node для точности!
     'south_node':  -1,  # Вычисляется как North Node + 180°
     'chiron':      15,  # swe.CHIRON
 }
+
+# Mean Node ID (для fallback при ошибке True Node)
+_MEAN_NODE_ID = 10  # swe.MEAN_NODE
 
 PLANET_NAMES_RU = {
     'sun':         'Солнце',
@@ -515,11 +524,13 @@ def _calc_planet_swe(jd: float, body_name: str) -> float:
     """Рассчитать эклиптическую долготу планеты через Swiss Ephemeris.
 
     Возвращает долготу в градусах [0, 360).
-    Сначала пробует Swiss Ephemeris (нужны файлы), затем Moshier (встроенный).
+    Для Лунных Узлов использует True Node (11) — стандарт для HD.
+    При ошибке True Node fallback на Mean Node (10).
     """
     body_id = _SWE_BODIES.get(body_name)
     if body_id is None:
         return 0.0
+
     # Сначала пробуем Swiss Ephemeris (самый точный)
     for flags in [
         swe.FLG_SWIEPH,       # Точный, нужны файлы .se1
@@ -531,6 +542,16 @@ def _calc_planet_swe(jd: float, body_name: str) -> float:
             return lon % 360.0
         except Exception as e:
             logger.debug("swe.calc_ut flag=%d error for %s: %s", flags, body_name, e)
+            # Для True Node: fallback на Mean Node при ошибке
+            if body_name == 'north_node' and body_id == 11:
+                logger.debug("True Node failed, trying Mean Node for %s", body_name)
+                try:
+                    result = swe.calc_ut(jd, _MEAN_NODE_ID, flags)
+                    lon = result[0][0]
+                    return lon % 360.0
+                except Exception as e2:
+                    logger.debug("Mean Node also failed: %s", e2)
+                    continue
             continue
     # Всё не удалось — fallback (обычно Chiron, т.к. Moshier его не содержит)
     logger.debug("SwissEph failed for %s, using orbital fallback", body_name)
@@ -752,6 +773,12 @@ def _determine_centers_and_channels(
       - defined_centers: множество определённых центров
       - complete_channels: список полных каналов
       - all_activated_gates: все активированные вороты
+
+    ПРАВИЛА (по Ра Уру Ху):
+      - Центр определён если ЛЮБЫЕ его ворота активированы (хотя бы одной планетой).
+        Даже висячие ворота (без полной пары в канале) определяют центр!
+      - Полный канал = оба ворот активированы (хотя бы одним телом Личности или Дизайна).
+      - Определённость (одиночная/раздельная) считается по полным каналам.
     """
     all_activated = personality_gates | design_gates
 
@@ -762,40 +789,13 @@ def _determine_centers_and_channels(
         if g1 in all_activated and g2 in all_activated:
             complete_channels.append(ch)
 
-    # Строим граф центров через полные каналы
-    # Центр определён, если он соединён через полные каналы с другим определённым центром
-    # Используем BFS/DFS для поиска компонент связности
-
-    # Сначала: центры, которые имеют хотя бы одно полное соединение
-    center_graph: Dict[str, Set[str]] = {c: set() for c in CENTER_NAMES_RU}
-    for ch in complete_channels:
-        c1, c2 = ch[2], ch[3]
-        center_graph[c1].add(c2)
-        center_graph[c2].add(c1)
-
-    # Центр определён если он входит в любую компоненту связности размера >= 2
-    # (т.е. соединён хотя бы с одним другим центром через канал)
-    visited: Set[str] = set()
+    # Центр определён если ЛЮБЫЕ его ворота активированы
+    # Это правило HD: даже одно висячее ворота определяет центр
     defined_centers: Set[str] = set()
-
-    for center in CENTER_NAMES_RU:
-        if center in visited:
-            continue
-        # BFS
-        component: Set[str] = set()
-        queue = [center]
-        while queue:
-            node = queue.pop(0)
-            if node in component:
-                continue
-            component.add(node)
-            for neighbor in center_graph.get(node, set()):
-                if neighbor not in component:
-                    queue.append(neighbor)
-        visited |= component
-        # Компонента из >1 центра → все центры в ней определены
-        if len(component) > 1:
-            defined_centers |= component
+    for gate in all_activated:
+        center = GATE_CENTER.get(gate)
+        if center:
+            defined_centers.add(center)
 
     return defined_centers, complete_channels, all_activated
 
