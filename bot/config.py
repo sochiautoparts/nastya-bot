@@ -71,6 +71,13 @@ POLLINATIONS_TIMEOUT: float = 45.0
 POLLINATIONS_MAX_TOKENS: int = 4096  # Extended for deep professional consultations with full calculations
 POLLINATIONS_MAX_RETRIES: int = 3  # Try up to 3 models on failure
 
+# ── Cloudflare Workers AI - FALLBACK Provider ──────────────────
+CF_ACCOUNT_ID_1: str = _env("CF_ACCOUNT_ID_1", "")
+CF_TOKEN_1: str = _env("CF_TOKEN_1", "")
+CF_ACCOUNT_ID_2: str = _env("CF_ACCOUNT_ID_2", "")
+CF_TOKEN_2: str = _env("CF_TOKEN_2", "")
+CF_DAILY_LIMIT: int = _env_int("CF_DAILY_LIMIT", 10000)  # 10k req/day per token
+
 # ── Local Model Toggle ──────────────────────────────────────
 # Set ENABLE_LOCAL_MODEL=true to load Qwen3-4B as local fallback
 # Default: disabled (cloud-only mode - faster startup, less RAM)

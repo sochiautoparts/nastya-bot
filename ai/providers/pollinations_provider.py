@@ -1,22 +1,30 @@
-"""Pollinations.ai Provider v19.0 - DUAL API KEY + EXPANDED MODEL LOAD BALANCING!
+"""Pollinations.ai Provider v20.0 - DUAL API KEY + OLD API FALLBACK!
 
-v19.0 UPDATE - Dual key failover, no free tier, new models:
-  - CHANGED: Removed KEY3 - dual key failover (KEY1 + KEY2)
-  - ADDED: 'midijourney' (confirmed working, text-to-music/chat)
-  - REMOVED: Free tier fallback - it returns 401, dual key is critical!
-  - IMPROVED: Better handling of empty responses from reasoning models
-  - ADJUSTED: Model weights tuned for Russian language quality
+v20.0 UPDATE - OLD Pollinations API fallback when both keys are depleted:
+  - ADDED: Fallback to OLD Pollinations API (text.pollinations.ai / image.pollinations.ai)
+    when BOTH API keys are depleted (402/401). The OLD API is FREE, anonymous,
+    rate-limited (1 req/IP), and doesn't require authentication.
+  - FAILOVER CHAIN: KEY1 -> KEY2 -> OLD API (free) -> ProviderError
+  - ADDED: _call_old_api() - calls text.pollinations.ai WITHOUT auth
+  - ADDED: _call_old_image_api() - calls image.pollinations.ai via GET (no auth)
+  - ADDED: OLD_CHAT_MODELS and OLD_IMAGE_MODELS for free-tier model selection
+  - UPDATED: is_available() now returns True even when keys depleted (OLD API fallback)
+
+  v19.0 features retained:
+  - Dual key failover (KEY1 + KEY2)
+  - 43 chat models with load balancing
+  - Depleted keys auto-retry after 600 seconds cooldown
   - IMPORTANT: We NEVER delete models from lists when they fail.
     Pollinations.ai rotates model availability - a failure today doesn't mean
     the model is gone. Circuit breaking handles temporary failures.
 
-  DUAL API KEY FAILOVER:
-  - KEY1 -> KEY2 -> ProviderError(retryable=True)
+  FULL FAILOVER CHAIN:
+  - KEY1 -> KEY2 -> OLD API (free, anonymous) -> ProviderError(retryable=True)
   - On 402/401: mark current key as depleted, auto-switch to next
-  - Depleted keys auto-retry after 600 seconds cooldown
-  - NO free tier fallback - free tier returns 401, dual key is critical!
+  - When ALL keys depleted: try OLD API with top 3 free models
+  - OLD API is rate-limited (429) but always available without keys
 
-  EXPANDED MODEL LIST (43 models!):
+  EXPANDED MODEL LIST (43 keyed + 6 old API models!):
   - Full Pollinations catalog coverage
   - All previous models retained (never delete - Pollinations rotates!)
 """
@@ -36,6 +44,28 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://gen.pollinations.ai"
+
+# ── Old Pollinations API (FREE, anonymous, rate-limited) ──
+OLD_TEXT_URL = "https://text.pollinations.ai"
+OLD_IMAGE_URL = "https://image.pollinations.ai"
+
+# Free models confirmed working for Russian language (from testing)
+OLD_CHAT_MODELS = [
+    "openai",      # GPT-5.4 Nano - best Russian
+    "mistral",     # Mistral Small 3.2 - good multilingual
+    "deepseek",    # DeepSeek V4 Flash - good Russian
+    "llama",       # Llama 3.3 70B - strong
+    "qwen",        # Qwen - good multilingual
+    "command-r",   # Command R - good
+]
+
+OLD_IMAGE_MODELS = [
+    "flux",           # Best quality
+    "flux-realism",   # Photorealistic
+    "flux-pro",       # Professional
+    "flux-cablyai",   # Alternative
+    "turbo",          # Fast generation
+]
 
 # ── Cooldown for depleted API keys (seconds) ──
 KEY_COOLDOWN: float = 600.0  # 10 minutes before retrying a depleted key
@@ -195,19 +225,24 @@ def _parse_json_response(text: str) -> Optional[str]:
 
 
 class PollinationsProvider(BaseProvider):
-    """Pollinations.ai provider v19.0 - DUAL KEY + EXPANDED MODEL LOAD BALANCING!
+    """Pollinations.ai provider v20.0 - DUAL KEY + OLD API FALLBACK!
 
     Uses gen.pollinations.ai/v1/chat/completions (OpenAI-compatible).
     Round-robin across 43 models for load distribution.
 
-    DUAL API KEY FAILOVER:
+    FULL FAILOVER CHAIN:
       1. Try KEY1 first (primary key)
       2. On 402/401 from KEY1 -> switch to KEY2
-      3. On 402/401 from KEY2 -> raise ProviderError(retryable=True)
-      4. Depleted keys auto-retry after 600 seconds cooldown
+      3. On 402/401 from KEY2 -> try OLD API (text.pollinations.ai, free, no auth)
+      4. OLD API also fails -> raise ProviderError(retryable=True)
+      5. Depleted keys auto-retry after 600 seconds cooldown
 
-    NOTE: Free tier is NOT used as fallback - it returns 401.
-    Dual key support is critical for continuous operation.
+    OLD API FALLBACK (text.pollinations.ai / image.pollinations.ai):
+      - Free, anonymous, no authentication required
+      - Rate-limited (1 req/IP, 429 on excess)
+      - Uses top 3 models from OLD_CHAT_MODELS for text
+      - Uses top 2 models from OLD_IMAGE_MODELS for images
+      - Always available even when both API keys are depleted
 
     IMPORTANT: Models are NEVER removed when temporarily unavailable.
     Pollinations.ai rotates model availability - circuit breaking handles it.
@@ -367,7 +402,7 @@ class PollinationsProvider(BaseProvider):
 
         key_status = self._get_key_status_summary()
         logger.info(
-            f"PollinationsProvider v19 initialized: {len(CHAT_MODELS)} chat models, "
+            f"PollinationsProvider v20 initialized: {len(CHAT_MODELS)} chat models, "
             f"vision={MODEL_VISION}, reasoning={MODEL_REASONING}, "
             f"keys=[{key_status}], "
             f"timeout={self.timeout}s"
@@ -376,7 +411,7 @@ class PollinationsProvider(BaseProvider):
     def is_available(self) -> bool:
         """Available if client is initialized and not in global 429 cooldown.
 
-        Note: With both keys depleted, we can still try when cooldowns expire.
+        Note: Even with both keys depleted, OLD API fallback is still available.
         We only block on rate-limit cooldowns.
         """
         if not self._client:
@@ -679,6 +714,119 @@ class PollinationsProvider(BaseProvider):
             retryable=True,
         )
 
+    # ── OLD API Fallback (FREE, no auth) ────────────────────────
+
+    async def _call_old_api(self, model: str, messages: List[Dict],
+                             temperature: float, max_tokens: int) -> AIResponse:
+        """Fallback: call OLD Pollinations API (text.pollinations.ai) WITHOUT auth.
+
+        Free, anonymous, rate-limited (1 req/IP). Used when ALL API keys are depleted.
+        The old API uses OpenAI-compatible format but on different endpoint.
+        """
+        if not self._client:
+            await self.init()
+
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+
+        # NO Authorization header - this is the free, anonymous endpoint
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
+
+        try:
+            response = await self._client.post(
+                f"{OLD_TEXT_URL}/v1/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+
+            raw_text = response.text
+            if not raw_text:
+                raise ProviderError(
+                    self.name,
+                    f"Empty response from OLD API model {model}",
+                    retryable=True,
+                )
+
+            result = self._parse_response_text(raw_text, model)
+            if result and result.text:
+                result.metadata["endpoint"] = "old_api"
+                result.metadata["auth"] = "none"
+                return result
+
+            raise ProviderError(
+                self.name,
+                f"Unparsable content from OLD API model {model}",
+                retryable=True,
+            )
+
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status == 429:
+                raise ProviderError(
+                    self.name,
+                    f"OLD API rate-limited (429) for {model} - free tier limit",
+                    retryable=True,
+                )
+            raise ProviderError(
+                self.name,
+                f"OLD API HTTP {status} from {model}: {exc.response.text[:200]}",
+                retryable=status in (500, 502, 503, 504),
+            )
+        except httpx.TimeoutException as exc:
+            raise ProviderError(
+                self.name,
+                f"OLD API timeout from {model}: {exc}",
+                retryable=True,
+            )
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError(
+                self.name,
+                f"OLD API unexpected error from {model}: {exc}",
+                retryable=True,
+            )
+
+    async def _call_old_image_api(self, prompt: str, size: str = "1024x1024",
+                                    model: str = "flux") -> Optional[bytes]:
+        """Fallback: generate image using OLD Pollinations API (image.pollinations.ai) WITHOUT auth.
+
+        Free, anonymous. Returns raw image bytes.
+        """
+        if not self._client:
+            await self.init()
+
+        # Old API uses GET request with query params
+        # Format: https://image.pollinations.ai/prompt/{encoded_prompt}?model={model}&width=W&height=H
+        try:
+            from urllib.parse import quote as _url_quote
+
+            encoded_prompt = _url_quote(prompt, safe='')
+            w, h = size.split('x') if 'x' in size else ('1024', '1024')
+            url = f"{OLD_IMAGE_URL}/prompt/{encoded_prompt}?model={model}&width={w}&height={h}&nologo=true&nofeed=true"
+
+            response = await self._client.get(
+                url,
+                timeout=60.0,
+            )
+            response.raise_for_status()
+
+            content_type = response.headers.get('content-type', '')
+            if 'image' in content_type and len(response.content) > 500:
+                return response.content
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"OLD image API error: {e}")
+            return None
+
     def _parse_response_text(self, raw_text: str, model: str) -> Optional[AIResponse]:
         """Parse raw API response text into an AIResponse.
 
@@ -831,16 +979,42 @@ class PollinationsProvider(BaseProvider):
                 logger.warning(f"Model {model} unexpected error: {e}, trying next...")
                 continue
 
-        # ── ALL models failed ──
+        # ── ALL models failed with keys ── Try OLD API fallback (free, anonymous) ──
         key_status = self._get_key_status_summary()
+        logger.warning(
+            f"All keyed models failed (tried {tried_models}). "
+            f"Key status: [{key_status}]. Trying OLD API fallback..."
+        )
+
+        # Try old Pollinations API (free, no auth)
+        for old_model in OLD_CHAT_MODELS[:3]:
+            try:
+                result = await self._call_old_api(
+                    model=old_model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                if result and result.text:
+                    self._record_model_success(old_model)
+                    logger.info(f"OLD API fallback succeeded with model {old_model}")
+                    return result
+            except ProviderError as e:
+                logger.warning(f"OLD API model {old_model} failed: {e}")
+                continue
+            except Exception as e:
+                logger.warning(f"OLD API model {old_model} error: {e}")
+                continue
+
+        # ── EVERYTHING failed ──
         logger.error(
-            f"All cloud models failed (tried {tried_models}). "
+            f"All providers failed (keyed: {tried_models}, old_api: {OLD_CHAT_MODELS[:3]}). "
             f"Key status: [{key_status}]."
         )
         raise ProviderError(
             self.name,
-            f"All cloud models failed (tried {tried_models}, "
-            f"keys=[{key_status}]). Last error: {last_error}.",
+            f"All providers failed (keyed: {tried_models}, old_api tried). "
+            f"Keys=[{key_status}]. Last error: {last_error}.",
             retryable=True,
         )
 
@@ -924,6 +1098,27 @@ class PollinationsProvider(BaseProvider):
                 logger.warning(f"Vision model {model} unexpected error: {e}, trying next...")
                 continue
 
+        # ── Try OLD API fallback for vision ──
+        for old_model in OLD_CHAT_MODELS[:2]:
+            try:
+                result = await self._call_old_api(
+                    model=old_model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                if result and result.text:
+                    self._record_model_success(old_model)
+                    result.metadata["mode"] = "vision_old_api"
+                    logger.info(f"OLD API vision fallback succeeded with {old_model}")
+                    return result
+            except ProviderError as e:
+                logger.warning(f"OLD API vision model {old_model} failed: {e}")
+                continue
+            except Exception as e:
+                logger.warning(f"OLD API vision model {old_model} error: {e}")
+                continue
+
         raise ProviderError(
             self.name,
             f"All vision models failed. Last error: {last_error}",
@@ -999,6 +1194,20 @@ class PollinationsProvider(BaseProvider):
             except Exception as e:
                 logger.warning(f"Image generation failed: {e}")
                 return None
+
+        # ── Try OLD image API fallback (free, no auth) ──
+        logger.info("Trying OLD image API fallback (image.pollinations.ai)...")
+        for img_model in OLD_IMAGE_MODELS[:2]:
+            try:
+                img_bytes = await self._call_old_image_api(
+                    prompt=prompt, size=size, model=img_model,
+                )
+                if img_bytes:
+                    logger.info(f"OLD image API succeeded with model {img_model}")
+                    return img_bytes
+            except Exception as e:
+                logger.warning(f"OLD image API model {img_model} failed: {e}")
+                continue
 
         return None
 

@@ -130,6 +130,11 @@ jobs:
           # Pollinations.ai — DUAL KEY FAILOVER
           POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
           POLLINATIONS_API_KEY_2: ${{ secrets.POLLINATIONS_API_KEY_2 }}
+          # Cloudflare Workers AI — FALLBACK (Mistral Small 3.1, dual-account)
+          CF_ACCOUNT_ID_1: ${{ secrets.CF_ACCOUNT_ID_1 }}
+          CF_TOKEN_1: ${{ secrets.CF_TOKEN_1 }}
+          CF_ACCOUNT_ID_2: ${{ secrets.CF_ACCOUNT_ID_2 }}
+          CF_TOKEN_2: ${{ secrets.CF_TOKEN_2 }}
           # Local model — DISABLED (Pollinations-only, restorable)
           ENABLE_LOCAL_MODEL: "false"
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}

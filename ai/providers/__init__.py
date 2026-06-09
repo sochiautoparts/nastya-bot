@@ -1,7 +1,8 @@
-"""AI Providers - Pollinations PRIMARY (local model disabled, restorable)."""
+"""AI Providers - Pollinations PRIMARY + Cloudflare FALLBACK (local model disabled, restorable)."""
 
 from ai.providers.base import BaseProvider, AIResponse, ProviderError
 from ai.providers.pollinations_provider import PollinationsProvider
+from ai.providers.cloudflare_provider import CloudflareProvider
 
 # Local model DISABLED - can be restored by uncommenting:
 # try:
@@ -13,6 +14,7 @@ from ai.providers.pollinations_provider import PollinationsProvider
 
 ALL_PROVIDERS = {
     "pollinations": PollinationsProvider,
+    "cloudflare": CloudflareProvider,
 }
 # if _LLAMA_CPP_AVAILABLE:
 #     ALL_PROVIDERS["llama_cpp"] = LlamaCppProvider

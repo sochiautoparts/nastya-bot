@@ -38,9 +38,11 @@ from ai.providers.pollinations_provider import (
     PollinationsProvider, REASONING_CHAT, REASONING_COMPLEX,
     MODEL_REASONING, MODEL_VISION, CHAT_MODELS,
 )
+from ai.providers.cloudflare_provider import CloudflareProvider
 from ai.voice import transcribe_voice_ogg
 from bot.config import (
     POLLINATIONS_API_KEY, POLLINATIONS_API_KEY_2, POLLINATIONS_MAX_TOKENS,
+    CF_ACCOUNT_ID_1, CF_TOKEN_1, CF_ACCOUNT_ID_2, CF_TOKEN_2,
 )
 
 logger = logging.getLogger(__name__)
@@ -128,41 +130,46 @@ def _classify_task_complexity(prompt: str, messages: Optional[List[Dict]] = None
 
 
 class AIRouter:
-    """AI Router v61.0 - POLLINATIONS-ONLY ROUTING: all routes through Pollinations.
+    """AI Router v62.0 - POLLINATIONS + CLOUDFLARE FAILOVER + OLD API FALLBACK!
 
-    Strategy v61: Every route goes through PollinationsProvider.
-    The providers weighted round-robin handles model selection internally.
-    No local model - Pollinations IS the provider.
+    Strategy v62: Pollinations PRIMARY -> Cloudflare FALLBACK -> static fallback.
+    Pollinations includes OLD API fallback internally when keys are depleted.
+    Cloudflare uses @cf/mistralai/mistral-small-3.1-24b-instruct with dual-account.
+
+    PROVIDER CHAIN:
+      Pollinations (KEY1 -> KEY2 -> OLD API free) -> Cloudflare (Account1 -> Account2) -> static fallback
 
     Route for CHAT (route_type="chat", default):
-        Pollinations (fast models for simple, quality models for complex) -> static fallback
+        Pollinations -> Cloudflare -> static fallback
 
     Route for FUNCTION (route_type="function"):
-        Pollinations (best quality models) -> static fallback
+        Pollinations -> Cloudflare -> static fallback
 
     Route for COMMENT (route_type="comment"):
-        Pollinations (fast/cheap models) -> static fallback
-        No more local-only - Pollinations handles comments too!
+        Pollinations -> Cloudflare -> static fallback
 
     Route for VISION tasks (photos):
-        Pollinations vision (20+ vision models) -> fallback message
+        Pollinations vision -> Cloudflare vision -> fallback message
 
     Route for BACKGROUND tasks (news, channel):
-        Pollinations -> skip (not critical)
+        Pollinations -> Cloudflare -> skip (not critical)
     """
 
     def __init__(self, db=None):
         self._pollinations: Optional[PollinationsProvider] = None
+        self._cloudflare: Optional[CloudflareProvider] = None
         self._local = None  # Legacy compat — local model removed, but admin.py references this
         self._db = db
         self._total_requests: int = 0
         self._total_fallbacks: int = 0
         self._pollinations_requests: int = 0
+        self._cloudflare_requests: int = 0
         self._vision_requests: int = 0
         self._last_cloud_success: float = 0
 
     async def init(self) -> None:
-        """Initialize PollinationsProvider - the ONLY provider."""
+        """Initialize PollinationsProvider (PRIMARY) + CloudflareProvider (FALLBACK)."""
+        # ── Pollinations - PRIMARY provider ──
         try:
             self._pollinations = PollinationsProvider(
                 api_key=POLLINATIONS_API_KEY,
@@ -172,28 +179,53 @@ class AIRouter:
             await self._pollinations.init()
             model_names = [m[0] for m in CHAT_MODELS]
             logger.info(
-                f"PollinationsProvider initialized as SOLE provider "
-                f"({len(CHAT_MODELS)} models: {', '.join(model_names[:5])}...)"
+                f"PollinationsProvider v20 initialized as PRIMARY "
+                f"({len(CHAT_MODELS)} models + OLD API fallback)"
             )
         except Exception as e:
             logger.warning(f"PollinationsProvider init failed: {e}")
             self._pollinations = None
 
+        # ── Cloudflare Workers AI - FALLBACK provider ──
+        try:
+            self._cloudflare = CloudflareProvider(
+                account_id_1=CF_ACCOUNT_ID_1,
+                token_1=CF_TOKEN_1,
+                account_id_2=CF_ACCOUNT_ID_2,
+                token_2=CF_TOKEN_2,
+                timeout=30.0,
+            )
+            await self._cloudflare.init()
+            logger.info(
+                f"CloudflareProvider initialized as FALLBACK "
+                f"(@cf/mistralai/mistral-small-3.1-24b-instruct, dual-account)"
+            )
+        except Exception as e:
+            logger.warning(f"CloudflareProvider init failed: {e}")
+            self._cloudflare = None
+
         # Log status
         pollinations_status = "active" if self._pollinations and self._pollinations.is_available() else "unavailable"
+        cloudflare_status = "active" if self._cloudflare and self._cloudflare.is_available() else "unavailable"
 
         logger.info(
-            f"AI Router v61.0 POLLINATIONS-ONLY initialized: "
-            f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + vision, dual-key=KEY1+KEY2), "
-            f"strategy=chat:POLLINATIONS/function:POLLINATIONS/comment:POLLINATIONS, "
+            f"AI Router v62.0 MULTI-PROVIDER initialized: "
+            f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + OLD API), "
+            f"cloudflare={cloudflare_status} (mistral-small-3.1, dual-account), "
+            f"strategy=Pollinations->Cloudflare->fallback, "
             f"max_tokens={POLLINATIONS_MAX_TOKENS}"
         )
 
     async def close(self) -> None:
-        """Close provider."""
+        """Close providers."""
         if self._pollinations:
             try:
                 await self._pollinations.close()
+            except Exception:
+                pass
+        if self._cloudflare:
+            try:
+                await self._cloudflare.close()
             except Exception:
                 pass
 
@@ -224,7 +256,7 @@ class AIRouter:
         self._total_requests += 1
         self._vision_requests += 1
 
-        # -- Pollinations Vision - SOLE provider --
+        # -- Pollinations Vision - PRIMARY provider --
         if self._pollinations and self._pollinations.is_available():
             try:
                 result = await self._pollinations.generate_vision(
@@ -248,13 +280,41 @@ class AIRouter:
                             metadata={**result.metadata, "role": "vision_primary"},
                         )
             except ProviderError as e:
-                logger.warning(f"Pollinations vision error: {e}")
+                logger.warning(f"Pollinations vision error: {e}. Trying Cloudflare vision.")
             except Exception as e:
-                logger.warning(f"Pollinations vision unexpected error: {e}")
+                logger.warning(f"Pollinations vision unexpected error: {e}. Trying Cloudflare vision.")
 
-        # -- No fallback for vision - local model can't see images --
+        # -- Cloudflare Vision - FALLBACK provider --
+        if self._cloudflare and self._cloudflare.is_available():
+            try:
+                result = await self._cloudflare.generate_vision(
+                    prompt=prompt,
+                    image_data=image_data,
+                    image_format=image_format,
+                    system_prompt=system_prompt,
+                    max_tokens=600,
+                    temperature=0.85,
+                )
+                if result and result.text:
+                    cleaned = self.clean_ai_response(result.text)
+                    if cleaned:
+                        self._cloudflare_requests += 1
+                        self._last_cloud_success = time.time()
+                        return AIResponse(
+                            text=cleaned,
+                            provider=result.provider,
+                            model=result.model,
+                            tokens_used=result.tokens_used,
+                            metadata={**result.metadata, "role": "vision_cloudflare"},
+                        )
+            except ProviderError as e:
+                logger.warning(f"Cloudflare vision error: {e}")
+            except Exception as e:
+                logger.warning(f"Cloudflare vision unexpected error: {e}")
+
+        # -- No fallback for vision - static message --
         self._total_fallbacks += 1
-        logger.warning("Vision failed - Pollinations unavailable")
+        logger.warning("Vision failed - all providers unavailable")
         return AIResponse(
             text="Ой, Настя не может разглядеть фотку... Попробуй ещё раз? 📸💅",
             provider="fallback",
@@ -293,7 +353,7 @@ class AIRouter:
             else:
                 reasoning = REASONING_CHAT
 
-        # -- Pollinations - SOLE provider --
+        # -- Pollinations - PRIMARY provider --
         if self._pollinations and self._pollinations.is_available():
             try:
                 # Use caller's max_tokens if provided, otherwise default
@@ -324,17 +384,49 @@ class AIRouter:
             except ProviderError as e:
                 err_str = str(e)
                 if "429" in err_str:
-                    logger.warning(f"Pollinations rate-limited! Using static fallback.")
-                elif "All models failed" in err_str or "402" in err_str:
-                    logger.warning(f"Pollinations unavailable (402/429)! Using static fallback.")
+                    logger.warning(f"Pollinations rate-limited! Trying Cloudflare fallback.")
+                elif "All providers failed" in err_str or "402" in err_str or "All models" in err_str:
+                    logger.warning(f"Pollinations unavailable! Trying Cloudflare fallback.")
                 else:
-                    logger.warning(f"Pollinations chat error: {e}")
+                    logger.warning(f"Pollinations chat error: {e}. Trying Cloudflare fallback.")
             except Exception as e:
-                logger.warning(f"Pollinations unexpected error: {e}")
+                logger.warning(f"Pollinations unexpected error: {e}. Trying Cloudflare fallback.")
+
+        # -- Cloudflare Workers AI - FALLBACK provider --
+        if self._cloudflare and self._cloudflare.is_available():
+            try:
+                caller_max_tokens = kwargs.get("max_tokens", POLLINATIONS_MAX_TOKENS)
+                result = await self._cloudflare.generate(
+                    prompt,
+                    system_prompt=system_prompt,
+                    messages=messages,
+                    max_tokens=min(caller_max_tokens, 4096),  # CF limit
+                    temperature=kwargs.get("temperature", 0.85),
+                )
+                if result and result.text:
+                    cleaned = self.clean_ai_response(result.text)
+                    if cleaned:
+                        self._cloudflare_requests += 1
+                        self._last_cloud_success = time.time()
+                        return AIResponse(
+                            text=cleaned,
+                            provider=result.provider,
+                            model=result.model,
+                            tokens_used=result.tokens_used,
+                            metadata={
+                                **result.metadata,
+                                "role": f"cloudflare_{route_type}",
+                                "complexity_reasoning": reasoning,
+                            },
+                        )
+            except ProviderError as e:
+                logger.warning(f"Cloudflare chat error: {e}. Using static fallback.")
+            except Exception as e:
+                logger.warning(f"Cloudflare unexpected error: {e}. Using static fallback.")
 
         # -- Static fallback - bot ALWAYS responds --
         self._total_fallbacks += 1
-        logger.error("Pollinations unavailable! Using static fallback.")
+        logger.error("All providers unavailable! Using static fallback.")
         return AIResponse(
             text=self.get_fallback_response(),
             provider="fallback",
@@ -349,7 +441,7 @@ class AIRouter:
         Background tasks (news, channel posts) need quality but are not critical.
         If Pollinations fails, we skip rather than use a fallback message.
         """
-        # -- Pollinations - SOLE provider for background --
+        # -- Pollinations - PRIMARY for background --
         if self._pollinations and self._pollinations.is_available():
             try:
                 # Use caller's max_tokens if provided, otherwise default to 300
@@ -373,13 +465,40 @@ class AIRouter:
                             metadata={**result.metadata, "role": "bg_pollinations"},
                         )
             except ProviderError as e:
-                logger.warning(f"Pollinations bg error: {e}")
+                logger.warning(f"Pollinations bg error: {e}. Trying Cloudflare.")
             except Exception as e:
-                logger.warning(f"Pollinations bg unexpected: {e}")
+                logger.warning(f"Pollinations bg unexpected: {e}. Trying Cloudflare.")
+
+        # -- Cloudflare - FALLBACK for background --
+        if self._cloudflare and self._cloudflare.is_available():
+            try:
+                bg_max_tokens = kwargs.get("max_tokens", 300)
+                result = await self._cloudflare.generate(
+                    prompt,
+                    system_prompt=system_prompt,
+                    messages=messages,
+                    max_tokens=min(bg_max_tokens, 4096),
+                    temperature=0.85,
+                )
+                if result and result.text:
+                    cleaned = self.clean_ai_response(result.text)
+                    if cleaned:
+                        self._cloudflare_requests += 1
+                        return AIResponse(
+                            text=cleaned,
+                            provider=result.provider,
+                            model=result.model,
+                            tokens_used=result.tokens_used,
+                            metadata={**result.metadata, "role": "bg_cloudflare"},
+                        )
+            except ProviderError as e:
+                logger.warning(f"Cloudflare bg error: {e}")
+            except Exception as e:
+                logger.warning(f"Cloudflare bg unexpected: {e}")
 
         # -- Background failed - not critical --
         self._total_fallbacks += 1
-        logger.warning("Background task failed (Pollinations unavailable). Skipping.")
+        logger.warning("Background task failed (all providers unavailable). Skipping.")
         return AIResponse(
             text="",
             provider="none",
@@ -393,15 +512,20 @@ class AIRouter:
         return await transcribe_voice_ogg(ogg_bytes)
 
     async def generate_image(self, prompt: str, size: str = "1024x1024") -> Optional[bytes]:
-        """Generate an image using Pollinations image API.
+        """Generate an image using Pollinations (PRIMARY) then Cloudflare.
 
         Returns image bytes or None on failure.
         """
+        # -- Pollinations image generation --
         if self._pollinations and self._pollinations.is_available():
             try:
-                return await self._pollinations.generate_image(prompt, size=size)
+                result = await self._pollinations.generate_image(prompt, size=size)
+                if result:
+                    return result
             except Exception as e:
-                logger.warning(f"Image generation error: {e}")
+                logger.warning(f"Pollinations image generation error: {e}. Trying next.")
+
+        # Cloudflare doesn't support image generation - skip
         return None
 
     @staticmethod
@@ -463,23 +587,38 @@ class AIRouter:
 
     def get_status(self) -> Dict[str, Any]:
         status = {}
-        # Pollinations status - SOLE provider
+        # Pollinations status - PRIMARY provider
         status["pollinations"] = {
             "available": self._pollinations is not None and self._pollinations.is_available(),
-            "role": "SOLE PROVIDER (chat + function + comment + vision + background)",
+            "role": "PRIMARY (chat + function + comment + vision + background)",
             "models": len(CHAT_MODELS),
             "vision": True,
+            "old_api_fallback": True,
         }
         if self._pollinations:
             try:
                 status["pollinations"]["model_stats"] = self._pollinations.get_model_stats()
             except Exception:
                 pass
+        # Cloudflare status - FALLBACK provider
+        status["cloudflare"] = {
+            "available": self._cloudflare is not None and self._cloudflare.is_available(),
+            "role": "FALLBACK (chat + function + comment + vision + background)",
+            "model": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+            "vision": True,
+            "dual_account": True,
+        }
+        if self._cloudflare:
+            try:
+                status["cloudflare"]["account_stats"] = self._cloudflare.get_account_stats()
+            except Exception:
+                pass
         status["_stats"] = {
             "total_requests": self._total_requests,
             "total_fallbacks": self._total_fallbacks,
             "pollinations_requests": self._pollinations_requests,
+            "cloudflare_requests": self._cloudflare_requests,
             "vision_requests": self._vision_requests,
-            "strategy": "POLLINATIONS-ONLY dual-key (chat:complexity-routed, function:COMPLEX, comment:CHAT, background:CHAT)",
+            "strategy": "POLLINATIONS(KEY1+KEY2+OLD_API)->CLOUDFLARE(Account1+Account2)->fallback (chat:complexity-routed, function:COMPLEX, comment:CHAT, background:CHAT)",
         }
         return status
