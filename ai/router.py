@@ -1,30 +1,33 @@
-"""AI Router v61.0 - POLLINATIONS-ONLY ROUTING (no local model, cloud-first everything)!
+"""AI Router v65.0 - LOCAL-FIRST MULTI-PROVIDER FAILOVER!
 
-АРХИТЕКТУРА v61 - POLLINATIONS-ONLY SMART ROUTING:
-  Всё через Pollinations - локальная модель УДАЛЕНА!
-  Provider weighted round-robin handles model selection internally.
+АРХИТЕКТУРА v65 - LOCAL-FIRST для простых задач, CLOUD-FIRST для сложных:
 
-  CHAT route -> Pollinations (provider weighted round-robin handles model selection)
-    - Simple tasks -> REASONING_CHAT (fast models, no reasoning)
-    - Complex tasks -> REASONING_COMPLEX (better models, slight reasoning)
-    - Cloud-only tasks -> REASONING_COMPLEX
+FAILOVER CHAIN (5 уровней до статического фоллбэка):
+  Level 0: Local Model (Qwen3-4B GGUF, CPU) — CHAT & COMMENT маршруты
+  Level 1: Pollinations (API key) → KEY1 → KEY2
+  Level 2: Pollinations FREE API (text.pollinations.ai, без авторизации)
+  Level 3: Cloudflare Workers AI (@cf/mistralai/mistral-small-3.1-24b-instruct)
+  Last resort: Статические фоллбэк-ответы
 
-  FUNCTION route -> Pollinations (best quality models)
-    - REASONING_COMPLEX for high-quality public content
+Стратегия маршрутизации (v65.0 — LOCAL-FIRST):
+  CHAT route_type (пользовательские чаты) → Local → Pollinations(key) → Pollinations(free) → Cloudflare → Static
+  FUNCTION route_type (посты, VIN, диагностика) → Pollinations(key) → Pollinations(free) → Cloudflare → Local(fallback) → Static
+  COMMENT route_type (комментарии в группах) → Local → Pollinations(key) → Pollinations(free) → Cloudflare → Static
+  VISION (фото) → Pollinations vision(key) → Pollinations vision(free) → Cloudflare vision → Static
+  BACKGROUND (новости, канал) → Pollinations(key) → Pollinations(free) → Cloudflare → Local(fallback) → Skip
+  IMAGE generation → Pollinations(key) → Pollinations(free) → None
 
-  COMMENT route -> Pollinations (fast/cheap models) - NO MORE LOCAL-ONLY
-    - REASONING_CHAT - fast models for casual group comments
-    - If Pollinations fails -> static fallback
+Локальная модель ИДЕАЛЬНА для:
+  - Быстрые ответы в чате (экономит облачный баланс!)
+  - Комментарии в группах (короткие, быстрые, дешёвые)
+  - Простой Q&A о машинах, Москве, астрологии
+  - Фоллбэк когда все облачные провайдеры недоступны
 
-  BACKGROUND route -> Pollinations (cloud-first for quality posts)
-    - REASONING_CHAT - balanced quality for background tasks
-    - If Pollinations fails -> skip (not critical)
-
-  VISION -> Pollinations vision models
-    - 20+ vision-capable models
-    - If Pollinations fails -> fallback message
-
-  When Pollinations raises ProviderError -> static fallback (bot ALWAYS responds)
+Облачные модели ЛУЧШЕ для:
+  - Генерация постов для канала (нужна креативность + качество)
+  - VIN декодирование (нужна точность)
+  - Консультации (нумерология, астрология, HD — нужен глубокий анализ)
+  - Vision задачи (локальная модель не умеет vision)
 """
 
 import logging
@@ -34,6 +37,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from ai.providers.base import AIResponse, ProviderError
+from ai.providers.llama_cpp_provider import LlamaCppProvider
 from ai.providers.pollinations_provider import (
     PollinationsProvider, REASONING_CHAT, REASONING_COMPLEX,
     MODEL_REASONING, MODEL_VISION, CHAT_MODELS,
@@ -43,6 +47,7 @@ from ai.voice import transcribe_voice_ogg
 from bot.config import (
     POLLINATIONS_API_KEY, POLLINATIONS_API_KEY_2, POLLINATIONS_MAX_TOKENS,
     CF_ACCOUNT_ID_1, CF_TOKEN_1, CF_ACCOUNT_ID_2, CF_TOKEN_2,
+    ENABLE_LOCAL_MODEL, MODEL_PATH, MODEL_N_CTX, MODEL_N_THREADS,
 )
 
 logger = logging.getLogger(__name__)
@@ -83,6 +88,10 @@ _COMPLEX_TASK_KEYWORDS = [
     # Tech & science
     "как работает", "принцип действия", "устройство",
     "почему", "зачем", "из-за чего", "в чём разница",
+    # Consultations - MUST use cloud for quality
+    "нумеролог", "матриц", "астролог", "натальн", "джйотиш",
+    "дизайн челов", "human design", "ayurveda", "аюрвед",
+    "психосомат", "доша", "гороскоп", "совместимост",
     # Long messages (>200 chars) are also considered complex
 ]
 
@@ -97,7 +106,7 @@ def _classify_task_complexity(prompt: str, messages: Optional[List[Dict]] = None
     """Classify task complexity to choose reasoning effort level.
 
     Returns:
-        "simple" - fast models sufficient (REASONING_CHAT)
+        "simple" - fast models sufficient (LOCAL or REASONING_CHAT)
         "complex" - better models recommended (REASONING_COMPLEX)
         "cloud_only" - must use cloud (vision, etc.) (REASONING_COMPLEX)
     """
@@ -130,46 +139,70 @@ def _classify_task_complexity(prompt: str, messages: Optional[List[Dict]] = None
 
 
 class AIRouter:
-    """AI Router v62.0 - POLLINATIONS + CLOUDFLARE FAILOVER + OLD API FALLBACK!
+    """AI Router v65.0 - LOCAL-FIRST MULTI-PROVIDER FAILOVER!
 
-    Strategy v62: Pollinations PRIMARY -> Cloudflare FALLBACK -> static fallback.
-    Pollinations includes OLD API fallback internally when keys are depleted.
-    Cloudflare uses @cf/mistralai/mistral-small-3.1-24b-instruct with dual-account.
+    Strategy v65: Local FIRST for chat/comments → Pollinations → Cloudflare → static.
+    Function routes: Pollinations FIRST for quality → Cloudflare → Local as LAST fallback.
 
     PROVIDER CHAIN:
-      Pollinations (KEY1 -> KEY2 -> OLD API free) -> Cloudflare (Account1 -> Account2) -> static fallback
+      Local(Qwen3-4B) -> Pollinations(KEY1->KEY2->OLD API) -> Cloudflare(Acct1->Acct2) -> static
 
     Route for CHAT (route_type="chat", default):
-        Pollinations -> Cloudflare -> static fallback
+        Local -> Pollinations -> Cloudflare -> static fallback
 
     Route for FUNCTION (route_type="function"):
-        Pollinations -> Cloudflare -> static fallback
+        Pollinations -> Cloudflare -> Local(fallback) -> static fallback
 
     Route for COMMENT (route_type="comment"):
-        Pollinations -> Cloudflare -> static fallback
+        Local -> Pollinations -> Cloudflare -> static fallback
 
     Route for VISION tasks (photos):
         Pollinations vision -> Cloudflare vision -> fallback message
 
     Route for BACKGROUND tasks (news, channel):
-        Pollinations -> Cloudflare -> skip (not critical)
+        Pollinations -> Cloudflare -> Local(fallback) -> skip (not critical)
     """
 
     def __init__(self, db=None):
+        self._local: Optional[LlamaCppProvider] = None
         self._pollinations: Optional[PollinationsProvider] = None
         self._cloudflare: Optional[CloudflareProvider] = None
-        self._local = None  # Legacy compat — local model removed, but admin.py references this
         self._db = db
         self._total_requests: int = 0
         self._total_fallbacks: int = 0
+        self._local_requests: int = 0
         self._pollinations_requests: int = 0
         self._cloudflare_requests: int = 0
         self._vision_requests: int = 0
         self._last_cloud_success: float = 0
 
     async def init(self) -> None:
-        """Initialize PollinationsProvider (PRIMARY) + CloudflareProvider (FALLBACK)."""
-        # ── Pollinations - PRIMARY provider ──
+        """Initialize all providers: Local + Pollinations + Cloudflare."""
+        # ── Local Model - PRIMARY for chat/comments ──
+        if ENABLE_LOCAL_MODEL and MODEL_PATH:
+            try:
+                self._local = LlamaCppProvider(
+                    model_path=MODEL_PATH,
+                    timeout=60.0,
+                    model_config={
+                        "n_ctx": MODEL_N_CTX,
+                        "n_threads": MODEL_N_THREADS,
+                    },
+                )
+                # Pre-load model in executor (non-blocking)
+                import asyncio
+                await self._local.init()
+                logger.info(
+                    f"LocalProvider (Qwen3-4B) initialized as PRIMARY for chat/comments "
+                    f"(n_ctx={MODEL_N_CTX}, n_threads={MODEL_N_THREADS})"
+                )
+            except Exception as e:
+                logger.warning(f"LocalProvider init failed: {e}. Continuing without local model.")
+                self._local = None
+        else:
+            logger.info("Local model DISABLED (ENABLE_LOCAL_MODEL=false or MODEL_PATH empty)")
+
+        # ── Pollinations - PRIMARY for functions, SECONDARY for chat/comments ──
         try:
             self._pollinations = PollinationsProvider(
                 api_key=POLLINATIONS_API_KEY,
@@ -179,7 +212,7 @@ class AIRouter:
             await self._pollinations.init()
             model_names = [m[0] for m in CHAT_MODELS]
             logger.info(
-                f"PollinationsProvider v20 initialized as PRIMARY "
+                f"PollinationsProvider v20 initialized "
                 f"({len(CHAT_MODELS)} models + OLD API fallback)"
             )
         except Exception as e:
@@ -205,19 +238,26 @@ class AIRouter:
             self._cloudflare = None
 
         # Log status
+        local_status = "active" if self._local and self._local.is_available() else "unavailable"
         pollinations_status = "active" if self._pollinations and self._pollinations.is_available() else "unavailable"
         cloudflare_status = "active" if self._cloudflare and self._cloudflare.is_available() else "unavailable"
 
         logger.info(
-            f"AI Router v62.0 MULTI-PROVIDER initialized: "
-            f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + OLD API), "
-            f"cloudflare={cloudflare_status} (mistral-small-3.1, dual-account), "
-            f"strategy=Pollinations->Cloudflare->fallback, "
+            f"AI Router v65.0 LOCAL-FIRST initialized: "
+            f"local={local_status} (Qwen3-4B, PRIMARY chat/comments), "
+            f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + OLD API, PRIMARY functions), "
+            f"cloudflare={cloudflare_status} (mistral-small-3.1, FALLBACK), "
+            f"strategy=LOCAL->Pollinations->Cloudflare->fallback, "
             f"max_tokens={POLLINATIONS_MAX_TOKENS}"
         )
 
     async def close(self) -> None:
         """Close providers."""
+        if self._local:
+            try:
+                await self._local.close()
+            except Exception:
+                pass
         if self._pollinations:
             try:
                 await self._pollinations.close()
@@ -231,15 +271,12 @@ class AIRouter:
 
     async def chat(self, prompt: str, system_prompt: str = "",
                    messages: Optional[List[Dict]] = None, **kwargs) -> AIResponse:
-        """Route chat based on route_type - ALL through Pollinations.
+        """Route chat based on route_type - LOCAL-FIRST strategy.
 
         route_type (kwarg):
-            "chat" (default) - Pollinations with complexity-based reasoning effort
-            "function" - Pollinations with REASONING_COMPLEX (best quality for posts)
-            "comment" - Pollinations with REASONING_CHAT (fast models for comments)
-
-        Both routes receive FULL context (web search, partner links, etc.)
-        The system_prompt already contains all enriched context from chat.py.
+            "chat" (default) - Local → Pollinations → Cloudflare → static
+            "function" - Pollinations → Cloudflare → Local(fallback) → static
+            "comment" - Local → Pollinations → Cloudflare → static
         """
         self._total_requests += 1
         priority = kwargs.get("priority", "high")
@@ -252,7 +289,7 @@ class AIRouter:
     async def vision(self, prompt: str, image_data: bytes,
                      image_format: str = "jpeg", system_prompt: str = "",
                      **kwargs) -> AIResponse:
-        """Route vision request: Pollinations vision (multi-model) -> fallback."""
+        """Route vision request: Pollinations vision -> Cloudflare vision -> fallback."""
         self._total_requests += 1
         self._vision_requests += 1
 
@@ -323,27 +360,130 @@ class AIRouter:
             metadata={"role": "vision_fallback"},
         )
 
+    async def _try_local(self, prompt: str, system_prompt: str,
+                         messages: Optional[List[Dict]], **kwargs) -> Optional[AIResponse]:
+        """Try local model. Returns None if unavailable/failed (NOT ProviderError)."""
+        if not self._local or not self._local.is_available():
+            return None
+
+        try:
+            # Local model has smaller context — truncate system prompt
+            local_system = system_prompt
+            if len(local_system) > 800:
+                local_system = local_system[:800].rsplit('.', 1)[0] + '.'
+
+            result = await self._local.generate(
+                prompt,
+                system_prompt=local_system,
+                messages=messages,
+                max_tokens=min(kwargs.get("max_tokens", 512), 512),
+                temperature=kwargs.get("temperature", 0.82),
+            )
+            if result and result.text:
+                cleaned = self.clean_ai_response(result.text)
+                if cleaned:
+                    self._local_requests += 1
+                    return AIResponse(
+                        text=cleaned,
+                        provider=result.provider,
+                        model=result.model,
+                        tokens_used=result.tokens_used,
+                        metadata={**result.metadata, "role": "local_primary"},
+                    )
+        except ProviderError as e:
+            logger.warning(f"Local model error: {e}. Falling back to cloud.")
+        except Exception as e:
+            logger.warning(f"Local model unexpected error: {e}. Falling back to cloud.")
+
+        return None
+
+    async def _try_pollinations(self, prompt: str, system_prompt: str,
+                                messages: Optional[List[Dict]], reasoning: str,
+                                **kwargs) -> Optional[AIResponse]:
+        """Try Pollinations. Returns None if unavailable/failed."""
+        if not self._pollinations or not self._pollinations.is_available():
+            return None
+
+        try:
+            caller_max_tokens = kwargs.get("max_tokens", POLLINATIONS_MAX_TOKENS)
+            result = await self._pollinations.generate(
+                prompt,
+                system_prompt=system_prompt,
+                messages=messages,
+                max_tokens=caller_max_tokens,
+                reasoning_effort=reasoning,
+            )
+            if result and result.text:
+                cleaned = self.clean_ai_response(result.text)
+                if cleaned:
+                    self._pollinations_requests += 1
+                    self._last_cloud_success = time.time()
+                    return AIResponse(
+                        text=cleaned,
+                        provider=result.provider,
+                        model=result.model,
+                        tokens_used=result.tokens_used,
+                        metadata={**result.metadata, "role": "pollinations"},
+                    )
+        except ProviderError as e:
+            logger.warning(f"Pollinations error: {e}. Trying next provider.")
+        except Exception as e:
+            logger.warning(f"Pollinations unexpected error: {e}. Trying next provider.")
+
+        return None
+
+    async def _try_cloudflare(self, prompt: str, system_prompt: str,
+                              messages: Optional[List[Dict]], **kwargs) -> Optional[AIResponse]:
+        """Try Cloudflare. Returns None if unavailable/failed."""
+        if not self._cloudflare or not self._cloudflare.is_available():
+            return None
+
+        try:
+            caller_max_tokens = kwargs.get("max_tokens", POLLINATIONS_MAX_TOKENS)
+            result = await self._cloudflare.generate(
+                prompt,
+                system_prompt=system_prompt,
+                messages=messages,
+                max_tokens=min(caller_max_tokens, 4096),  # CF limit
+                temperature=kwargs.get("temperature", 0.85),
+            )
+            if result and result.text:
+                cleaned = self.clean_ai_response(result.text)
+                if cleaned:
+                    self._cloudflare_requests += 1
+                    self._last_cloud_success = time.time()
+                    return AIResponse(
+                        text=cleaned,
+                        provider=result.provider,
+                        model=result.model,
+                        tokens_used=result.tokens_used,
+                        metadata={**result.metadata, "role": "cloudflare"},
+                    )
+        except ProviderError as e:
+            logger.warning(f"Cloudflare error: {e}.")
+        except Exception as e:
+            logger.warning(f"Cloudflare unexpected error: {e}.")
+
+        return None
+
     async def _route_chat(self, prompt: str, system_prompt: str,
                           messages: Optional[List[Dict]], **kwargs) -> AIResponse:
-        """Chat route: ALL through Pollinations with complexity-based reasoning.
+        """Chat route: LOCAL-FIRST for chat/comments, CLOUD-FIRST for functions.
 
         route_type:
-            "chat" - Pollinations (complexity-based reasoning: simple->none, complex->low)
-            "function" - Pollinations (REASONING_COMPLEX for best quality)
-            "comment" - Pollinations (REASONING_CHAT for fast responses)
+            "chat" - Local → Pollinations → Cloudflare → static (LOCAL-FIRST)
+            "function" - Pollinations → Cloudflare → Local(fallback) → static (CLOUD-FIRST)
+            "comment" - Local → Pollinations → Cloudflare → static (LOCAL-FIRST)
         """
         route_type = kwargs.get("route_type", "chat")
 
         # Determine reasoning effort based on route_type and complexity
-        # v64: Allow caller to override reasoning_effort directly
         caller_reasoning = kwargs.get("reasoning_effort", None)
         if caller_reasoning:
             reasoning = caller_reasoning
         elif route_type == "comment":
-            # Comments -> fast models (REASONING_CHAT)
             reasoning = REASONING_CHAT
         elif route_type == "function":
-            # Functions/posts -> best quality (REASONING_COMPLEX)
             reasoning = REASONING_COMPLEX
         else:
             # Normal chat -> complexity-based routing
@@ -353,150 +493,85 @@ class AIRouter:
             else:
                 reasoning = REASONING_CHAT
 
-        # -- Pollinations - PRIMARY provider --
-        if self._pollinations and self._pollinations.is_available():
-            try:
-                # Use caller's max_tokens if provided, otherwise default
-                caller_max_tokens = kwargs.get("max_tokens", POLLINATIONS_MAX_TOKENS)
-                result = await self._pollinations.generate(
-                    prompt,
-                    system_prompt=system_prompt,
-                    messages=messages,
-                    max_tokens=caller_max_tokens,
-                    reasoning_effort=reasoning,
-                )
-                if result and result.text:
-                    cleaned = self.clean_ai_response(result.text)
-                    if cleaned:
-                        self._pollinations_requests += 1
-                        self._last_cloud_success = time.time()
-                        return AIResponse(
-                            text=cleaned,
-                            provider=result.provider,
-                            model=result.model,
-                            tokens_used=result.tokens_used,
-                            metadata={
-                                **result.metadata,
-                                "role": f"pollinations_{route_type}",
-                                "complexity_reasoning": reasoning,
-                            },
-                        )
-            except ProviderError as e:
-                err_str = str(e)
-                if "429" in err_str:
-                    logger.warning(f"Pollinations rate-limited! Trying Cloudflare fallback.")
-                elif "All providers failed" in err_str or "402" in err_str or "All models" in err_str:
-                    logger.warning(f"Pollinations unavailable! Trying Cloudflare fallback.")
-                else:
-                    logger.warning(f"Pollinations chat error: {e}. Trying Cloudflare fallback.")
-            except Exception as e:
-                logger.warning(f"Pollinations unexpected error: {e}. Trying Cloudflare fallback.")
+        # ── LOCAL-FIRST routes: chat & comment ──
+        if route_type in ("chat", "comment"):
+            # Level 0: Local model (Qwen3-4B)
+            result = await self._try_local(prompt, system_prompt, messages, **kwargs)
+            if result:
+                return result
 
-        # -- Cloudflare Workers AI - FALLBACK provider --
-        if self._cloudflare and self._cloudflare.is_available():
-            try:
-                caller_max_tokens = kwargs.get("max_tokens", POLLINATIONS_MAX_TOKENS)
-                result = await self._cloudflare.generate(
-                    prompt,
-                    system_prompt=system_prompt,
-                    messages=messages,
-                    max_tokens=min(caller_max_tokens, 4096),  # CF limit
-                    temperature=kwargs.get("temperature", 0.85),
-                )
-                if result and result.text:
-                    cleaned = self.clean_ai_response(result.text)
-                    if cleaned:
-                        self._cloudflare_requests += 1
-                        self._last_cloud_success = time.time()
-                        return AIResponse(
-                            text=cleaned,
-                            provider=result.provider,
-                            model=result.model,
-                            tokens_used=result.tokens_used,
-                            metadata={
-                                **result.metadata,
-                                "role": f"cloudflare_{route_type}",
-                                "complexity_reasoning": reasoning,
-                            },
-                        )
-            except ProviderError as e:
-                logger.warning(f"Cloudflare chat error: {e}. Using static fallback.")
-            except Exception as e:
-                logger.warning(f"Cloudflare unexpected error: {e}. Using static fallback.")
+            # Level 1-2: Pollinations (with keys + free API)
+            result = await self._try_pollinations(prompt, system_prompt, messages, reasoning, **kwargs)
+            if result:
+                return result
 
-        # -- Static fallback - bot ALWAYS responds --
-        self._total_fallbacks += 1
-        logger.error("All providers unavailable! Using static fallback.")
-        return AIResponse(
-            text=self.get_fallback_response(),
-            provider="fallback",
-            model="none",
-            tokens_used=0,
-        )
+            # Level 3: Cloudflare
+            result = await self._try_cloudflare(prompt, system_prompt, messages, **kwargs)
+            if result:
+                return result
+
+            # Static fallback - bot ALWAYS responds
+            self._total_fallbacks += 1
+            logger.error("All providers unavailable! Using static fallback.")
+            return AIResponse(
+                text=self.get_fallback_response(),
+                provider="fallback",
+                model="none",
+                tokens_used=0,
+            )
+
+        # ── CLOUD-FIRST routes: function (posts, VIN, diagnostics) ──
+        else:  # route_type == "function"
+            # Level 1-2: Pollinations (best quality for public content)
+            result = await self._try_pollinations(prompt, system_prompt, messages, reasoning, **kwargs)
+            if result:
+                return result
+
+            # Level 3: Cloudflare
+            result = await self._try_cloudflare(prompt, system_prompt, messages, **kwargs)
+            if result:
+                return result
+
+            # Level 0: Local as LAST fallback (quality may be lower but better than nothing)
+            result = await self._try_local(prompt, system_prompt, messages, **kwargs)
+            if result:
+                return result
+
+            # Static fallback - bot ALWAYS responds
+            self._total_fallbacks += 1
+            logger.error("All providers unavailable! Using static fallback.")
+            return AIResponse(
+                text=self.get_fallback_response(),
+                provider="fallback",
+                model="none",
+                tokens_used=0,
+            )
 
     async def _route_background(self, prompt: str, system_prompt: str,
                                 messages: Optional[List[Dict]], **kwargs) -> AIResponse:
-        """Background route: Pollinations -> skip (not critical).
+        """Background route: Pollinations -> Cloudflare -> Local -> skip.
 
         Background tasks (news, channel posts) need quality but are not critical.
-        If Pollinations fails, we skip rather than use a fallback message.
+        Try cloud first for quality, local as last resort, skip if all fail.
         """
-        # -- Pollinations - PRIMARY for background --
-        if self._pollinations and self._pollinations.is_available():
-            try:
-                # Use caller's max_tokens if provided, otherwise default to 300
-                bg_max_tokens = kwargs.get("max_tokens", 300)
-                result = await self._pollinations.generate(
-                    prompt,
-                    system_prompt=system_prompt,
-                    messages=messages,
-                    max_tokens=bg_max_tokens,
-                    reasoning_effort=REASONING_CHAT,
-                )
-                if result and result.text:
-                    cleaned = self.clean_ai_response(result.text)
-                    if cleaned:
-                        self._pollinations_requests += 1
-                        return AIResponse(
-                            text=cleaned,
-                            provider=result.provider,
-                            model=result.model,
-                            tokens_used=result.tokens_used,
-                            metadata={**result.metadata, "role": "bg_pollinations"},
-                        )
-            except ProviderError as e:
-                logger.warning(f"Pollinations bg error: {e}. Trying Cloudflare.")
-            except Exception as e:
-                logger.warning(f"Pollinations bg unexpected: {e}. Trying Cloudflare.")
+        # Level 1-2: Pollinations - PRIMARY for background (quality matters)
+        result = await self._try_pollinations(
+            prompt, system_prompt, messages, REASONING_CHAT, **kwargs
+        )
+        if result:
+            return result
 
-        # -- Cloudflare - FALLBACK for background --
-        if self._cloudflare and self._cloudflare.is_available():
-            try:
-                bg_max_tokens = kwargs.get("max_tokens", 300)
-                result = await self._cloudflare.generate(
-                    prompt,
-                    system_prompt=system_prompt,
-                    messages=messages,
-                    max_tokens=min(bg_max_tokens, 4096),
-                    temperature=0.85,
-                )
-                if result and result.text:
-                    cleaned = self.clean_ai_response(result.text)
-                    if cleaned:
-                        self._cloudflare_requests += 1
-                        return AIResponse(
-                            text=cleaned,
-                            provider=result.provider,
-                            model=result.model,
-                            tokens_used=result.tokens_used,
-                            metadata={**result.metadata, "role": "bg_cloudflare"},
-                        )
-            except ProviderError as e:
-                logger.warning(f"Cloudflare bg error: {e}")
-            except Exception as e:
-                logger.warning(f"Cloudflare bg unexpected: {e}")
+        # Level 3: Cloudflare - FALLBACK for background
+        result = await self._try_cloudflare(prompt, system_prompt, messages, **kwargs)
+        if result:
+            return result
 
-        # -- Background failed - not critical --
+        # Level 0: Local as last resort (lower quality but still usable)
+        result = await self._try_local(prompt, system_prompt, messages, **kwargs)
+        if result:
+            return result
+
+        # Background failed - not critical
         self._total_fallbacks += 1
         logger.warning("Background task failed (all providers unavailable). Skipping.")
         return AIResponse(
@@ -512,18 +587,19 @@ class AIRouter:
         return await transcribe_voice_ogg(ogg_bytes)
 
     async def generate_image(self, prompt: str, size: str = "1024x1024") -> Optional[bytes]:
-        """Generate an image using Pollinations (PRIMARY) then Cloudflare.
+        """Generate an image using Pollinations (PRIMARY).
 
         Returns image bytes or None on failure.
+        Local model cannot generate images.
         """
-        # -- Pollinations image generation --
+        # Pollinations image generation
         if self._pollinations and self._pollinations.is_available():
             try:
                 result = await self._pollinations.generate_image(prompt, size=size)
                 if result:
                     return result
             except Exception as e:
-                logger.warning(f"Pollinations image generation error: {e}. Trying next.")
+                logger.warning(f"Pollinations image generation error: {e}.")
 
         # Cloudflare doesn't support image generation - skip
         return None
@@ -587,10 +663,23 @@ class AIRouter:
 
     def get_status(self) -> Dict[str, Any]:
         status = {}
-        # Pollinations status - PRIMARY provider
+        # Local model status
+        status["llama_cpp"] = {
+            "available": self._local is not None and self._local.is_available(),
+            "role": "PRIMARY (chat + comment) / FALLBACK (function + background)",
+            "model_loaded": self._local._loaded if self._local else False,
+            "model_path": MODEL_PATH if ENABLE_LOCAL_MODEL else "DISABLED",
+        }
+        if self._local:
+            try:
+                status["llama_cpp"].update(self._local.get_stats())
+            except Exception:
+                pass
+
+        # Pollinations status
         status["pollinations"] = {
             "available": self._pollinations is not None and self._pollinations.is_available(),
-            "role": "PRIMARY (chat + function + comment + vision + background)",
+            "role": "PRIMARY (function + vision + background) / SECONDARY (chat + comment)",
             "models": len(CHAT_MODELS),
             "vision": True,
             "old_api_fallback": True,
@@ -600,10 +689,11 @@ class AIRouter:
                 status["pollinations"]["model_stats"] = self._pollinations.get_model_stats()
             except Exception:
                 pass
-        # Cloudflare status - FALLBACK provider
+
+        # Cloudflare status
         status["cloudflare"] = {
             "available": self._cloudflare is not None and self._cloudflare.is_available(),
-            "role": "FALLBACK (chat + function + comment + vision + background)",
+            "role": "FALLBACK (all routes)",
             "model": "@cf/mistralai/mistral-small-3.1-24b-instruct",
             "vision": True,
             "dual_account": True,
@@ -613,12 +703,14 @@ class AIRouter:
                 status["cloudflare"]["account_stats"] = self._cloudflare.get_account_stats()
             except Exception:
                 pass
+
         status["_stats"] = {
             "total_requests": self._total_requests,
             "total_fallbacks": self._total_fallbacks,
+            "local_requests": self._local_requests,
             "pollinations_requests": self._pollinations_requests,
             "cloudflare_requests": self._cloudflare_requests,
             "vision_requests": self._vision_requests,
-            "strategy": "POLLINATIONS(KEY1+KEY2+OLD_API)->CLOUDFLARE(Account1+Account2)->fallback (chat:complexity-routed, function:COMPLEX, comment:CHAT, background:CHAT)",
+            "strategy": "LOCAL-FIRST: Local(Qwen3-4B)->Pollinations(KEY1+KEY2+OLD_API)->Cloudflare(Acct1+Acct2)->fallback (chat/comments: LOCAL-first, function: CLOUD-first, background: CLOUD-first+LOCAL-fallback)",
         }
         return status

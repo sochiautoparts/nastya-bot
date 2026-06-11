@@ -1,13 +1,15 @@
-name: Nastya Bot — DEEP CONSULTATIONS v64
+name: Nastya Bot — LOCAL-FIRST v65
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v64.0 — CRITICAL FIXES FOR HD CALCULATIONS + AI RESPONSES
+# Nastya Bot v65.0 — LOCAL-FIRST Qwen3-4B + CLOUD FAILOVER
 #
-#   - BUG FIX: HD Type now uses BFS for motor→throat paths (not just direct channels)
-#     This fixes Manifesting Generators being incorrectly typed as Generators
-#   - BUG FIX: max_tokens for consultations increased to 6000 + reasoning disabled
-#     This fixes AI responses being empty due to reasoning_tokens consuming all output
-#   - BUG FIX: Router now passes through reasoning_effort from caller
+#   - LOCAL MODEL: Qwen3-4B Q4_K_M (~2.5GB GGUF, CPU inference)
+#   - LOCAL-FIRST for chat/comments (saves cloud balance!)
+#   - CLOUD-FIRST for function routes (posts, VIN, consultations)
+#   - 5-LEVEL FAILOVER: Local -> Pollinations(key) -> Pollinations(free) -> Cloudflare -> Static
+#   - Model caching via actions/cache@v4
+#   - HF_TOKEN for authenticated HuggingFace download (gated model)
+#   - libopenblas-dev for fast CPU inference via llama-cpp-python
 #   - Pollinations.ai (44+ models, weighted round-robin) — ALL routes
 #   - DUAL API KEY FAILOVER: KEY1 → KEY2 → static fallback
 #   - pyswisseph for accurate planetary positions
@@ -89,6 +91,11 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
+          # Install system dependencies for llama-cpp-python (OpenBLAS for fast CPU inference)
+          sudo apt-get update -qq && sudo apt-get install -y -qq libopenblas-dev
+          # Install llama-cpp-python with CPU optimizations (OpenBLAS for fast inference)
+          CMAKE_ARGS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS" pip install llama-cpp-python>=0.3.0 --no-cache-dir
+          # Install remaining dependencies
           pip install -r requirements.txt
 
       - name: Clean Python cache
@@ -98,7 +105,7 @@ jobs:
           echo "Python cache cleaned"
 
       - name: Create data directory
-        run: mkdir -p data
+        run: mkdir -p data models
 
       - name: Download Admitad partner data
         run: |
@@ -110,9 +117,74 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v64
+          key: nastya-db-v65
           restore-keys: |
             nastya-db-
+
+      - name: Cache local model
+        uses: actions/cache@v4
+        with:
+          path: models/Qwen3-4B-Q4_K_M.gguf
+          key: qwen3-4b-q4km-nastya-v1
+          restore-keys: |
+            qwen3-4b-q4km-
+
+      - name: Download local model (if not cached)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          mkdir -p models
+          if [ -f "models/Qwen3-4B-Q4_K_M.gguf" ]; then
+            SIZE=$(stat -c%s "models/Qwen3-4B-Q4_K_M.gguf" 2>/dev/null || echo 0)
+            SIZE_MB=$((SIZE / 1048576))
+            echo "Model file found in cache: ${SIZE_MB} MB"
+            if [ "$SIZE_MB" -lt 100 ]; then
+              echo "Cached file too small, removing..."
+              rm -f models/Qwen3-4B-Q4_K_M.gguf
+            fi
+          fi
+
+          if [ ! -f "models/Qwen3-4B-Q4_K_M.gguf" ]; then
+            echo "Downloading Qwen3-4B Q4_K_M (~2.3GB)..."
+            if [ -n "$HF_TOKEN" ]; then
+              echo "Using HF_TOKEN for authenticated download"
+              pip install -q huggingface_hub
+              huggingface-cli download Qwen/Qwen3-4B-GGUF Qwen3-4B-Q4_K_M.gguf --local-dir models --token "$HF_TOKEN" || {
+                echo "HF hub download failed, trying direct URL..."
+                curl -L --retry 3 --max-time 600 \
+                  -H "Authorization: Bearer $HF_TOKEN" \
+                  -o models/Qwen3-4B-Q4_K_M.gguf \
+                  "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf" || {
+                  echo "Authenticated download failed, trying unauthenticated..."
+                  curl -L --retry 3 --max-time 600 \
+                    -o models/Qwen3-4B-Q4_K_M.gguf \
+                    "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf" || true
+                }
+              }
+            else
+              echo "No HF_TOKEN set, trying unauthenticated download..."
+              curl -L --retry 3 --max-time 600 \
+                -o models/Qwen3-4B-Q4_K_M.gguf \
+                "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf" || true
+            fi
+          fi
+
+          # Verify model file
+          if [ -f "models/Qwen3-4B-Q4_K_M.gguf" ]; then
+            SIZE=$(stat -c%s "models/Qwen3-4B-Q4_K_M.gguf" 2>/dev/null || echo 0)
+            SIZE_MB=$((SIZE / 1048576))
+            echo "Model file: ${SIZE_MB} MB"
+            if [ "$SIZE_MB" -lt 100 ]; then
+              echo "ERROR: Model file too small (${SIZE_MB} MB), likely corrupted!"
+              rm -f models/Qwen3-4B-Q4_K_M.gguf
+              echo "ENABLE_LOCAL_MODEL=false" >> $GITHUB_ENV
+            else
+              echo "Model downloaded successfully!"
+            fi
+          else
+            echo "WARNING: Model download failed, running in cloud-only mode"
+            echo "ENABLE_LOCAL_MODEL=false" >> $GITHUB_ENV
+          fi
 
       - name: Ensure .gitignore allows database
         run: |
@@ -135,8 +207,15 @@ jobs:
           CF_TOKEN_1: ${{ secrets.CF_TOKEN_1 }}
           CF_ACCOUNT_ID_2: ${{ secrets.CF_ACCOUNT_ID_2 }}
           CF_TOKEN_2: ${{ secrets.CF_TOKEN_2 }}
-          # Local model — DISABLED (Pollinations-only, restorable)
-          ENABLE_LOCAL_MODEL: "false"
+          # Local model — ENABLED (Qwen3-4B Q4_K_M, ~2.5GB)
+          ENABLE_LOCAL_MODEL: ${{ env.ENABLE_LOCAL_MODEL || 'true' }}
+          MODEL_PATH: "models/Qwen3-4B-Q4_K_M.gguf"
+          MODEL_N_CTX: "4096"
+          MODEL_N_THREADS: "4"
+          MODEL_MAX_TOKENS: "512"
+          MODEL_AUTO_DOWNLOAD: "true"
+          MODEL_DOWNLOAD_URL: "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf"
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           GH_PAT: ${{ secrets.GH_PAT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
@@ -146,12 +225,11 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v64.0 CRITICAL FIXES ==="
-          echo "FIX: HD Type BFS for motor→throat paths (MG vs Generator)"
-          echo "FIX: max_tokens=6000 + reasoning disabled for consultations"
-          echo "FIX: Router reasoning_effort passthrough from caller"
-          echo "ALL ROUTES: Pollinations.ai (44+ models, dual-key failover)"
-          echo "MAX_TOKENS: 6000 for deep professional consultations"
+          echo "=== Starting Nastya Bot v65.0 LOCAL-FIRST ==="
+          echo "LOCAL MODEL: Qwen3-4B Q4_K_M (PRIMARY for chat/comments)"
+          echo "CLOUD: Pollinations (44+ models, dual-key) + Cloudflare (mistral-small-3.1)"
+          echo "STRATEGY: LOCAL-first (chat/comments) / CLOUD-first (functions)"
+          echo "FAILOVER: Local -> Pollinations(key) -> Pollinations(free) -> Cloudflare -> Static"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -192,7 +270,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v64-${{ github.run_id }}
+          key: nastya-db-v65-${{ github.run_id }}
 
       - name: Save database to git
         if: always()

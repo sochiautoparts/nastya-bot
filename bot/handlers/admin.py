@@ -67,8 +67,10 @@ async def cmd_providers(message: Message, db=None, ai_router=None) -> None:
 
     stats = status.get("_stats", {})
     lines.append(f"\n📊 Запросов: {stats.get('total_requests', 0)}")
+    lines.append(f"🏠 Локальных: {stats.get('local_requests', 0)}")
+    lines.append(f"☁️ Pollinations: {stats.get('pollinations_requests', 0)}")
+    lines.append(f"🔥 Cloudflare: {stats.get('cloudflare_requests', 0)}")
     lines.append(f"🔄 Фоллбэков: {stats.get('total_fallbacks', 0)}")
-    lines.append(f"💾 Кеш-хитов: {stats.get('cache_hits', 0)}")
 
     await message.answer("\n".join(lines))
 

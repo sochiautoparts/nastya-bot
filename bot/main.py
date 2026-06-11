@@ -537,7 +537,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 56.0 Starting (BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!) ===")
+    logger.info("=== Nastya Bot 65.0 LOCAL-FIRST Starting (Qwen3-4B + CLOUD FAILOVER!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() - no need to do it here again
@@ -600,7 +600,12 @@ async def on_startup(**kwargs) -> None:
                 except Exception:
                     pass
 
-    logger.info("=== Nastya Bot 56.0 Ready (BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!) ===")
+    local_status = "LOADED" if ENABLE_LOCAL_MODEL and ai_router and ai_router._local and ai_router._local.is_available() else "OFF"
+    logger.info(
+        f"=== Nastya Bot 65.0 LOCAL-FIRST Ready! "
+        f"Local(Qwen3-4B)={local_status}, "
+        f"Pollinations=ACTIVE, Cloudflare=FALLBACK ==="
+    )
 
 
 async def on_shutdown(**kwargs) -> None:

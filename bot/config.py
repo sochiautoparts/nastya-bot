@@ -79,19 +79,26 @@ CF_TOKEN_2: str = _env("CF_TOKEN_2", "")
 CF_DAILY_LIMIT: int = _env_int("CF_DAILY_LIMIT", 10000)  # 10k req/day per token
 
 # ── Local Model Toggle ──────────────────────────────────────
-# Set ENABLE_LOCAL_MODEL=true to load Qwen3-4B as local fallback
-# Default: disabled (cloud-only mode - faster startup, less RAM)
-ENABLE_LOCAL_MODEL: bool = _env("ENABLE_LOCAL_MODEL", "false").lower() in ("true", "1", "yes")
+# Set ENABLE_LOCAL_MODEL=true to load Qwen3-4B as LOCAL-FIRST for chat/comments
+# v65: ENABLED by default — local model saves cloud balance!
+ENABLE_LOCAL_MODEL: bool = _env("ENABLE_LOCAL_MODEL", "true").lower() in ("true", "1", "yes")
 
-# ── LlamaCpp Model - LOCAL FALLBACK (disabled by default!) ────
-# Qwen3-4B-Instruct - only when ALL Pollinations models are unavailable
-# Only loaded when ENABLE_LOCAL_MODEL=true
-MODEL_PATH: str = _env("MODEL_PATH", "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf") if ENABLE_LOCAL_MODEL else ""
+# ── LlamaCpp Model - LOCAL-FIRST Qwen3-4B ────
+# Qwen3-4B-Instruct Q4_K_M — PRIMARY for chat/comments, fallback for functions
+# Model auto-downloads from HuggingFace with HF_TOKEN
+# Correct filename: Qwen3-4B-Q4_K_M.gguf (NOT Qwen3-4B-Instruct-2507-Q4_K_M.gguf)
+MODEL_PATH: str = _env("MODEL_PATH", "models/Qwen3-4B-Q4_K_M.gguf") if ENABLE_LOCAL_MODEL else ""
 
-MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 4096)  # v58: Was 2048 - too small!
-MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 4)
-MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 384)  # v58: Was 256 - allows fuller responses
-MODEL_HISTORY_LIMIT: int = _env_int("MODEL_HISTORY_LIMIT", 6)  # v58: Was 10 - 6 with 4096 ctx
+MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 4096)  # Context window — 4096 for Qwen3-4B Q4
+MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 4)  # CPU threads — GitHub Actions has 2-4 cores
+MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 512)  # v65: Was 384 - fuller responses
+MODEL_HISTORY_LIMIT: int = _env_int("MODEL_HISTORY_LIMIT", 6)  # v65: 6 history turns with 4096 ctx
+
+# HuggingFace model download URL (for auto-download + GitHub Actions)
+MODEL_DOWNLOAD_URL: str = _env("MODEL_DOWNLOAD_URL",
+    "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf")
+# Auto-download model if file not found (enabled by default for GitHub Actions)
+MODEL_AUTO_DOWNLOAD: bool = _env("MODEL_AUTO_DOWNLOAD", "true").lower() in ("true", "1", "yes")
 
 OWNER_ID: int = _env_int("OWNER_ID", 0)
 ADMIN_IDS: List[int] = list(set(
