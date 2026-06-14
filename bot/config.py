@@ -1,4 +1,4 @@
-"""Nastya Bot v68.0 - PERFORMANCE TUNING + /no_think POSTING + DYNAMIC TIMEOUT!
+"""Nastya Bot v69.0 - RUADAPT QWEN3-4B-INSTRUCT + RUSSIAN TOKENIZER!
 
 v63.0: DEEP PROFESSIONAL CONSULTATIONS ENGINE!
 - Persona: Настя - москвичка, 23 года, блогер, ведёт Telegram канал @chasnastya
@@ -79,8 +79,9 @@ CF_TOKEN_2: str = _env("CF_TOKEN_2", "")
 CF_DAILY_LIMIT: int = _env_int("CF_DAILY_LIMIT", 10000)  # 10k req/day per token
 
 # ── Local Model Toggle ──────────────────────────────────────
-# Set ENABLE_LOCAL_MODEL=true to load Qwen3-4B as LOCAL-FIRST for chat/comments
-# v65: ENABLED by default — local model saves cloud balance!
+# Set ENABLE_LOCAL_MODEL=true to load RuadaptQwen3-4B-Instruct as LOCAL-FIRST
+# v69: RuadaptQwen3 = Russian tokenizer + Instruct (no <think> tags) + Russian fine-tuning
+# ENABLED by default — local model saves cloud balance!
 ENABLE_LOCAL_MODEL: bool = _env("ENABLE_LOCAL_MODEL", "true").lower() in ("true", "1", "yes")
 
 # ── LOCAL-ONLY POSTING — Save cloud API limits! ──────────────
@@ -91,20 +92,22 @@ ENABLE_LOCAL_MODEL: bool = _env("ENABLE_LOCAL_MODEL", "true").lower() in ("true"
 LOCAL_ONLY_POSTING: bool = _env("LOCAL_ONLY_POSTING", "true").lower() in ("true", "1", "yes")
 LOCAL_POST_MAX_TOKENS: int = _env_int("LOCAL_POST_MAX_TOKENS", 512)  # v68: Was 2048 — posts are 3-5 sentences (truncated to 600 chars), 512 tokens is plenty
 
-# ── LlamaCpp Model - LOCAL-FIRST Qwen3-4B ────
-# Qwen3-4B-Instruct Q4_K_M — PRIMARY for chat/comments, fallback for functions
+# ── LlamaCpp Model - LOCAL-FIRST RuadaptQwen3-4B-Instruct ────
+# RuadaptQwen3-4B-Instruct Q4_K_M — Russian tokenizer + Instruct (no <think> tags)!
+# PRIMARY for chat/comments, fallback for functions
 # Model auto-downloads from HuggingFace with HF_TOKEN
-# Correct filename: Qwen3-4B-Q4_K_M.gguf (NOT Qwen3-4B-Instruct-2507-Q4_K_M.gguf)
-MODEL_PATH: str = _env("MODEL_PATH", "models/Qwen3-4B-Q4_K_M.gguf") if ENABLE_LOCAL_MODEL else ""
+# v69: Replaced Qwen3-4B-Q4_K_M with RuadaptQwen3-4B-Instruct-Q4_K_M
+MODEL_PATH: str = _env("MODEL_PATH", "models/RuadaptQwen3-4B-Instruct-Q4_K_M.gguf") if ENABLE_LOCAL_MODEL else ""
 
-MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 4096)  # Context window — 4096 for Qwen3-4B Q4
+MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 4096)  # Context window — 4096 for RuadaptQwen3-4B Q4
 MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 2)  # CPU threads — GitHub Actions 2 vCPU (4 = contention)
-MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 1024)  # v68: Was 2048 — chat responses 40-150 words, 1024 is enough for thinking + response
+MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 1024)  # v69: Instruct answers directly (no thinking), 1024 is plenty
 MODEL_HISTORY_LIMIT: int = _env_int("MODEL_HISTORY_LIMIT", 6)  # v65: 6 history turns with 4096 ctx
 
 # HuggingFace model download URL (for auto-download + GitHub Actions)
+# v69: RuadaptQwen3-4B-Instruct — Russian tokenizer + Instruct (no <think>) + Russian fine-tuning
 MODEL_DOWNLOAD_URL: str = _env("MODEL_DOWNLOAD_URL",
-    "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf")
+    "https://huggingface.co/RefalMachine/RuadaptQwen3-4B-Instruct-GGUF/resolve/main/Q4_K_M.gguf")
 # Auto-download model if file not found (enabled by default for GitHub Actions)
 MODEL_AUTO_DOWNLOAD: bool = _env("MODEL_AUTO_DOWNLOAD", "true").lower() in ("true", "1", "yes")
 

@@ -18,7 +18,7 @@ STABILITY RULES:
 INTELLIGENCE FEATURES v12.0 (MULTI-MODEL POLLINATIONS + HUMAN-LIKE + URL):
   - Pollinations.ai MULTI-MODEL - 8 VERIFIED models with load balancing!
   - Automatic failover: if one model fails, next one picks up
-  - Qwen3-4B local GGUF as LAST FALLBACK
+  - RuadaptQwen3-4B-Instruct local GGUF as LAST FALLBACK
   - REAL PHOTO UNDERSTANDING - Настя ВИДИТ что на фото!
   - PHOTO SEARCH - определение объектов на фото по запросу
   - URL UNDERSTANDING - Настя читает ссылки и понимает контекст!

@@ -342,7 +342,7 @@ async def generate_ai_commentary(title: str, summary: str = "", category: str = 
                 if local_result and local_result.text:
                     comment = local_result.text.strip()
                     comment = re.sub(r'<[^>]+>', '', comment)
-                    comment = re.sub(r'^/no_think\s*', '', comment)
+                    # v69: Removed /no_think stripping — Ruadapt Instruct doesn't use it
                     for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
                         if comment.startswith(prefix):
                             comment = comment[len(prefix):].strip()
@@ -400,7 +400,6 @@ async def generate_ai_commentary(title: str, summary: str = "", category: str = 
                 comment = result.text.strip()
                 # Clean artifacts
                 comment = re.sub(r'<[^>]+>', '', comment)
-                comment = re.sub(r'^/no_think\s*', '', comment)
                 for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
                     if comment.startswith(prefix):
                         comment = comment[len(prefix):].strip()

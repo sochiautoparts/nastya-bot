@@ -1,7 +1,10 @@
-"""AI Router v68.0 - LOCAL-ONLY POSTING + PERFORMANCE TUNING + /no_think POSTING!
+"""AI Router v69.0 - RUADAPT QWEN3-4B-INSTRUCT + LOCAL-ONLY POSTING!
 
-АРХИТЕКТУРА v67 - LOCAL-ONLY POSTING — канал постит ТОЛЬКО через локальную модель!
-Облако экономится для чатов, консультаций, vision — где качество важнее.
+АРХИТЕКТУРА v69 - RuadaptQwen3-4B-Instruct:
+  - Русский токенизатор: 48К дополнительных русских токенов → до 2x быстрее генерация
+  - Instruct-версия: отвечает НАПРЯМУЮ без <think> тегов!
+  - Дообучение на русском корпусе: лучше понимает и генерирует русский
+  - LEP: сохраняет качество при смене токенизатора
 
 LOCAL_ONLY_POSTING=true (default):
   - Канал: Local model directly → cloud as emergency fallback
@@ -16,7 +19,7 @@ LOCAL_ONLY_POSTING=false (legacy):
   - Всё остальное как выше
 
 FAILOVER CHAIN (6 уровней до статического фоллбэка):
-  Level 0: Local Model (Qwen3-4B GGUF, CPU) — CHAT & COMMENT маршруты
+  Level 0: Local Model (RuadaptQwen3-4B-Instruct GGUF, CPU) — CHAT & COMMENT маршруты
   Level 1: Pollinations (API key) → KEY1 → KEY2
   Level 2: Pollinations FREE API (text.pollinations.ai, без авторизации)
   Level 3: Cloudflare Workers AI (@cf/mistralai/mistral-small-3.1-24b-instruct)
@@ -156,10 +159,10 @@ def _classify_task_complexity(prompt: str, messages: Optional[List[Dict]] = None
 
 
 class AIRouter:
-    """AI Router v68.0 - LOCAL-ONLY POSTING + PERFORMANCE TUNING + /no_think POSTING!
+    """AI Router v69.0 - RUADAPT QWEN3-4B-INSTRUCT + LOCAL-ONLY POSTING!
 
-    Strategy v67: LOCAL-ONLY POSTING for channel — local model directly for posts,
-    saving cloud APIs for user interactions (chat, consultations, vision).
+    Strategy v69: RuadaptQwen3-4B-Instruct — answers DIRECTLY (no <think> tags!),
+    Russian tokenizer for faster Russian generation.
 
     LOCAL_ONLY_POSTING=true (default):
       Channel posts: Local model directly → cloud as emergency fallback
@@ -640,7 +643,7 @@ class AIRouter:
             return AIResponse(
                 text="",
                 provider="none",
-                model="local-qwen3-4b",
+                model="local-ruadapt-qwen3-4b",
                 metadata={"error": "Local model not configured"},
             )
 
@@ -652,14 +655,14 @@ class AIRouter:
                     return AIResponse(
                         text="",
                         provider="none",
-                        model="local-qwen3-4b",
+                        model="local-ruadapt-qwen3-4b",
                         metadata={"error": "Local model not available after re-init"},
                     )
             except Exception as e:
                 return AIResponse(
                     text="",
                     provider="none",
-                    model="local-qwen3-4b",
+                    model="local-ruadapt-qwen3-4b",
                     metadata={"error": f"Local model init error: {e}"},
                 )
 
@@ -688,45 +691,25 @@ class AIRouter:
             f"Пиши компактно — 3-5 предложений. Без заголовков и буллетов."
         )
 
-        # v68: Try /no_think first for faster posting (skip thinking tokens = 2-3x faster!)
-        # If model returns empty with /no_think (Q4_K_M sometimes ignores it),
-        # retry without /no_think for guaranteed response
-        user_msg_no_think = f"/no_think\n{user_msg}"
+        # v69: RuadaptQwen3-4B-Instruct — answers DIRECTLY, no /no_think needed!
+        # Instruct version has no <think> tags — just direct responses.
+        # Russian tokenizer makes generation ~2x faster for Russian text.
         result = None
-
-        # Attempt 1: /no_think (faster — skips thinking, ~20-30s instead of 50-70s)
         try:
             result = await self._local.generate(
-                user_msg_no_think,
+                user_msg,
                 system_prompt=local_system,
-                max_tokens=LOCAL_POST_MAX_TOKENS,  # v68: 512 — posts are 3-5 sentences, truncated to 600 chars
+                max_tokens=LOCAL_POST_MAX_TOKENS,  # 512 — posts are 3-5 sentences
                 temperature=0.85,
             )
         except Exception as e:
-            logger.warning(f"LOCAL-ONLY /no_think attempt failed: {e}")
-            result = None
-
-        # Attempt 2: If /no_think returned empty, retry without it
-        if not result or not result.text:
-            if not result:
-                logger.info("LOCAL-ONLY: /no_think returned no result, retrying without it")
-            else:
-                logger.info("LOCAL-ONLY: /no_think returned empty text, retrying without it")
-            try:
-                result = await self._local.generate(
-                    user_msg,
-                    system_prompt=local_system,
-                    max_tokens=LOCAL_POST_MAX_TOKENS,
-                    temperature=0.85,
-                )
-            except Exception as e:
-                logger.error(f"LOCAL-ONLY post generation error (no /no_think): {e}")
-                return AIResponse(
-                    text="",
-                    provider="local",
-                    model="local-qwen3-4b",
-                    metadata={"error": f"Local-only error: {e}"},
-                )
+            logger.error(f"LOCAL-ONLY post generation error: {e}")
+            return AIResponse(
+                text="",
+                provider="local",
+                model="local-ruadapt-qwen3-4b",
+                metadata={"error": f"Local-only error: {e}"},
+            )
 
         if result and result.text:
             cleaned = self.clean_ai_response(result.text)
@@ -739,7 +722,7 @@ class AIRouter:
                 return AIResponse(
                     text=cleaned,
                     provider="local-only",
-                    model=result.model or "local-qwen3-4b",
+                    model=result.model or "local-ruadapt-qwen3-4b",
                     tokens_used=result.tokens_used,
                     metadata={**result.metadata, "role": "local_only_post"},
                 )
@@ -747,7 +730,7 @@ class AIRouter:
         return AIResponse(
             text="",
             provider="local",
-            model="local-qwen3-4b",
+            model="local-ruadapt-qwen3-4b",
             metadata={"error": "Empty response from local model"},
         )
 
@@ -789,15 +772,14 @@ class AIRouter:
         for pattern in sse_patterns:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-        # Strip think tags (Qwen3, reasoning models)
+        # Strip think tags (v69: Ruadapt Instruct doesn't generate these, but safety net for cloud models)
         text = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<thinking\b[^>]*>.*?</thinking\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'</?think[^>]*>', '', text, flags=re.IGNORECASE)
         text = re.sub(r'</?thinking[^>]*>', '', text, flags=re.IGNORECASE)
         text = re.sub(r'<think\b[^>]*$', '', text, flags=re.IGNORECASE)
 
-        # Strip /no_think prefix
-        text = re.sub(r'^/no_think\s*', '', text)
+        # v69: Removed /no_think stripping — Ruadapt Instruct doesn't use it
 
         # Strip AI disclaimers
         text = re.sub(r'(?:As an AI|Как AI|Как искусственный интеллект)[^.]*\.', '', text, flags=re.IGNORECASE)

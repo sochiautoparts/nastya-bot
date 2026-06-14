@@ -1,17 +1,21 @@
-name: Nastya Bot — LOCAL-ONLY POSTING v68 + Local-First + Performance Tuning
+name: Nastya Bot — RUADAPT QWEN3-4B-INSTRUCT v69 + Local-First + Performance Tuning
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v68.0 — PERFORMANCE TUNING + /no_think POSTING + DYNAMIC TIMEOUT
+# Nastya Bot v69.0 — RUADAPT QWEN3-4B-INSTRUCT + RUSSIAN TOKENIZER
 #
 #   - LOCAL_ONLY_POSTING=true — channel posts via local model ONLY!
-#   - LOCAL MODEL: Qwen3-4B Q4_K_M (~2.5GB GGUF, CPU inference)
+#   - LOCAL MODEL: RuadaptQwen3-4B-Instruct Q4_K_M (~2.5GB GGUF, CPU inference)
+#     * Russian tokenizer: 48K extra Russian tokens → up to 2x faster Russian generation
+#     * Instruct version: answers DIRECTLY without <think> tags!
+#     * Russian fine-tuning: better understanding and generation of Russian text
+#     * LEP (Learned Embedding Propagation): quality preserved with new tokenizer
 #   - LOCAL-FIRST for chat/comments (saves cloud balance!)
 #   - LOCAL-ONLY for channel posting (saves cloud API limits!)
 #   - CLOUD-FIRST for function routes (consultations, VIN, vision)
 #   - Cloud as EMERGENCY fallback when local model fails for posting
 #   - 6-LEVEL FAILOVER: Local -> Pollinations(key) -> Pollinations(free) -> Cloudflare -> Local(fallback) -> Local-Only -> Static
 #   - Model caching via actions/cache@v4
-#   - HF_TOKEN for authenticated HuggingFace download (gated model)
+#   - HF_TOKEN for authenticated HuggingFace download
 #   - libopenblas-dev for fast CPU inference via llama-cpp-python
 #   - Pollinations.ai (44+ models, weighted round-robin) — ALL routes
 #   - DUAL API KEY FAILOVER: KEY1 → KEY2 → static fallback
@@ -121,69 +125,84 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v68
+          key: nastya-db-v69
           restore-keys: |
             nastya-db-
 
+      # v69: RuadaptQwen3-4B-Instruct Q4_K_M — Russian tokenizer + Instruct (no <think>)
       - name: Cache local model
         uses: actions/cache@v4
         with:
-          path: models/Qwen3-4B-Q4_K_M.gguf
-          key: qwen3-4b-q4km-nastya-v1
+          path: models/RuadaptQwen3-4B-Instruct-Q4_K_M.gguf
+          key: ruadapt-qwen3-4b-instruct-q4km-v1
           restore-keys: |
-            qwen3-4b-q4km-
+            ruadapt-qwen3-4b-
 
+      # v69: Download RuadaptQwen3-4B-Instruct from RefalMachine HuggingFace
       - name: Download local model (if not cached)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           mkdir -p models
-          if [ -f "models/Qwen3-4B-Q4_K_M.gguf" ]; then
-            SIZE=$(stat -c%s "models/Qwen3-4B-Q4_K_M.gguf" 2>/dev/null || echo 0)
+          MODEL_FILE="RuadaptQwen3-4B-Instruct-Q4_K_M.gguf"
+          if [ -f "models/$MODEL_FILE" ]; then
+            SIZE=$(stat -c%s "models/$MODEL_FILE" 2>/dev/null || echo 0)
             SIZE_MB=$((SIZE / 1048576))
             echo "Model file found in cache: ${SIZE_MB} MB"
             if [ "$SIZE_MB" -lt 100 ]; then
               echo "Cached file too small, removing..."
-              rm -f models/Qwen3-4B-Q4_K_M.gguf
+              rm -f "models/$MODEL_FILE"
             fi
           fi
 
-          if [ ! -f "models/Qwen3-4B-Q4_K_M.gguf" ]; then
-            echo "Downloading Qwen3-4B Q4_K_M (~2.3GB)..."
+          if [ ! -f "models/$MODEL_FILE" ]; then
+            echo "Downloading RuadaptQwen3-4B-Instruct Q4_K_M (~2.5GB)..."
+            echo "  Russian tokenizer: 48K extra Russian tokens"
+            echo "  Instruct version: answers DIRECTLY (no <think> tags)"
+            echo "  Russian fine-tuning + LEP"
             if [ -n "$HF_TOKEN" ]; then
               echo "Using HF_TOKEN for authenticated download"
               pip install -q huggingface_hub
-              huggingface-cli download Qwen/Qwen3-4B-GGUF Qwen3-4B-Q4_K_M.gguf --local-dir models --token "$HF_TOKEN" || {
-                echo "HF hub download failed, trying direct URL..."
-                curl -L --retry 3 --max-time 600 \
-                  -H "Authorization: Bearer $HF_TOKEN" \
-                  -o models/Qwen3-4B-Q4_K_M.gguf \
-                  "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf" || {
-                  echo "Authenticated download failed, trying unauthenticated..."
+              huggingface-cli download RefalMachine/RuadaptQwen3-4B-Instruct-GGUF Q4_K_M.gguf --local-dir models --token "$HF_TOKEN" || {
+                echo "HF hub download failed, renaming and trying direct URL..."
+                # huggingface-cli saves as Q4_K_M.gguf, but we want descriptive name
+                if [ -f "models/Q4_K_M.gguf" ]; then
+                  mv "models/Q4_K_M.gguf" "models/$MODEL_FILE"
+                else
                   curl -L --retry 3 --max-time 600 \
-                    -o models/Qwen3-4B-Q4_K_M.gguf \
-                    "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf" || true
-                }
+                    -H "Authorization: Bearer $HF_TOKEN" \
+                    -o "models/$MODEL_FILE" \
+                    "https://huggingface.co/RefalMachine/RuadaptQwen3-4B-Instruct-GGUF/resolve/main/Q4_K_M.gguf" || {
+                    echo "Authenticated download failed, trying unauthenticated..."
+                    curl -L --retry 3 --max-time 600 \
+                      -o "models/$MODEL_FILE" \
+                      "https://huggingface.co/RefalMachine/RuadaptQwen3-4B-Instruct-GGUF/resolve/main/Q4_K_M.gguf" || true
+                  }
+                fi
               }
+              # huggingface-cli saves as Q4_K_M.gguf, rename to descriptive name
+              if [ -f "models/Q4_K_M.gguf" ] && [ ! -f "models/$MODEL_FILE" ]; then
+                mv "models/Q4_K_M.gguf" "models/$MODEL_FILE"
+              fi
             else
               echo "No HF_TOKEN set, trying unauthenticated download..."
               curl -L --retry 3 --max-time 600 \
-                -o models/Qwen3-4B-Q4_K_M.gguf \
-                "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf" || true
+                -o "models/$MODEL_FILE" \
+                "https://huggingface.co/RefalMachine/RuadaptQwen3-4B-Instruct-GGUF/resolve/main/Q4_K_M.gguf" || true
             fi
           fi
 
           # Verify model file
-          if [ -f "models/Qwen3-4B-Q4_K_M.gguf" ]; then
-            SIZE=$(stat -c%s "models/Qwen3-4B-Q4_K_M.gguf" 2>/dev/null || echo 0)
+          if [ -f "models/$MODEL_FILE" ]; then
+            SIZE=$(stat -c%s "models/$MODEL_FILE" 2>/dev/null || echo 0)
             SIZE_MB=$((SIZE / 1048576))
             echo "Model file: ${SIZE_MB} MB"
             if [ "$SIZE_MB" -lt 100 ]; then
               echo "ERROR: Model file too small (${SIZE_MB} MB), likely corrupted!"
-              rm -f models/Qwen3-4B-Q4_K_M.gguf
+              rm -f "models/$MODEL_FILE"
               echo "ENABLE_LOCAL_MODEL=false" >> $GITHUB_ENV
             else
-              echo "Model downloaded successfully!"
+              echo "RuadaptQwen3-4B-Instruct downloaded successfully!"
             fi
           else
             echo "WARNING: Model download failed, running in cloud-only mode"
@@ -214,17 +233,17 @@ jobs:
           # Cloudflare aliases for voice.py (transcription uses CF_TOKEN_1 → CLOUDFLARE_API_TOKEN)
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_TOKEN_1 }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID_1 }}
-          # Local model — ENABLED (Qwen3-4B Q4_K_M, ~2.5GB)
+          # Local model — ENABLED (RuadaptQwen3-4B-Instruct Q4_K_M, ~2.5GB)
           ENABLE_LOCAL_MODEL: ${{ env.ENABLE_LOCAL_MODEL || 'true' }}
           # LOCAL-ONLY POSTING — channel posts via local model, saves cloud limits!
           LOCAL_ONLY_POSTING: "true"
-          MODEL_PATH: "models/Qwen3-4B-Q4_K_M.gguf"
+          MODEL_PATH: "models/RuadaptQwen3-4B-Instruct-Q4_K_M.gguf"
           MODEL_N_CTX: "4096"
           MODEL_N_THREADS: "2"
           MODEL_MAX_TOKENS: "1024"
           LOCAL_POST_MAX_TOKENS: "512"
           MODEL_AUTO_DOWNLOAD: "true"
-          MODEL_DOWNLOAD_URL: "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf"
+          MODEL_DOWNLOAD_URL: "https://huggingface.co/RefalMachine/RuadaptQwen3-4B-Instruct-GGUF/resolve/main/Q4_K_M.gguf"
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           GH_PAT: ${{ secrets.GH_PAT_TOKEN }}
@@ -235,8 +254,11 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v68.0 PERFORMANCE TUNING + /no_think POSTING ==="
-          echo "LOCAL MODEL: Qwen3-4B Q4_K_M (PRIMARY for posting + chat/comments)"
+          echo "=== Starting Nastya Bot v69.0 RUADAPT QWEN3-4B-INSTRUCT ==="
+          echo "LOCAL MODEL: RuadaptQwen3-4B-Instruct Q4_K_M (PRIMARY for posting + chat/comments)"
+          echo "  Russian tokenizer: 48K extra Russian tokens → up to 2x faster"
+          echo "  Instruct version: answers DIRECTLY (no <think> tags!)"
+          echo "  Russian fine-tuning + LEP"
           echo "LOCAL-ONLY POSTING: ENABLED — channel posts via local model ONLY!"
           echo "CLOUD: Pollinations (44+ models, dual-key) + Cloudflare (mistral-small-3.1)"
           echo "STRATEGY: Local-only (posting) / Local-first (chat/comments) / Cloud-first (functions/vision)"
@@ -281,7 +303,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v68-${{ github.run_id }}
+          key: nastya-db-v69-${{ github.run_id }}
 
       - name: Save database to git
         if: always()

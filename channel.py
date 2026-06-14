@@ -1,4 +1,4 @@
-"""Nastya Channel Manager v68.0 - PERFORMANCE TUNING + /no_think POSTING!
+"""Nastya Channel Manager v69.0 - RUADAPT QWEN3-4B-INSTRUCT!
 
 v15.0 KEY CHANGES:
   - LOCAL_ONLY_POSTING: Channel posts via local model ONLY! Saves cloud limits!
@@ -940,7 +940,6 @@ async def _cloud_generate_post(ai_router, title: str, summary: str, link: str, c
     if result and result.text:
         ai_comment = result.text.strip()
         ai_comment = re.sub(r'<[^>]+>', '', ai_comment)
-        ai_comment = re.sub(r'^/no_think\s*', '', ai_comment)
         for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
             if ai_comment.startswith(prefix):
                 ai_comment = ai_comment[len(prefix):].strip()
@@ -998,7 +997,6 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
                 if local_result and local_result.text:
                     ai_comment = local_result.text.strip()
                     ai_comment = re.sub(r'<[^>]+>', '', ai_comment)
-                    ai_comment = re.sub(r'^/no_think\s*', '', ai_comment)
                     for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
                         if ai_comment.startswith(prefix):
                             ai_comment = ai_comment[len(prefix):].strip()
@@ -1043,7 +1041,6 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
                         if local_result and local_result.text:
                             ai_comment = local_result.text.strip()
                             ai_comment = re.sub(r'<[^>]+>', '', ai_comment)
-                            ai_comment = re.sub(r'^/no_think\s*', '', ai_comment)
                             for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
                                 if ai_comment.startswith(prefix):
                                     ai_comment = ai_comment[len(prefix):].strip()
@@ -1067,7 +1064,6 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
                             ai_comment = local_result.text.strip()
                             import re as _re_loc2
                             ai_comment = _re_loc2.sub(r'<[^>]+>', '', ai_comment)
-                            ai_comment = _re_loc2.sub(r'^/no_think\s*', '', ai_comment)
                             for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
                                 if ai_comment.startswith(prefix):
                                     ai_comment = ai_comment[len(prefix):].strip()

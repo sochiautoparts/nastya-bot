@@ -1,4 +1,4 @@
-"""Nastya Bot v68.0 - PERFORMANCE TUNING + /no_think POSTING + DYNAMIC TIMEOUT!
+"""Nastya Bot v69.0 - RUADAPT QWEN3-4B-INSTRUCT + RUSSIAN TOKENIZER!
 
 Architecture v56.0:
   - PERSONA: Настя - москвичка, 23 года, блогер, владеет BMW M3 2025 серого цвета!
@@ -537,7 +537,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot v67.0 LOCAL-ONLY POSTING + LOCAL-FIRST Starting (Qwen3-4B + CLOUD FAILOVER!) ===")
+    logger.info("=== Nastya Bot v69.0 RUADAPT QWEN3-4B-INSTRUCT + LOCAL-ONLY POSTING Starting ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() - no need to do it here again
@@ -602,8 +602,8 @@ async def on_startup(**kwargs) -> None:
 
     local_status = "LOADED" if ENABLE_LOCAL_MODEL and ai_router and ai_router._local and ai_router._local.is_available() else "OFF"
     logger.info(
-        f"=== Nastya Bot v67.0 LOCAL-ONLY POSTING Ready! "
-        f"Local(Qwen3-4B)={local_status}, "
+        f"=== Nastya Bot v69.0 RUADAPT QWEN3-4B-INSTRUCT Ready! "
+        f"Local(RuadaptQwen3-4B)={local_status}, "
         f"Pollinations=ACTIVE, Cloudflare=FALLBACK ==="
     )
 
