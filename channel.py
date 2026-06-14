@@ -1,15 +1,13 @@
-"""Nastya Channel Manager 14.0 - AI-POWERED NEWS + DATE AWARE + BMW FAN + FILM BUFF!
+"""Nastya Channel Manager 15.0 - LOCAL-ONLY POSTING + AI-POWERED NEWS + DATE AWARE!
 
-v14.0 KEY CHANGES:
-  - DATE AWARENESS: All AI prompts now include current date/time context!
-  - Настя знает какой сейчас год - больше никаких постов с 2025!
-  - BMW M3 (убран model year - это модельный год, не текущий год)
-  - AI-POWERED news commentary - ALWAYS AI, NO templates!
-  - Film recommendation posts in channel!
-  - BMW enthusiasm in auto posts!
+v15.0 KEY CHANGES:
+  - LOCAL_ONLY_POSTING: Channel posts via local model ONLY! Saves cloud limits!
+  - When LOCAL_ONLY_POSTING=true: Local model directly → cloud as emergency fallback
+  - When LOCAL_ONLY_POSTING=false: Cloud first → local as last-resort fallback (legacy)
+  - _cloud_generate_post() extracted for reuse
+  - Date awareness in all AI prompts
+  - BMW enthusiasm in auto posts
   - Nastya comments ACTIVELY in groups she's a member of
-  - EXPANDED categories: food, events, lifestyle, sports, films
-  - More diverse content - not just auto!
 """
 import logging
 import random
@@ -20,7 +18,7 @@ from typing import Dict, List, Optional
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from bot.config import CHANNEL_ID, CHANNEL_USERNAME, BOT_USERNAME, KNOWLEDGE_TOPICS
+from bot.config import CHANNEL_ID, CHANNEL_USERNAME, BOT_USERNAME, KNOWLEDGE_TOPICS, LOCAL_ONLY_POSTING
 from bot.web_search import POLL_TOPICS
 from bot.channel_scanner import is_duplicate_in_channel, get_channel_context_for_prompt
 
@@ -882,11 +880,83 @@ async def post_partner_to_channel_capped(bot: Bot, db, ai_router=None) -> bool:
     return posted
 
 
+async def _cloud_generate_post(ai_router, title: str, summary: str, link: str, category: str) -> Optional[str]:
+    """Generate a channel post using cloud AI providers (Pollinations/Cloudflare).
+
+    Extracted from post_ai_news_to_channel for reuse.
+    Returns cleaned AI comment text, or None on failure.
+    """
+    import datetime
+    from zoneinfo import ZoneInfo
+
+    # Build prompt
+    prompt_parts = [f"Новость: {title}"]
+    if summary:
+        clean_summary = re.sub(r'<[^>]+>', '', summary).strip()[:500]
+        prompt_parts.append(f"Краткое содержание: {clean_summary}")
+    if link:
+        prompt_parts.append(f"Источник: {link}")
+
+    category_context = ""
+    if category == "auto":
+        category_context = "Это автомобильная новость - расскажи подробно и экспертно! Настя разбирается в автомобилях, фанат BMW!"
+
+    # Date context
+    _now = datetime.datetime.now(ZoneInfo("Europe/Moscow"))
+    _days_ru = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+    _months_ru = ["января", "февраля", "марта", "апреля", "мая", "июня",
+                  "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+    _date_context = (
+        f"Сейчас {_days_ru[_now.weekday()]}, {_now.day} {_months_ru[_now.month - 1]} "
+        f"{_now.year} года, время {_now.strftime('%H:%M')} МСК."
+    )
+
+    prompt = "\n".join(prompt_parts)
+    channel_ctx = await get_channel_context_for_prompt(max_items=10)
+
+    result = await ai_router.chat(
+        prompt=prompt,
+        system_prompt=(
+            "Ты Настя - москвичка, 23 года, блогер, ведёшь Telegram канал @chasnastya. "
+            "Ты пишешь пост для своего Telegram канала ОТ СЕБЯ - от первого лица, "
+            "как живой человек, а не как бот или ИИ-помощник. "
+            "Пиши 'я думаю', 'мне кажется', 'я прочитала', 'я нашла'. "
+            f"{category_context}"
+            f"{_date_context} Учитывай текущую дату - не пиши про прошлые годы как про текущие! "
+            f"{channel_ctx}"
+            "Напиши осмысленный, развёрнутый пост об этой новости. "
+            "4-6 предложений, живо и эмоционально, со своим мнением. "
+            "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
+            "Без markdown, без буллетов, без заголовков. "
+            "Не пиши 'Настя' в начале - говори от первого лица. "
+            "НЕ добавляй ссылки на источник - ты пишешь от себя. "
+            "Ссылки допускаются ТОЛЬКО на конкретные товары, услуги, мероприятия. "
+            "НЕ вставляй ссылку на свой канал - она добавится автоматически."
+        ),
+        max_tokens=300,
+        priority="low",
+    )
+
+    if result and result.text:
+        ai_comment = result.text.strip()
+        ai_comment = re.sub(r'<[^>]+>', '', ai_comment)
+        ai_comment = re.sub(r'^/no_think\s*', '', ai_comment)
+        for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
+            if ai_comment.startswith(prefix):
+                ai_comment = ai_comment[len(prefix):].strip()
+        if len(ai_comment) > 600:
+            ai_comment = ai_comment[:597] + "..."
+        return ai_comment
+
+    return None
+
+
 async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> bool:
     """Post an AI-generated substantive news commentary to channel.
 
-    v51: ALWAYS uses AI for comments. If AI fails, uses a generic comment.
-    No more template-based fallbacks!
+    v67: LOCAL-ONLY POSTING support — when LOCAL_ONLY_POSTING=true,
+    uses local model directly, saving cloud API limits for user interactions.
+    Falls back to cloud only if local model fails.
     """
     if not CHANNEL_ID:
         return False
@@ -909,125 +979,103 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
         logger.info(f"Skipping duplicate (channel scan): {title[:60]}...")
         return False
 
-    # Try AI-generated commentary first
+    # ── Generate AI commentary for the post ──
     ai_comment = ""
     if ai_router:
-        try:
-            # Build a prompt for substantive news commentary
-            prompt_parts = [f"Новость: {title}"]
-            if summary:
-                # Clean HTML from summary
-                import re as _re
-                clean_summary = _re.sub(r'<[^>]+>', '', summary).strip()[:500]
-                prompt_parts.append(f"Краткое содержание: {clean_summary}")
-            if link:
-                prompt_parts.append(f"Источник: {link}")
-
-            category_context = ""
-            if category == "auto":
-                category_context = "Это автомобильная новость - расскажи подробно и экспертно! Настя разбирается в автомобилях, фанат BMW!"
-
-            # ── DATE CONTEXT - Настя знает какой сейчас год! ──
-            import datetime
-            from zoneinfo import ZoneInfo
-            _now = datetime.datetime.now(ZoneInfo("Europe/Moscow"))
-            _days_ru = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
-            _months_ru = ["января", "февраля", "марта", "апреля", "мая", "июня",
-                          "июля", "августа", "сентября", "октября", "ноября", "декабря"]
-            _date_context = (
-                f"Сейчас {_days_ru[_now.weekday()]}, {_now.day} {_months_ru[_now.month - 1]} "
-                f"{_now.year} года, время {_now.strftime('%H:%M')} МСК."
-            )
-
-            prompt = "\n".join(prompt_parts)
-
-            # Get channel context so AI doesn't repeat topics
-            channel_ctx = await get_channel_context_for_prompt(max_items=10)
-
-            result = await ai_router.chat(
-                prompt=prompt,
-                system_prompt=(
-                    "Ты Настя - москвичка, 23 года, блогер, ведёшь Telegram канал @chasnastya. "
-                    "Ты пишешь пост для своего Telegram канала ОТ СЕБЯ - от первого лица, "
-                    "как живой человек, а не как бот или ИИ-помощник. "
-                    "Пиши 'я думаю', 'мне кажется', 'я прочитала', 'я нашла'. "
-                    f"{category_context}"
-                    f"{_date_context} Учитывай текущую дату - не пиши про прошлые годы как про текущие! "
-                    f"{channel_ctx}"
-                    "Напиши осмысленный, развёрнутый пост об этой новости. "
-                    "4-6 предложений, живо и эмоционально, со своим мнением. "
-                    "Используй слова: 'прикинь', 'офигеть', 'капец', 'круто'. "
-                    "Без markdown, без буллетов, без заголовков. "
-                    "Не пиши 'Настя' в начале - говори от первого лица. "
-                    "НЕ добавляй ссылки на источник - ты пишешь от себя. "
-                    "Ссылки допускаются ТОЛЬКО на конкретные товары, услуги, мероприятия. "
-                    "НЕ вставляй ссылку на свой канал - она добавится автоматически."
-                ),
-                max_tokens=300,
-                priority="low",  # Background priority - don't block user chat
-            )
-
-            if result and result.text:
-                ai_comment = result.text.strip()
-                # Clean any remaining artifacts
-                import re as _re2
-                ai_comment = _re2.sub(r'<[^>]+>', '', ai_comment)
-                ai_comment = _re2.sub(r'^/no_think\s*', '', ai_comment)
-                # Remove "Настя:" prefix if present
-                for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
-                    if ai_comment.startswith(prefix):
-                        ai_comment = ai_comment[len(prefix):].strip()
-                # Limit length for channel
-                if len(ai_comment) > 600:
-                    ai_comment = ai_comment[:597] + "..."
-            elif result and result.metadata and result.metadata.get("local_only_fallback"):
-                # ── LOCAL-ONLY FALLBACK ──
-                # All cloud providers failed — try local model directly with simplified prompt
-                logger.info("Cloud providers failed for news post — trying LOCAL-ONLY fallback")
+        if LOCAL_ONLY_POSTING:
+            # ═══════════════════════════════════════════════════════════
+            # LOCAL-ONLY POSTING — skip all cloud providers!
+            # Saves Pollinations/Cloudflare limits for user interactions.
+            # Local model (Qwen3-4B) generates post directly.
+            # ═══════════════════════════════════════════════════════════
+            logger.info("LOCAL-ONLY POSTING mode — using local model directly (saving cloud limits)")
+            try:
+                local_result = await ai_router.generate_local_post(
+                    title=title,
+                    summary=summary or "",
+                    category=category,
+                )
+                if local_result and local_result.text:
+                    ai_comment = local_result.text.strip()
+                    ai_comment = re.sub(r'<[^>]+>', '', ai_comment)
+                    ai_comment = re.sub(r'^/no_think\s*', '', ai_comment)
+                    for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
+                        if ai_comment.startswith(prefix):
+                            ai_comment = ai_comment[len(prefix):].strip()
+                    if len(ai_comment) > 600:
+                        ai_comment = ai_comment[:597] + "..."
+                    logger.info("LOCAL-ONLY post generated: %d chars", len(ai_comment))
+                else:
+                    logger.warning("LOCAL-ONLY post: local model returned empty, trying cloud as fallback")
+                    # Fallback to cloud if local model produces nothing
+                    try:
+                        result = await _cloud_generate_post(ai_router, title, summary, link, category)
+                        if result:
+                            ai_comment = result
+                    except Exception as cloud_err:
+                        logger.error(f"Cloud fallback after local-only failed: {cloud_err}")
+            except Exception as loc_err:
+                logger.error(f"LOCAL-ONLY post generation error: {loc_err}")
+                # Try cloud as emergency fallback
                 try:
-                    local_result = await ai_router.generate_local_post(
-                        title=title,
-                        summary=summary or "",
-                        category=category,
-                    )
-                    if local_result and local_result.text:
-                        ai_comment = local_result.text.strip()
-                        import re as _re_loc
-                        ai_comment = _re_loc.sub(r'<[^>]+>', '', ai_comment)
-                        ai_comment = _re_loc.sub(r'^/no_think\s*', '', ai_comment)
-                        for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
-                            if ai_comment.startswith(prefix):
-                                ai_comment = ai_comment[len(prefix):].strip()
-                        if len(ai_comment) > 600:
-                            ai_comment = ai_comment[:597] + "..."
-                        logger.info("LOCAL-ONLY post generated: %d chars", len(ai_comment))
-                except Exception as loc_err:
-                    logger.error(f"LOCAL-ONLY fallback error: {loc_err}")
-        except Exception as e:
-            logger.error(f"AI news commentary error: {e}")
-
-            # ── LOCAL-ONLY FALLBACK (exception path) ──
-            if ai_router:
-                logger.info("AI generation threw exception — trying LOCAL-ONLY fallback")
-                try:
-                    local_result = await ai_router.generate_local_post(
-                        title=title,
-                        summary=summary or "",
-                        category=category,
-                    )
-                    if local_result and local_result.text:
-                        ai_comment = local_result.text.strip()
-                        import re as _re_loc2
-                        ai_comment = _re_loc2.sub(r'<[^>]+>', '', ai_comment)
-                        ai_comment = _re_loc2.sub(r'^/no_think\s*', '', ai_comment)
-                        for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
-                            if ai_comment.startswith(prefix):
-                                ai_comment = ai_comment[len(prefix):].strip()
-                        if len(ai_comment) > 600:
-                            ai_comment = ai_comment[:597] + "..."
-                        logger.info("LOCAL-ONLY post after exception: %d chars", len(ai_comment))
-                except Exception as loc_err2:
-                    logger.error(f"LOCAL-ONLY fallback error after exception: {loc_err2}")
+                    result = await _cloud_generate_post(ai_router, title, summary, link, category)
+                    if result:
+                        ai_comment = result
+                except Exception as cloud_err2:
+                    logger.error(f"Cloud emergency fallback also failed: {cloud_err2}")
+        else:
+            # ═══════════════════════════════════════════════════════════
+            # CLOUD-FIRST POSTING — original behavior (cloud → local-only fallback)
+            # ═══════════════════════════════════════════════════════════
+            try:
+                result = await _cloud_generate_post(ai_router, title, summary, link, category)
+                if result:
+                    ai_comment = result
+                elif ai_router:
+                    # ── LOCAL-ONLY FALLBACK (cloud returned nothing) ──
+                    logger.info("Cloud providers returned nothing — trying LOCAL-ONLY fallback")
+                    try:
+                        local_result = await ai_router.generate_local_post(
+                            title=title,
+                            summary=summary or "",
+                            category=category,
+                        )
+                        if local_result and local_result.text:
+                            ai_comment = local_result.text.strip()
+                            ai_comment = re.sub(r'<[^>]+>', '', ai_comment)
+                            ai_comment = re.sub(r'^/no_think\s*', '', ai_comment)
+                            for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
+                                if ai_comment.startswith(prefix):
+                                    ai_comment = ai_comment[len(prefix):].strip()
+                            if len(ai_comment) > 600:
+                                ai_comment = ai_comment[:597] + "..."
+                            logger.info("LOCAL-ONLY post generated (cloud fallback): %d chars", len(ai_comment))
+                    except Exception as loc_err:
+                        logger.error(f"LOCAL-ONLY fallback error: {loc_err}")
+            except Exception as e:
+                logger.error(f"AI news commentary error: {e}")
+                # ── LOCAL-ONLY FALLBACK (exception path) ──
+                if ai_router:
+                    logger.info("AI generation threw exception — trying LOCAL-ONLY fallback")
+                    try:
+                        local_result = await ai_router.generate_local_post(
+                            title=title,
+                            summary=summary or "",
+                            category=category,
+                        )
+                        if local_result and local_result.text:
+                            ai_comment = local_result.text.strip()
+                            import re as _re_loc2
+                            ai_comment = _re_loc2.sub(r'<[^>]+>', '', ai_comment)
+                            ai_comment = _re_loc2.sub(r'^/no_think\s*', '', ai_comment)
+                            for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
+                                if ai_comment.startswith(prefix):
+                                    ai_comment = ai_comment[len(prefix):].strip()
+                            if len(ai_comment) > 600:
+                                ai_comment = ai_comment[:597] + "..."
+                            logger.info("LOCAL-ONLY post after exception: %d chars", len(ai_comment))
+                    except Exception as loc_err2:
+                        logger.error(f"LOCAL-ONLY fallback error after exception: {loc_err2}")
 
     # Use AI comment or fall back to template comment
     comment = ai_comment if ai_comment else template_comment

@@ -1,12 +1,14 @@
-name: Nastya Bot — LOCAL-FIRST v66 + Local-Only Posting
+name: Nastya Bot — LOCAL-ONLY POSTING v67 + Local-First
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v66.0 — LOCAL-FIRST Qwen3-4B + CLOUD FAILOVER + LOCAL-ONLY POSTING
+# Nastya Bot v67.0 — LOCAL-ONLY POSTING + LOCAL-FIRST + CLOUD FAILOVER
 #
+#   - LOCAL_ONLY_POSTING=true — channel posts via local model ONLY!
 #   - LOCAL MODEL: Qwen3-4B Q4_K_M (~2.5GB GGUF, CPU inference)
 #   - LOCAL-FIRST for chat/comments (saves cloud balance!)
-#   - CLOUD-FIRST for function routes (posts, VIN, consultations)
-#   - LOCAL-ONLY POSTING fallback when all cloud providers are down
+#   - LOCAL-ONLY for channel posting (saves cloud API limits!)
+#   - CLOUD-FIRST for function routes (consultations, VIN, vision)
+#   - Cloud as EMERGENCY fallback when local model fails for posting
 #   - 6-LEVEL FAILOVER: Local -> Pollinations(key) -> Pollinations(free) -> Cloudflare -> Local(fallback) -> Local-Only -> Static
 #   - Model caching via actions/cache@v4
 #   - HF_TOKEN for authenticated HuggingFace download (gated model)
@@ -118,7 +120,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v66
+          key: nastya-db-v67
           restore-keys: |
             nastya-db-
 
@@ -210,6 +212,8 @@ jobs:
           CF_TOKEN_2: ${{ secrets.CF_TOKEN_2 }}
           # Local model — ENABLED (Qwen3-4B Q4_K_M, ~2.5GB)
           ENABLE_LOCAL_MODEL: ${{ env.ENABLE_LOCAL_MODEL || 'true' }}
+          # LOCAL-ONLY POSTING — channel posts via local model, saves cloud limits!
+          LOCAL_ONLY_POSTING: "true"
           MODEL_PATH: "models/Qwen3-4B-Q4_K_M.gguf"
           MODEL_N_CTX: "4096"
           MODEL_N_THREADS: "2"
@@ -226,11 +230,12 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v66.0 LOCAL-FIRST + LOCAL-ONLY POSTING ==="
-          echo "LOCAL MODEL: Qwen3-4B Q4_K_M (PRIMARY for chat/comments, FALLBACK for posts)"
+          echo "=== Starting Nastya Bot v67.0 LOCAL-ONLY POSTING + LOCAL-FIRST ==="
+          echo "LOCAL MODEL: Qwen3-4B Q4_K_M (PRIMARY for posting + chat/comments)"
+          echo "LOCAL-ONLY POSTING: ENABLED — channel posts via local model ONLY!"
           echo "CLOUD: Pollinations (44+ models, dual-key) + Cloudflare (mistral-small-3.1)"
-          echo "STRATEGY: LOCAL-first (chat/comments) / CLOUD-first (functions) / LOCAL-ONLY (last resort posts)"
-          echo "FAILOVER: Local -> Pollinations(key) -> Pollinations(free) -> Cloudflare -> Local(fallback) -> Local-Only -> Static"
+          echo "STRATEGY: Local-only (posting) / Local-first (chat/comments) / Cloud-first (functions/vision)"
+          echo "FAILOVER: Local -> Pollinations(key) -> Pollinations(free) -> Cloudflare -> Local(fallback) -> Static"
           echo "=== Launching bot with UNLIMITED auto-restart ==="
 
           # UNLIMITED retries — bot MUST always be running!
@@ -271,7 +276,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v66-${{ github.run_id }}
+          key: nastya-db-v67-${{ github.run_id }}
 
       - name: Save database to git
         if: always()

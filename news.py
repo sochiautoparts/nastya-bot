@@ -27,6 +27,7 @@ Architecture:
 import asyncio
 import json
 import logging
+import re
 import time
 import random
 from datetime import datetime
@@ -35,7 +36,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import httpx
-from bot.config import NEWS_SOURCES, NEWS_MAX_ITEMS
+from bot.config import NEWS_SOURCES, NEWS_MAX_ITEMS, LOCAL_ONLY_POSTING
 
 logger = logging.getLogger(__name__)
 
@@ -325,11 +326,33 @@ _GENERIC_FALLBACK_COMMENTS = [
 async def generate_ai_commentary(title: str, summary: str = "", category: str = "general", ai_router=None) -> str:
     """Generate Nastya's commentary using AI - unique and personal!
 
-    v4.0: AI-generated comments instead of templates.
-    Falls back to templates only if AI is unavailable.
+    v5.3: LOCAL-ONLY POSTING support — when LOCAL_ONLY_POSTING=true,
+    uses local model directly for news commentary, saving cloud API limits.
     """
     if ai_router:
         try:
+            # ── LOCAL-ONLY POSTING: Use local model directly ──
+            if LOCAL_ONLY_POSTING and hasattr(ai_router, 'generate_local_post'):
+                logger.info("LOCAL-ONLY commentary for: %s", title[:50])
+                local_result = await ai_router.generate_local_post(
+                    title=title,
+                    summary=summary or "",
+                    category=category,
+                )
+                if local_result and local_result.text:
+                    comment = local_result.text.strip()
+                    comment = re.sub(r'<[^>]+>', '', comment)
+                    comment = re.sub(r'^/no_think\s*', '', comment)
+                    for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
+                        if comment.startswith(prefix):
+                            comment = comment[len(prefix):].strip()
+                    if len(comment) > 200:
+                        comment = comment[:197] + "..."
+                    if comment and len(comment) > 5:
+                        return comment
+                logger.warning("LOCAL-ONLY commentary failed, falling back to cloud")
+
+            # ── CLOUD-FIRST (or LOCAL-ONLY failed) ──
             category_context = {
                 "auto": "Это автомобильная новость - Настя разбирается в автомобилях, фанат BMW! Делись экспертным мнением.",
                 "tech": "Это технологическая новость - Настя интересуется гаджетами и технологиями.",
@@ -353,8 +376,7 @@ async def generate_ai_commentary(title: str, summary: str = "", category: str = 
 
             prompt_parts = [f"Новость: {title}"]
             if summary:
-                import re as _re
-                clean_summary = _re.sub(r'<[^>]+>', '', summary).strip()[:300]
+                clean_summary = re.sub(r'<[^>]+>', '', summary).strip()[:300]
                 if clean_summary:
                     prompt_parts.append(f"Краткое содержание: {clean_summary}")
             prompt = "\n".join(prompt_parts)
@@ -377,9 +399,8 @@ async def generate_ai_commentary(title: str, summary: str = "", category: str = 
             if result and result.text:
                 comment = result.text.strip()
                 # Clean artifacts
-                import re as _re2
-                comment = _re2.sub(r'<[^>]+>', '', comment)
-                comment = _re2.sub(r'^/no_think\s*', '', comment)
+                comment = re.sub(r'<[^>]+>', '', comment)
+                comment = re.sub(r'^/no_think\s*', '', comment)
                 for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
                     if comment.startswith(prefix):
                         comment = comment[len(prefix):].strip()

@@ -83,6 +83,13 @@ CF_DAILY_LIMIT: int = _env_int("CF_DAILY_LIMIT", 10000)  # 10k req/day per token
 # v65: ENABLED by default — local model saves cloud balance!
 ENABLE_LOCAL_MODEL: bool = _env("ENABLE_LOCAL_MODEL", "true").lower() in ("true", "1", "yes")
 
+# ── LOCAL-ONLY POSTING — Save cloud API limits! ──────────────
+# When enabled, channel posts and news commentary use ONLY the local model.
+# Cloud APIs (Pollinations, Cloudflare) are saved for user interactions:
+# chat, consultations, vision, search — where quality matters most.
+# LOCAL_ONLY_POSTING=true means: NO cloud API calls for posting!
+LOCAL_ONLY_POSTING: bool = _env("LOCAL_ONLY_POSTING", "true").lower() in ("true", "1", "yes")
+
 # ── LlamaCpp Model - LOCAL-FIRST Qwen3-4B ────
 # Qwen3-4B-Instruct Q4_K_M — PRIMARY for chat/comments, fallback for functions
 # Model auto-downloads from HuggingFace with HF_TOKEN

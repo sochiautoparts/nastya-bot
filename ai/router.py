@@ -1,7 +1,19 @@
-"""AI Router v66.0 - LOCAL-FIRST MULTI-PROVIDER FAILOVER + LOCAL-ONLY POSTING!
+"""AI Router v67.0 - LOCAL-ONLY POSTING + LOCAL-FIRST MULTI-PROVIDER FAILOVER!
 
-АРХИТЕКТУРА v66 - LOCAL-FIRST для простых задач, CLOUD-FIRST для сложных,
-LOCAL-ONLY как последний фоллбэк для постинга:
+АРХИТЕКТУРА v67 - LOCAL-ONLY POSTING — канал постит ТОЛЬКО через локальную модель!
+Облако экономится для чатов, консультаций, vision — где качество важнее.
+
+LOCAL_ONLY_POSTING=true (default):
+  - Канал: Local model directly → cloud as emergency fallback
+  - Новостные комментарии: Local model directly → cloud as fallback
+  - Чат: Local → Pollinations(key) → Pollinations(free) → Cloudflare → Static
+  - Консультации: Pollinations(key) → Pollinations(free) → Cloudflare → Local → Static
+  - Комментарии в группах: Local → Pollinations(key) → Pollinations(free) → Cloudflare → Static
+  - VISION: Pollinations vision(key) → Pollinations vision(free) → Cloudflare vision → Static
+
+LOCAL_ONLY_POSTING=false (legacy):
+  - Канал: Pollinations → Cloudflare → Local(fallback) → LOCAL-ONLY → Static
+  - Всё остальное как выше
 
 FAILOVER CHAIN (6 уровней до статического фоллбэка):
   Level 0: Local Model (Qwen3-4B GGUF, CPU) — CHAT & COMMENT маршруты
@@ -12,23 +24,23 @@ FAILOVER CHAIN (6 уровней до статического фоллбэка)
   Last resort: LOCAL-ONLY постинг (упрощённый промпт для 4B модели)
   Absolute last: Статические фоллбэк-ответы
 
-Стратегия маршрутизации (v66.0 — LOCAL-FIRST + LOCAL-ONLY POSTING):
+Стратегия маршрутизации (v67.0 — LOCAL-ONLY POSTING + LOCAL-FIRST):
   CHAT route_type (пользовательские чаты) → Local → Pollinations(key) → Pollinations(free) → Cloudflare → Static
   FUNCTION route_type (посты, VIN, диагностика) → Pollinations(key) → Pollinations(free) → Cloudflare → Local(fallback) → Static
   COMMENT route_type (комментарии в группах) → Local → Pollinations(key) → Pollinations(free) → Cloudflare → Static
   VISION (фото) → Pollinations vision(key) → Pollinations vision(free) → Cloudflare vision → Static
   BACKGROUND (новости, канал) → Pollinations(key) → Pollinations(free) → Cloudflare → Local(fallback) → LOCAL-ONLY posting
-  LOCAL-ONLY posting (last resort) → Local model directly with simplified prompt
+  LOCAL-ONLY posting → Local model directly with simplified prompt (PRIMARY when LOCAL_ONLY_POSTING=true)
   IMAGE generation → Pollinations(key) → Pollinations(free) → None
 
 Локальная модель ИДЕАЛЬНА для:
+  - Постинг в канал (экономит облачный баланс!)
   - Быстрые ответы в чате (экономит облачный баланс!)
   - Комментарии в группах (короткие, быстрые, дешёвые)
   - Простой Q&A о машинах, Москве, астрологии
   - Фоллбэк когда все облачные провайдеры недоступны
 
 Облачные модели ЛУЧШЕ для:
-  - Генерация постов для канала (нужна креативность + качество)
   - VIN декодирование (нужна точность)
   - Консультации (нумерология, астрология, HD — нужен глубокий анализ)
   - Vision задачи (локальная модель не умеет vision)
@@ -143,10 +155,17 @@ def _classify_task_complexity(prompt: str, messages: Optional[List[Dict]] = None
 
 
 class AIRouter:
-    """AI Router v65.0 - LOCAL-FIRST MULTI-PROVIDER FAILOVER!
+    """AI Router v67.0 - LOCAL-ONLY POSTING + LOCAL-FIRST MULTI-PROVIDER FAILOVER!
 
-    Strategy v65: Local FIRST for chat/comments → Pollinations → Cloudflare → static.
-    Function routes: Pollinations FIRST for quality → Cloudflare → Local as LAST fallback.
+    Strategy v67: LOCAL-ONLY POSTING for channel — local model directly for posts,
+    saving cloud APIs for user interactions (chat, consultations, vision).
+
+    LOCAL_ONLY_POSTING=true (default):
+      Channel posts: Local model directly → cloud as emergency fallback
+      News commentary: Local model directly → cloud as fallback
+
+    LOCAL_ONLY_POSTING=false (legacy):
+      Channel posts: Cloud → local as last-resort fallback
 
     PROVIDER CHAIN:
       Local(Qwen3-4B) -> Pollinations(KEY1->KEY2->OLD API) -> Cloudflare(Acct1->Acct2) -> static
@@ -592,11 +611,14 @@ class AIRouter:
         summary: str = "",
         category: str = "",
     ) -> AIResponse:
-        """Generate a channel post using ONLY the local model — last-resort fallback.
+        """Generate a channel post using ONLY the local model.
 
-        Called when ALL cloud providers (Pollinations, Cloudflare) are unavailable
-        or have exhausted their rate limits. Uses a SIMPLIFIED prompt optimized
-        for the Qwen3-4B 4B-parameter model running on CPU.
+        v67: Now used as PRIMARY posting method when LOCAL_ONLY_POSTING=true.
+        When LOCAL_ONLY_POSTING=true, this is called DIRECTLY by channel.py
+        and news.py — skipping all cloud providers entirely.
+
+        When LOCAL_ONLY_POSTING=false (legacy), this is used as a last-resort
+        fallback after all cloud providers (Pollinations, Cloudflare) fail.
 
         Key differences from normal chat() with background priority:
           - Much shorter system prompt (4B model needs concise instructions)
