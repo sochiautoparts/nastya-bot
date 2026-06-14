@@ -25,8 +25,9 @@ async def transcribe_voice_ogg(ogg_bytes: bytes) -> Optional[str]:
     """
 
     # Try Cloudflare Whisper first (fast + reliable if credentials available)
-    cf_token = os.environ.get("CLOUDFLARE_API_TOKEN", "")
-    cf_account = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
+    # NOTE: Config uses CF_TOKEN_1/CF_ACCOUNT_ID_1 naming (matching bot.yml secrets)
+    cf_token = os.environ.get("CF_TOKEN_1", "") or os.environ.get("CLOUDFLARE_API_TOKEN", "")
+    cf_account = os.environ.get("CF_ACCOUNT_ID_1", "") or os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
     if cf_token and cf_account and cf_token not in ("not_configured", ""):
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:

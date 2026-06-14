@@ -1,4 +1,4 @@
-"""Nastya Bot 56.0 - MOSCOW BLOGGER + BMW M3 OWNER + LOCAL EXPERT + EVENT AWARE!
+"""Nastya Bot v67.0 - LOCAL-ONLY POSTING + LOCAL-FIRST + CLOUD FAILOVER!
 
 Architecture v56.0:
   - PERSONA: Настя - москвичка, 23 года, блогер, владеет BMW M3 2025 серого цвета!
@@ -537,7 +537,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot 65.0 LOCAL-FIRST Starting (Qwen3-4B + CLOUD FAILOVER!) ===")
+    logger.info("=== Nastya Bot v67.0 LOCAL-ONLY POSTING + LOCAL-FIRST Starting (Qwen3-4B + CLOUD FAILOVER!) ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() - no need to do it here again

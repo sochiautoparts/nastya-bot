@@ -41,6 +41,7 @@ permissions:
 
 env:
   PYTHONUNBUFFERED: "1"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   run-bot:
@@ -210,6 +211,9 @@ jobs:
           CF_TOKEN_1: ${{ secrets.CF_TOKEN_1 }}
           CF_ACCOUNT_ID_2: ${{ secrets.CF_ACCOUNT_ID_2 }}
           CF_TOKEN_2: ${{ secrets.CF_TOKEN_2 }}
+          # Cloudflare aliases for voice.py (transcription uses CF_TOKEN_1 → CLOUDFLARE_API_TOKEN)
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_TOKEN_1 }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID_1 }}
           # Local model — ENABLED (Qwen3-4B Q4_K_M, ~2.5GB)
           ENABLE_LOCAL_MODEL: ${{ env.ENABLE_LOCAL_MODEL || 'true' }}
           # LOCAL-ONLY POSTING — channel posts via local model, saves cloud limits!

@@ -1,4 +1,4 @@
-"""Nastya Bot 63.0 - MOSCOW BLOGGER + BMW M3 OWNER + LOCAL EXPERT + DUAL-KEY!
+"""Nastya Bot v67.0 - LOCAL-ONLY POSTING + LOCAL-FIRST + CLOUD FAILOVER!
 
 v63.0: DEEP PROFESSIONAL CONSULTATIONS ENGINE!
 - Persona: Настя - москвичка, 23 года, блогер, ведёт Telegram канал @chasnastya

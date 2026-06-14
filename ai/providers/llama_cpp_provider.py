@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL_CONFIG = {
     "n_ctx": 4096,       # 4096 for Qwen3-4B Q4 - plenty of room
     "n_batch": 512,      # Faster batch processing
-    "n_threads": 4,
+    "n_threads": 2,   # GitHub Actions 2 vCPU (4 = contention)
     "n_gpu_layers": 0,   # CPU only — GitHub Actions has no GPU
     "verbose": False,
     "use_mmap": True,    # Memory-mapped file — faster loading
