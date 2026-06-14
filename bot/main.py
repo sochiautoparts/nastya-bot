@@ -1,4 +1,4 @@
-"""Nastya Bot v70.0 - RUADAPT QWEN3-4B-INSTRUCT + TESTED & OPTIMIZED!
+"""Nastya Bot v71.0 - RUADAPT QWEN3-4B-INSTRUCT + CHAT/COMMENT FIXES!
 
 Architecture v56.0:
   - PERSONA: Настя - москвичка, 23 года, блогер, владеет BMW M3 2025 серого цвета!
@@ -537,7 +537,7 @@ async def health_watchdog() -> None:
 async def on_startup(**kwargs) -> None:
     global db, ai_router, _start_time
     _start_time = time.time()
-    logger.info("=== Nastya Bot v70.0 RUADAPT QWEN3-4B-INSTRUCT + v12 OPTIMIZED Starting ===")
+    logger.info("=== Nastya Bot v71.0 RUADAPT QWEN3-4B-INSTRUCT + CHAT/COMMENT FIXES Starting ===")
 
     # NOTE: Webhook deletion and conflict resolution is handled in main()
     # before start_polling() - no need to do it here again
@@ -602,8 +602,8 @@ async def on_startup(**kwargs) -> None:
 
     local_status = "LOADED" if ENABLE_LOCAL_MODEL and ai_router and ai_router._local and ai_router._local.is_available() else "OFF"
     logger.info(
-        f"=== Nastya Bot v70.0 RUADAPT QWEN3-4B-INSTRUCT Ready! "
-        f"Local(RuadaptQwen3-4B-Instruct/v12)={local_status}, "
+        f"=== Nastya Bot v71.0 RUADAPT QWEN3-4B-INSTRUCT Ready! "
+        f"Local(RuadaptQwen3-4B-Instruct/v13)={local_status}, "
         f"Pollinations=ACTIVE, Cloudflare=FALLBACK ==="
     )
 

@@ -1,4 +1,11 @@
-"""Nastya Chat Handler v14.0 - MULTI-MODEL + VISION + HUMAN-LIKE + URL + INLINE + MULTI-ENGINE SEARCH!
+"""Nastya Chat Handler v15.0 - LOCAL MODEL CHAT/COMMENT FIXES!
+
+v15.0: LOCAL MODEL FIXES for chat & comments:
+  - v13 fix: Duplicate user message in local model context (fixed in llama_cpp_provider)
+  - v13 fix: Timeout too short for 2 vCPU — now 90/150/210s (was 45/70/100s)
+  - v13 fix: Local model lost ALL context (date, mood, group mode) — now preserved
+  - v13: LOCAL_COMMENT_SYSTEM_PROMPT for shorter group comments (2-4 sentences)
+  - v13: Increased chat max_tokens from 512 to 768
 
 v14.0: MULTI-ENGINE SEARCH - /find ВСЕГДА находит!
   - 4 поисковых движка: DuckDuckGo -> Yandex -> SearXNG -> DDG API

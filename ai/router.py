@@ -1,6 +1,6 @@
-"""AI Router v70.0 - RUADAPT QWEN3-4B-INSTRUCT + TESTED & OPTIMIZED!
+"""AI Router v71.0 - RUADAPT QWEN3-4B-INSTRUCT + CHAT/COMMENT FIXES!
 
-АРХИТЕКТУРА v70 - RuadaptQwen3-4B-Instruct (tested & tuned):
+АРХИТЕКТУРА v71 - RuadaptQwen3-4B-Instruct (tested & tuned) + CHAT/COMMENT FIXES:
   - Русский токенизатор: 48К дополнительных русских токенов → до 2x быстрее генерация
   - Instruct-версия: отвечает НАПРЯМУЮ без <think> тегов! (подтверждено 20+ тестами)
   - Дообучение на русском корпусе: лучше понимает и генерирует русский
@@ -8,6 +8,11 @@
   - v12: Оптимизированные параметры (temp=0.75, top_k=40, repeat_penalty=1.18)
   - v12: LOCAL_MODEL_SYSTEM_PROMPT — специальный конспективный промпт для 4B модели
   - v12: Антигаллюцинационные инструкции во всех локальных промптах
+  - v13: FIX: Дублирование сообщения пользователя — _build_messages() теперь проверяет
+  - v13: FIX: Таймаут увеличен (90/150/210s вместо 45/70/100s) — реалистично для 2 vCPU
+  - v13: FIX: Локальная модель теряла контекст (дата, настроение, групповой режим)
+  - v13: ADDED: LOCAL_COMMENT_SYSTEM_PROMPT — короткий промпт для комментариев (2-4 предложения)
+  - v13: INCREASED: max_tokens для чата 512→768, для комментариев 384
 
 LOCAL_ONLY_POSTING=true (default):
   - Канал: Local model directly → cloud as emergency fallback
@@ -59,7 +64,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from ai.providers.base import AIResponse, ProviderError
-from ai.providers.llama_cpp_provider import LlamaCppProvider, LOCAL_MODEL_SYSTEM_PROMPT
+from ai.providers.llama_cpp_provider import LlamaCppProvider, LOCAL_MODEL_SYSTEM_PROMPT, LOCAL_COMMENT_SYSTEM_PROMPT
 from ai.providers.pollinations_provider import (
     PollinationsProvider, REASONING_CHAT, REASONING_COMPLEX,
     MODEL_REASONING, MODEL_VISION, CHAT_MODELS,
@@ -162,10 +167,17 @@ def _classify_task_complexity(prompt: str, messages: Optional[List[Dict]] = None
 
 
 class AIRouter:
-    """AI Router v69.0 - RUADAPT QWEN3-4B-INSTRUCT + LOCAL-ONLY POSTING!
+    """AI Router v71.0 - RUADAPT QWEN3-4B-INSTRUCT + CHAT/COMMENT FIXES!
 
-    Strategy v69: RuadaptQwen3-4B-Instruct — answers DIRECTLY (no <think> tags!),
+    Strategy v71: RuadaptQwen3-4B-Instruct — answers DIRECTLY (no <think> tags!),
     Russian tokenizer for faster Russian generation.
+    
+    v13 FIXES:
+    - Fixed duplicate user message in local model context
+    - Fixed timeout too short for 2 vCPU (90/150/210s)
+    - Fixed local model losing ALL context (date, mood, group mode)
+    - Added LOCAL_COMMENT_SYSTEM_PROMPT for shorter group comments
+    - Increased chat max_tokens from 512 to 768
 
     LOCAL_ONLY_POSTING=true (default):
       Channel posts: Local model directly → cloud as emergency fallback
@@ -273,7 +285,7 @@ class AIRouter:
         cloudflare_status = "active" if self._cloudflare and self._cloudflare.is_available() else "unavailable"
 
         logger.info(
-            f"AI Router v69.0 RUADAPT QWEN3-4B-INSTRUCT initialized: "
+            f"AI Router v71.0 RUADAPT QWEN3-4B-INSTRUCT initialized: "
             f"local={local_status} (RuadaptQwen3-4B-Instruct, PRIMARY chat/comments), "
             f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + OLD API, PRIMARY functions), "
             f"cloudflare={cloudflare_status} (mistral-small-3.1, FALLBACK), "
@@ -394,25 +406,70 @@ class AIRouter:
                          messages: Optional[List[Dict]], **kwargs) -> Optional[AIResponse]:
         """Try local model. Returns None if unavailable/failed (NOT ProviderError).
         
-        v12: Uses LOCAL_MODEL_SYSTEM_PROMPT instead of truncating the full system prompt.
-        The full system prompt (~2000+ chars) is too long for a 4B model — it degrades quality.
-        A dedicated concise prompt (~300 chars) works MUCH better (tested).
+        v13: CRITICAL FIXES:
+          - Extracts essential context (date/time, mood, group mode) from the original
+            system_prompt and appends it to the local model prompt. Before, _try_local()
+            threw away ALL context, making the bot unaware of date/time/group mode.
+          - Uses LOCAL_COMMENT_SYSTEM_PROMPT for comment routes (shorter, 2-4 sentences).
+          - Increased max_tokens from 512 to 768 for chat mode (allows more detailed responses).
+          - Fixed duplicate user message in _build_messages() (llama_cpp_provider.py v13).
         """
         if not self._local or not self._local.is_available():
             return None
 
         try:
-            # v12: Use dedicated LOCAL_MODEL_SYSTEM_PROMPT for 4B model
-            # Truncating the full 2000+ char system prompt loses key directives and degrades quality.
-            # A concise, purpose-built prompt works much better for small models.
-            local_system = LOCAL_MODEL_SYSTEM_PROMPT
+            route_type = kwargs.get("route_type", "chat")
+            
+            # v13: Choose system prompt based on route type
+            if route_type == "comment":
+                local_system_template = LOCAL_COMMENT_SYSTEM_PROMPT
+                default_max_tokens = 384  # Comments are shorter (2-4 sentences)
+            else:
+                local_system_template = LOCAL_MODEL_SYSTEM_PROMPT
+                default_max_tokens = 768  # v13: Was 512 — chat needs more room for detailed answers
+            
+            # v13: Extract essential context from the original system_prompt
+            # The original system_prompt has date/time, mood, group mode, etc.
+            # We can't use it directly (too long for 4B model), but we extract key parts.
+            context_parts = []
+            
+            # Extract date/time context
+            date_match = re.search(r'Сегодня\s+\S+,\s*\d+\s+\S+\s+\d+\s+года,\s*время\s+\d+:\d+\s+МСК', system_prompt)
+            if date_match:
+                context_parts.append(f" {date_match.group()}")
+            
+            # Extract mood
+            mood_match = re.search(r'Настроение:\s*(\S+)', system_prompt)
+            if mood_match:
+                context_parts.append(f" Настроение: {mood_match.group(1)}.")
+            
+            # Detect group mode
+            if "групповом чате" in system_prompt or "групповой чат" in system_prompt:
+                context_parts.append(" Мы в групповом чате — отвечай коротко!")
+            
+            # Extract user birth data if present
+            birth_match = re.search(r'Дата рождения:\s*\d{2}\.\d{2}\.\d{4}', system_prompt)
+            if birth_match:
+                context_parts.append(f" {birth_match.group()}.")
+            
+            # Extract news context (just first 200 chars)
+            news_match = re.search(r'Свежие новости:\s*(.+?)(?:\.|$)', system_prompt)
+            if news_match:
+                news_text = news_match.group(0)[:200]
+                context_parts.append(f" {news_text}")
+            
+            # Build context string
+            context_str = " ".join(context_parts) if context_parts else ""
+            
+            # Apply context to template
+            local_system = local_system_template.format(context=context_str)
 
             result = await self._local.generate(
                 prompt,
                 system_prompt=local_system,
                 messages=messages,
-                max_tokens=min(kwargs.get("max_tokens", 512), 512),  # v12: Was 1024 — 4B model doesn't need more
-                temperature=kwargs.get("temperature", 0.75),  # v12: Was 0.82 — lower reduces hallucination
+                max_tokens=min(kwargs.get("max_tokens", default_max_tokens), default_max_tokens),
+                temperature=kwargs.get("temperature", 0.75),
             )
             if result and result.text:
                 cleaned = self.clean_ai_response(result.text)
