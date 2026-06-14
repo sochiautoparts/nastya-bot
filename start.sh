@@ -1,6 +1,6 @@
 #!/bin/bash
-# Nastya Bot v69 — RUADAPT QWEN3-4B-INSTRUCT + LOCAL-ONLY POSTING!
-# v69: RuadaptQwen3-4B-Instruct — Russian tokenizer + Instruct (no <think> tags!)
+# Nastya Bot v70 — RUADAPT QWEN3-4B-INSTRUCT + TESTED & OPTIMIZED!
+# v70: RuadaptQwen3-4B-Instruct — tested & optimized (temp=0.75, rp=1.18, top_k=40)
 #   - 48K extra Russian tokens → up to 2x faster Russian generation
 #   - Instruct: answers DIRECTLY without <think> tags
 #   - Russian fine-tuning + LEP (Learned Embedding Propagation)
@@ -11,7 +11,7 @@
 
 set -e
 
-echo "=== Nastya Bot v69 (RUADAPT QWEN3-4B-INSTRUCT + LOCAL-ONLY POSTING + SEARCH & DISCOVERY) ==="
+echo "=== Nastya Bot v70 (RUADAPT QWEN3-4B-INSTRUCT + v12 OPTIMIZED + LOCAL-ONLY POSTING) ==="
 
 # ── Check if local model is enabled ──
 ENABLE_LOCAL="${ENABLE_LOCAL_MODEL:-true}"
@@ -113,7 +113,7 @@ pip install -r requirements.txt 2>&1 || {
 mkdir -p data
 
 # ── Start bot ──
-echo "=== Starting Nastya Bot v69 (RUADAPT QWEN3-4B-INSTRUCT + LOCAL-ONLY POSTING + 10-MODEL Pollinations + SEARCH + DISCOVERY) ==="
+echo "=== Starting Nastya Bot v70 (RUADAPT QWEN3-4B-INSTRUCT + v12 OPTIMIZED + LOCAL-ONLY POSTING + SEARCH + DISCOVERY) ==="
 echo "Config: LOCAL-ONLY POSTING=yes, Pollinations=EXPANDED 10-MODEL + SEARCH + DISCOVERY"
 echo "Strategy: Local-first (chat/comments) + Local-only (posting) + Cloud (consultations/vision)"
 echo "FAILOVER: Local -> Pollinations(key) -> Pollinations(free) -> Cloudflare -> Local(fallback) -> Static"

@@ -1,4 +1,4 @@
-"""Nastya Bot v69.0 - RUADAPT QWEN3-4B-INSTRUCT + RUSSIAN TOKENIZER!
+"""Nastya Bot v70.0 - RUADAPT QWEN3-4B-INSTRUCT + TESTED & OPTIMIZED!
 
 v63.0: DEEP PROFESSIONAL CONSULTATIONS ENGINE!
 - Persona: Настя - москвичка, 23 года, блогер, ведёт Telegram канал @chasnastya

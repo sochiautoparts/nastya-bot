@@ -1,4 +1,4 @@
-"""Nastya Channel Manager v69.0 - RUADAPT QWEN3-4B-INSTRUCT!
+"""Nastya Channel Manager v70.0 - RUADAPT QWEN3-4B-INSTRUCT + v12 OPTIMIZED!
 
 v15.0 KEY CHANGES:
   - LOCAL_ONLY_POSTING: Channel posts via local model ONLY! Saves cloud limits!

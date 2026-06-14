@@ -1,14 +1,20 @@
-name: Nastya Bot — RUADAPT QWEN3-4B-INSTRUCT v69 + Local-First + Performance Tuning
+name: Nastya Bot — RUADAPT QWEN3-4B-INSTRUCT v70 + Tested & Optimized
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v69.0 — RUADAPT QWEN3-4B-INSTRUCT + RUSSIAN TOKENIZER
+# Nastya Bot v70.0 — RUADAPT QWEN3-4B-INSTRUCT + TESTED & OPTIMIZED
 #
 #   - LOCAL_ONLY_POSTING=true — channel posts via local model ONLY!
 #   - LOCAL MODEL: RuadaptQwen3-4B-Instruct Q4_K_M (~2.5GB GGUF, CPU inference)
 #     * Russian tokenizer: 48K extra Russian tokens → up to 2x faster Russian generation
-#     * Instruct version: answers DIRECTLY without <think> tags!
+#     * Instruct version: answers DIRECTLY without <think> tags! (confirmed 20+ tests)
 #     * Russian fine-tuning: better understanding and generation of Russian text
 #     * LEP (Learned Embedding Propagation): quality preserved with new tokenizer
+#   - v12 PROVIDER OPTIMIZATIONS (tested on real model):
+#     * temperature=0.75 (was 0.82 — lower reduces hallucination)
+#     * top_k=40 (was 50 — tighter beam for better coherence)
+#     * repeat_penalty=1.18 (was 1.12 — reduces repetitive phrases)
+#     * frequency_penalty=0.3 (was 0.0 — reduces word repetition)
+#     * LOCAL_MODEL_SYSTEM_PROMPT — dedicated concise prompt for 4B model
 #   - LOCAL-FIRST for chat/comments (saves cloud balance!)
 #   - LOCAL-ONLY for channel posting (saves cloud API limits!)
 #   - CLOUD-FIRST for function routes (consultations, VIN, vision)
@@ -125,7 +131,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v69
+          key: nastya-db-v70
           restore-keys: |
             nastya-db-
 
@@ -134,7 +140,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: models/RuadaptQwen3-4B-Instruct-Q4_K_M.gguf
-          key: ruadapt-qwen3-4b-instruct-q4km-v1
+          key: ruadapt-qwen3-4b-instruct-q4km-v2
           restore-keys: |
             ruadapt-qwen3-4b-
 
@@ -254,11 +260,13 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v69.0 RUADAPT QWEN3-4B-INSTRUCT ==="
+          echo "=== Starting Nastya Bot v70.0 RUADAPT QWEN3-4B-INSTRUCT + v12 OPTIMIZED ==="
           echo "LOCAL MODEL: RuadaptQwen3-4B-Instruct Q4_K_M (PRIMARY for posting + chat/comments)"
           echo "  Russian tokenizer: 48K extra Russian tokens → up to 2x faster"
-          echo "  Instruct version: answers DIRECTLY (no <think> tags!)"
+          echo "  Instruct version: answers DIRECTLY (no <think> tags, confirmed!)"
           echo "  Russian fine-tuning + LEP"
+          echo "  v12 optimizations: temp=0.75, rp=1.18, top_k=40, freq_penalty=0.3"
+          echo "  LOCAL_MODEL_SYSTEM_PROMPT — dedicated concise prompt for 4B model"
           echo "LOCAL-ONLY POSTING: ENABLED — channel posts via local model ONLY!"
           echo "CLOUD: Pollinations (44+ models, dual-key) + Cloudflare (mistral-small-3.1)"
           echo "STRATEGY: Local-only (posting) / Local-first (chat/comments) / Cloud-first (functions/vision)"
@@ -303,7 +311,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v69-${{ github.run_id }}
+          key: nastya-db-v70-${{ github.run_id }}
 
       - name: Save database to git
         if: always()

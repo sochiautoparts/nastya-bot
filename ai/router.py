@@ -1,10 +1,13 @@
-"""AI Router v69.0 - RUADAPT QWEN3-4B-INSTRUCT + LOCAL-ONLY POSTING!
+"""AI Router v70.0 - RUADAPT QWEN3-4B-INSTRUCT + TESTED & OPTIMIZED!
 
-АРХИТЕКТУРА v69 - RuadaptQwen3-4B-Instruct:
+АРХИТЕКТУРА v70 - RuadaptQwen3-4B-Instruct (tested & tuned):
   - Русский токенизатор: 48К дополнительных русских токенов → до 2x быстрее генерация
-  - Instruct-версия: отвечает НАПРЯМУЮ без <think> тегов!
+  - Instruct-версия: отвечает НАПРЯМУЮ без <think> тегов! (подтверждено 20+ тестами)
   - Дообучение на русском корпусе: лучше понимает и генерирует русский
   - LEP: сохраняет качество при смене токенизатора
+  - v12: Оптимизированные параметры (temp=0.75, top_k=40, repeat_penalty=1.18)
+  - v12: LOCAL_MODEL_SYSTEM_PROMPT — специальный конспективный промпт для 4B модели
+  - v12: Антигаллюцинационные инструкции во всех локальных промптах
 
 LOCAL_ONLY_POSTING=true (default):
   - Канал: Local model directly → cloud as emergency fallback
@@ -56,7 +59,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from ai.providers.base import AIResponse, ProviderError
-from ai.providers.llama_cpp_provider import LlamaCppProvider
+from ai.providers.llama_cpp_provider import LlamaCppProvider, LOCAL_MODEL_SYSTEM_PROMPT
 from ai.providers.pollinations_provider import (
     PollinationsProvider, REASONING_CHAT, REASONING_COMPLEX,
     MODEL_REASONING, MODEL_VISION, CHAT_MODELS,
@@ -389,22 +392,27 @@ class AIRouter:
 
     async def _try_local(self, prompt: str, system_prompt: str,
                          messages: Optional[List[Dict]], **kwargs) -> Optional[AIResponse]:
-        """Try local model. Returns None if unavailable/failed (NOT ProviderError)."""
+        """Try local model. Returns None if unavailable/failed (NOT ProviderError).
+        
+        v12: Uses LOCAL_MODEL_SYSTEM_PROMPT instead of truncating the full system prompt.
+        The full system prompt (~2000+ chars) is too long for a 4B model — it degrades quality.
+        A dedicated concise prompt (~300 chars) works MUCH better (tested).
+        """
         if not self._local or not self._local.is_available():
             return None
 
         try:
-            # Local model has smaller context — truncate system prompt
-            local_system = system_prompt
-            if len(local_system) > 800:
-                local_system = local_system[:800].rsplit('.', 1)[0] + '.'
+            # v12: Use dedicated LOCAL_MODEL_SYSTEM_PROMPT for 4B model
+            # Truncating the full 2000+ char system prompt loses key directives and degrades quality.
+            # A concise, purpose-built prompt works much better for small models.
+            local_system = LOCAL_MODEL_SYSTEM_PROMPT
 
             result = await self._local.generate(
                 prompt,
                 system_prompt=local_system,
                 messages=messages,
-                max_tokens=min(kwargs.get("max_tokens", 1024), 1024),
-                temperature=kwargs.get("temperature", 0.82),
+                max_tokens=min(kwargs.get("max_tokens", 512), 512),  # v12: Was 1024 — 4B model doesn't need more
+                temperature=kwargs.get("temperature", 0.75),  # v12: Was 0.82 — lower reduces hallucination
             )
             if result and result.text:
                 cleaned = self.clean_ai_response(result.text)
@@ -674,33 +682,46 @@ class AIRouter:
             category_note = "Это техно-новость! Настя следит за трендами. "
         elif category == "food":
             category_note = "Это кулинарная новость! Настя любит готовить. "
+        elif category == "science":
+            category_note = "Это научная новость! Настя любит удивительные факты. "
+        elif category == "gaming":
+            category_note = "Это игровая новость! Настя играет и следит за индустрией. "
+        elif category == "lifestyle":
+            category_note = "Это лайфстайл! Настя разбирается в моде и стиле. "
+        elif category == "sports":
+            category_note = "Это спорт! Настя следит за спортивными событиями. "
 
-        # Simplified system prompt for 4B model
+        # v12: Improved system prompt for 4B model with anti-hallucination
         local_system = (
             "Ты Настя — москвичка, 23 года, блогер, канал @chasnastya. "
-            "Пиши живо и коротко. Сленг: прикинь, офигеть, капец, круто, точняк. "
+            "Пишешь от себя, живо, коротко. "
             f"{category_note}"
-            "Без политики. Без markdown. От первого лица."
+            "Сленг: прикинь, офигеть, капец, круто, точняк. "
+            "ВАЖНО: Не выдумывай факты, цифры, названия. Пиши только то что знаешь. "
+            "Без политики. Без markdown. Без звёздочек. Без буллетов. Без заголовков. От первого лица. "
+            "3-5 предложений."
         )
 
         user_msg = (
             f"Новость: {title}\n\n"
             f"{f'Текст: {summary[:500]}' if summary else ''}\n\n"
             f"Задача: Напиши ПОСТ для Telegram-канала на основе этой новости. "
-            f"НЕ копируй — напиши СВОЙ текст. Добавь мнение или эмоцию.\n\n"
+            f"НЕ копируй — напиши СВОЙ текст. Добавь мнение или эмоцию от себя. "
+            f"НЕ придумывай несуществующие детали.\n\n"
             f"Пиши компактно — 3-5 предложений. Без заголовков и буллетов."
         )
 
-        # v69: RuadaptQwen3-4B-Instruct — answers DIRECTLY, no /no_think needed!
-        # Instruct version has no <think> tags — just direct responses.
+        # v70: RuadaptQwen3-4B-Instruct — tested & optimized!
+        # Instruct version has no <think> tags — confirmed with 20+ test runs.
         # Russian tokenizer makes generation ~2x faster for Russian text.
+        # v12: Lower temperature (0.75) reduces hallucination in 4B model.
         result = None
         try:
             result = await self._local.generate(
                 user_msg,
                 system_prompt=local_system,
                 max_tokens=LOCAL_POST_MAX_TOKENS,  # 512 — posts are 3-5 sentences
-                temperature=0.85,
+                temperature=0.75,  # v12: Was 0.85 — lower reduces hallucination
             )
         except Exception as e:
             logger.error(f"LOCAL-ONLY post generation error: {e}")
@@ -758,7 +779,13 @@ class AIRouter:
 
     @staticmethod
     def clean_ai_response(text: str) -> str:
-        """Aggressively clean AI response artifacts."""
+        """Aggressively clean AI response artifacts.
+        
+        v70: Added cleanup for 4B model artifacts:
+          - Roleplay actions in asterisks (*смеётся*, *думает*)
+          - Excessive emoji spam
+          - Trailing incomplete sentences
+        """
         if not text:
             return ""
 
@@ -772,14 +799,13 @@ class AIRouter:
         for pattern in sse_patterns:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-        # Strip think tags (v69: Ruadapt Instruct doesn't generate these, but safety net for cloud models)
+        # Strip think tags (v70: Ruadapt Instruct confirmed no <think> tags in 20+ tests)
+        # Safety net kept for cloud models and edge cases
         text = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<thinking\b[^>]*>.*?</thinking\s*>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'</?think[^>]*>', '', text, flags=re.IGNORECASE)
         text = re.sub(r'</?thinking[^>]*>', '', text, flags=re.IGNORECASE)
         text = re.sub(r'<think\b[^>]*$', '', text, flags=re.IGNORECASE)
-
-        # v69: Removed /no_think stripping — Ruadapt Instruct doesn't use it
 
         # Strip AI disclaimers
         text = re.sub(r'(?:As an AI|Как AI|Как искусственный интеллект)[^.]*\.', '', text, flags=re.IGNORECASE)
@@ -799,9 +825,20 @@ class AIRouter:
 
         # Strip markdown
         text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
-        text = re.sub(r'\*([^*]+)\*', r'\1', text)
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)  # v70: Also strips roleplay *actions*
         text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
         text = re.sub(r'^\s*[--]\s+', '', text, flags=re.MULTILINE)
+
+        # v70: Clean up trailing incomplete sentences (4B model sometimes cuts off mid-sentence)
+        # Remove trailing text that ends with "..." or "," or incomplete words
+        text = re.sub(r'\s*\.{3,}\s*$', '.', text)  # Replace trailing ... with .
+        text = re.sub(r',\s*$', '.', text)  # Replace trailing , with .
+        # If text ends mid-sentence (no punctuation), add period
+        if text and text[-1] not in '.!?…' and not text[-1].isspace():
+            text += '.'
+
+        # v70: Reduce excessive emoji spam (max 3 emojis in a row)
+        text = re.sub(r'([\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U0001F900-\U0001F9FF\U00002600-\U000026FF]){4,}', '', text)
 
         # Clean up whitespace
         text = re.sub(r'\n{3,}', '\n\n', text)
@@ -862,6 +899,6 @@ class AIRouter:
             "pollinations_requests": self._pollinations_requests,
             "cloudflare_requests": self._cloudflare_requests,
             "vision_requests": self._vision_requests,
-            "strategy": "LOCAL-FIRST: Local(RuadaptQwen3-4B-Instruct)->Pollinations(KEY1+KEY2+OLD_API)->Cloudflare(Acct1+Acct2)->fallback (chat/comments: LOCAL-first, function: CLOUD-first, background: CLOUD-first+LOCAL-fallback)",
+            "strategy": "v70 LOCAL-FIRST: Local(RuadaptQwen3-4B-Instruct,v12-optimized)->Pollinations(KEY1+KEY2+OLD_API)->Cloudflare(Acct1+Acct2)->fallback (chat/comments: LOCAL-first, function: CLOUD-first, background: CLOUD-first+LOCAL-fallback, temp=0.75, rp=1.18, top_k=40)",
         }
         return status

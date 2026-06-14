@@ -1,4 +1,4 @@
-"""Nastya News Engine 5.2 - AI-ONLY COMMENTS + SOCHIAUTOPARTS PRIMARY + EXPANDED SOURCES!
+"""Nastya News Engine 5.3 - AI-ONLY COMMENTS + SOCHIAUTOPARTS PRIMARY + EXPANDED SOURCES!
 
 v5.2 KEY CHANGES:
   - sochiautoparts.ru/rss.xml - PRIMARY auto news source!
