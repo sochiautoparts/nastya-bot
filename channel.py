@@ -1,4 +1,4 @@
-"""Nastya Channel Manager v67.0 - LOCAL-ONLY POSTING + AI-POWERED NEWS + DATE AWARE!
+"""Nastya Channel Manager v68.0 - PERFORMANCE TUNING + /no_think POSTING!
 
 v15.0 KEY CHANGES:
   - LOCAL_ONLY_POSTING: Channel posts via local model ONLY! Saves cloud limits!

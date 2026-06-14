@@ -1,4 +1,4 @@
-"""LlamaCppProvider v9.0 - LOCAL-FIRST with AUTO-DOWNLOAD + SEGFAULT FIX!
+"""LlamaCppProvider v10.0 - PERFORMANCE TUNING + DYNAMIC TIMEOUT + SEGFAULT FIX!
 
 v9.0 CRITICAL FIX - Segfault after timeout recovery:
   - REPLACED _try_model_recovery() reset() call with full model reload.
@@ -42,7 +42,7 @@ DEFAULT_MODEL_CONFIG = {
 
 # Generation defaults
 DEFAULT_GEN_CONFIG = {
-    "max_tokens": 2048,      # v8: Was 1024 — Qwen3 thinks first, needs room for BOTH thinking + response
+    "max_tokens": 1024,      # v10: Was 2048 — chat responses are 40-150 words (~200-300 tokens), 1024 is enough for thinking + response
     "temperature": 0.82,
     "top_p": 0.92,
     "top_k": 50,
@@ -417,6 +417,15 @@ class LlamaCppProvider(BaseProvider):
         # Instead: let the model think freely, then strip  tags from the response.
         # Also removed '<think' from stop sequences so model can think AND respond.
 
+        # v10: Dynamic timeout — scale with max_tokens to avoid unnecessary timeouts
+        effective_max = min(max_tokens, self.gen_config["max_tokens"])
+        if effective_max <= 512:
+            request_timeout = 60.0    # Posting: short response expected (~20-30s)
+        elif effective_max <= 1024:
+            request_timeout = 90.0    # Chat: moderate response (~40-60s)
+        else:
+            request_timeout = 120.0   # Long responses (~80-100s)
+
         async with self._semaphore:
             self._request_count += 1
             start = time.time()
@@ -435,7 +444,7 @@ class LlamaCppProvider(BaseProvider):
                         repeat_penalty=self.gen_config["repeat_penalty"],
                         stop=stop_sequences if stop_sequences else None,
                     ),
-                    timeout=self.timeout,
+                    timeout=request_timeout,
                 )
 
                 elapsed = time.time() - start
@@ -488,7 +497,7 @@ class LlamaCppProvider(BaseProvider):
                 self._last_error_time = time.time()
                 self._error_count += 1
                 # v9: Full model reload instead of reset() — prevents SEGFAULT with OpenBLAS!
-                logger.warning("LlamaCppProvider: generation timed out (%.1fs), attempting model reload", self.timeout)
+                logger.warning("LlamaCppProvider: generation timed out (%.1fs, max_tokens=%d), attempting model reload", request_timeout, effective_max)
                 await self._try_model_recovery()
                 raise ProviderError(
                     self.name,
@@ -538,7 +547,8 @@ class LlamaCppProvider(BaseProvider):
             )
             elapsed = time.time() - start
             self._loaded = True
-            logger.info(f"LlamaCppProvider: model reloaded after error in {elapsed:.1f}s — recovery successful")
+            self._consecutive_errors = 0  # v10: Reset — fresh model shouldn't carry old errors
+            logger.info(f"LlamaCppProvider: model reloaded after error in {elapsed:.1f}s — recovery successful, errors reset")
         except ImportError:
             logger.error("LlamaCppProvider: llama-cpp-python not available for reload")
             self._llm = None

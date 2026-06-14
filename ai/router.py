@@ -1,4 +1,4 @@
-"""AI Router v67.0 - LOCAL-ONLY POSTING + LOCAL-FIRST MULTI-PROVIDER FAILOVER!
+"""AI Router v68.0 - LOCAL-ONLY POSTING + PERFORMANCE TUNING + /no_think POSTING!
 
 АРХИТЕКТУРА v67 - LOCAL-ONLY POSTING — канал постит ТОЛЬКО через локальную модель!
 Облако экономится для чатов, консультаций, vision — где качество важнее.
@@ -156,7 +156,7 @@ def _classify_task_complexity(prompt: str, messages: Optional[List[Dict]] = None
 
 
 class AIRouter:
-    """AI Router v67.0 - LOCAL-ONLY POSTING + LOCAL-FIRST MULTI-PROVIDER FAILOVER!
+    """AI Router v68.0 - LOCAL-ONLY POSTING + PERFORMANCE TUNING + /no_think POSTING!
 
     Strategy v67: LOCAL-ONLY POSTING for channel — local model directly for posts,
     saving cloud APIs for user interactions (chat, consultations, vision).
@@ -207,7 +207,7 @@ class AIRouter:
             try:
                 self._local = LlamaCppProvider(
                     model_path=MODEL_PATH,
-                    timeout=90.0,  # v9: Was 60s — 57s generation was timing out!
+                    timeout=90.0,  # v10: Dynamic timeout now used in generate() — this is fallback only
                     model_config={
                         "n_ctx": MODEL_N_CTX,
                         "n_threads": MODEL_N_THREADS,
@@ -267,7 +267,7 @@ class AIRouter:
         cloudflare_status = "active" if self._cloudflare and self._cloudflare.is_available() else "unavailable"
 
         logger.info(
-            f"AI Router v67.0 LOCAL-FIRST + LOCAL-ONLY POSTING initialized: "
+            f"AI Router v68.0 LOCAL-FIRST + LOCAL-ONLY POSTING + PERF TUNING initialized: "
             f"local={local_status} (Qwen3-4B, PRIMARY chat/comments), "
             f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + OLD API, PRIMARY functions), "
             f"cloudflare={cloudflare_status} (mistral-small-3.1, FALLBACK), "
@@ -688,43 +688,68 @@ class AIRouter:
             f"Пиши компактно — 3-5 предложений. Без заголовков и буллетов."
         )
 
+        # v68: Try /no_think first for faster posting (skip thinking tokens = 2-3x faster!)
+        # If model returns empty with /no_think (Q4_K_M sometimes ignores it),
+        # retry without /no_think for guaranteed response
+        user_msg_no_think = f"/no_think\n{user_msg}"
+        result = None
+
+        # Attempt 1: /no_think (faster — skips thinking, ~20-30s instead of 50-70s)
         try:
             result = await self._local.generate(
-                user_msg,
+                user_msg_no_think,
                 system_prompt=local_system,
-                max_tokens=LOCAL_POST_MAX_TOKENS,  # v67: 2048 — room for thinking + response
+                max_tokens=LOCAL_POST_MAX_TOKENS,  # v68: 512 — posts are 3-5 sentences, truncated to 600 chars
                 temperature=0.85,
             )
-            if result and result.text:
-                cleaned = self.clean_ai_response(result.text)
-                if cleaned:
-                    self._local_requests += 1
-                    logger.info(
-                        "LOCAL-ONLY post generated: %d chars",
-                        len(cleaned),
-                    )
-                    return AIResponse(
-                        text=cleaned,
-                        provider="local-only",
-                        model=result.model or "local-qwen3-4b",
-                        tokens_used=result.tokens_used,
-                        metadata={**result.metadata, "role": "local_only_post"},
-                    )
-
-            return AIResponse(
-                text="",
-                provider="local",
-                model="local-qwen3-4b",
-                metadata={"error": "Empty response from local model"},
-            )
         except Exception as e:
-            logger.error(f"LOCAL-ONLY post generation error: {e}")
-            return AIResponse(
-                text="",
-                provider="local",
-                model="local-qwen3-4b",
-                metadata={"error": f"Local-only error: {e}"},
-            )
+            logger.warning(f"LOCAL-ONLY /no_think attempt failed: {e}")
+            result = None
+
+        # Attempt 2: If /no_think returned empty, retry without it
+        if not result or not result.text:
+            if not result:
+                logger.info("LOCAL-ONLY: /no_think returned no result, retrying without it")
+            else:
+                logger.info("LOCAL-ONLY: /no_think returned empty text, retrying without it")
+            try:
+                result = await self._local.generate(
+                    user_msg,
+                    system_prompt=local_system,
+                    max_tokens=LOCAL_POST_MAX_TOKENS,
+                    temperature=0.85,
+                )
+            except Exception as e:
+                logger.error(f"LOCAL-ONLY post generation error (no /no_think): {e}")
+                return AIResponse(
+                    text="",
+                    provider="local",
+                    model="local-qwen3-4b",
+                    metadata={"error": f"Local-only error: {e}"},
+                )
+
+        if result and result.text:
+            cleaned = self.clean_ai_response(result.text)
+            if cleaned:
+                self._local_requests += 1
+                logger.info(
+                    "LOCAL-ONLY post generated: %d chars",
+                    len(cleaned),
+                )
+                return AIResponse(
+                    text=cleaned,
+                    provider="local-only",
+                    model=result.model or "local-qwen3-4b",
+                    tokens_used=result.tokens_used,
+                    metadata={**result.metadata, "role": "local_only_post"},
+                )
+
+        return AIResponse(
+            text="",
+            provider="local",
+            model="local-qwen3-4b",
+            metadata={"error": "Empty response from local model"},
+        )
 
     async def transcribe_voice(self, ogg_bytes: bytes) -> Optional[str]:
         """Transcribe voice message."""

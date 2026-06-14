@@ -1,4 +1,4 @@
-"""Nastya Bot v67.0 - LOCAL-ONLY POSTING + LOCAL-FIRST + CLOUD FAILOVER!
+"""Nastya Bot v68.0 - PERFORMANCE TUNING + /no_think POSTING + DYNAMIC TIMEOUT!
 
 Architecture v56.0:
   - PERSONA: Настя - москвичка, 23 года, блогер, владеет BMW M3 2025 серого цвета!

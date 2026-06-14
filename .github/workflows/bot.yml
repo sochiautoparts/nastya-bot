@@ -1,7 +1,7 @@
-name: Nastya Bot — LOCAL-ONLY POSTING v67 + Local-First
+name: Nastya Bot — LOCAL-ONLY POSTING v68 + Local-First + Performance Tuning
 
 # ═══════════════════════════════════════════════════════════════
-# Nastya Bot v67.0 — LOCAL-ONLY POSTING + LOCAL-FIRST + CLOUD FAILOVER
+# Nastya Bot v68.0 — PERFORMANCE TUNING + /no_think POSTING + DYNAMIC TIMEOUT
 #
 #   - LOCAL_ONLY_POSTING=true — channel posts via local model ONLY!
 #   - LOCAL MODEL: Qwen3-4B Q4_K_M (~2.5GB GGUF, CPU inference)
@@ -121,7 +121,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/nastya.db
-          key: nastya-db-v67
+          key: nastya-db-v68
           restore-keys: |
             nastya-db-
 
@@ -221,8 +221,8 @@ jobs:
           MODEL_PATH: "models/Qwen3-4B-Q4_K_M.gguf"
           MODEL_N_CTX: "4096"
           MODEL_N_THREADS: "2"
-          MODEL_MAX_TOKENS: "2048"
-          LOCAL_POST_MAX_TOKENS: "2048"
+          MODEL_MAX_TOKENS: "1024"
+          LOCAL_POST_MAX_TOKENS: "512"
           MODEL_AUTO_DOWNLOAD: "true"
           MODEL_DOWNLOAD_URL: "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf"
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -235,7 +235,7 @@ jobs:
           NEWS_FETCH_INTERVAL: 900
           CHANNEL_POST_INTERVAL: 1200
         run: |
-          echo "=== Starting Nastya Bot v67.0 LOCAL-ONLY POSTING + LOCAL-FIRST ==="
+          echo "=== Starting Nastya Bot v68.0 PERFORMANCE TUNING + /no_think POSTING ==="
           echo "LOCAL MODEL: Qwen3-4B Q4_K_M (PRIMARY for posting + chat/comments)"
           echo "LOCAL-ONLY POSTING: ENABLED — channel posts via local model ONLY!"
           echo "CLOUD: Pollinations (44+ models, dual-key) + Cloudflare (mistral-small-3.1)"
@@ -281,7 +281,7 @@ jobs:
         if: always()
         with:
           path: data/nastya.db
-          key: nastya-db-v67-${{ github.run_id }}
+          key: nastya-db-v68-${{ github.run_id }}
 
       - name: Save database to git
         if: always()
