@@ -985,7 +985,7 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
             # ═══════════════════════════════════════════════════════════
             # LOCAL-ONLY POSTING — skip all cloud providers!
             # Saves Pollinations/Cloudflare limits for user interactions.
-            # Local model (Qwen3-4B) generates post directly.
+            # Local model (RuadaptQwen3-4B-Instruct) generates post directly.
             # ═══════════════════════════════════════════════════════════
             logger.info("LOCAL-ONLY POSTING mode — using local model directly (saving cloud limits)")
             try:

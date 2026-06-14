@@ -172,7 +172,7 @@ class AIRouter:
       Channel posts: Cloud → local as last-resort fallback
 
     PROVIDER CHAIN:
-      Local(Qwen3-4B) -> Pollinations(KEY1->KEY2->OLD API) -> Cloudflare(Acct1->Acct2) -> static
+      Local(RuadaptQwen3-4B-Instruct) -> Pollinations(KEY1->KEY2->OLD API) -> Cloudflare(Acct1->Acct2) -> static
 
     Route for CHAT (route_type="chat", default):
         Local -> Pollinations -> Cloudflare -> static fallback
@@ -220,7 +220,7 @@ class AIRouter:
                 import asyncio
                 await self._local.init()
                 logger.info(
-                    f"LocalProvider (Qwen3-4B) initialized as PRIMARY for chat/comments "
+                    f"LocalProvider (RuadaptQwen3-4B-Instruct) initialized as PRIMARY for chat/comments "
                     f"(n_ctx={MODEL_N_CTX}, n_threads={MODEL_N_THREADS})"
                 )
             except Exception as e:
@@ -270,8 +270,8 @@ class AIRouter:
         cloudflare_status = "active" if self._cloudflare and self._cloudflare.is_available() else "unavailable"
 
         logger.info(
-            f"AI Router v68.0 LOCAL-FIRST + LOCAL-ONLY POSTING + PERF TUNING initialized: "
-            f"local={local_status} (Qwen3-4B, PRIMARY chat/comments), "
+            f"AI Router v69.0 RUADAPT QWEN3-4B-INSTRUCT initialized: "
+            f"local={local_status} (RuadaptQwen3-4B-Instruct, PRIMARY chat/comments), "
             f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + OLD API, PRIMARY functions), "
             f"cloudflare={cloudflare_status} (mistral-small-3.1, FALLBACK), "
             f"strategy=LOCAL->Pollinations->Cloudflare->fallback, "
@@ -522,7 +522,7 @@ class AIRouter:
 
         # ── LOCAL-FIRST routes: chat & comment ──
         if route_type in ("chat", "comment"):
-            # Level 0: Local model (Qwen3-4B)
+            # Level 0: Local model (RuadaptQwen3-4B-Instruct)
             result = await self._try_local(prompt, system_prompt, messages, **kwargs)
             if result:
                 return result
@@ -862,6 +862,6 @@ class AIRouter:
             "pollinations_requests": self._pollinations_requests,
             "cloudflare_requests": self._cloudflare_requests,
             "vision_requests": self._vision_requests,
-            "strategy": "LOCAL-FIRST: Local(Qwen3-4B)->Pollinations(KEY1+KEY2+OLD_API)->Cloudflare(Acct1+Acct2)->fallback (chat/comments: LOCAL-first, function: CLOUD-first, background: CLOUD-first+LOCAL-fallback)",
+            "strategy": "LOCAL-FIRST: Local(RuadaptQwen3-4B-Instruct)->Pollinations(KEY1+KEY2+OLD_API)->Cloudflare(Acct1+Acct2)->fallback (chat/comments: LOCAL-first, function: CLOUD-first, background: CLOUD-first+LOCAL-fallback)",
         }
         return status
