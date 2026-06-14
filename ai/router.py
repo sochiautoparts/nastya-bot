@@ -1,20 +1,24 @@
-"""AI Router v65.0 - LOCAL-FIRST MULTI-PROVIDER FAILOVER!
+"""AI Router v66.0 - LOCAL-FIRST MULTI-PROVIDER FAILOVER + LOCAL-ONLY POSTING!
 
-АРХИТЕКТУРА v65 - LOCAL-FIRST для простых задач, CLOUD-FIRST для сложных:
+АРХИТЕКТУРА v66 - LOCAL-FIRST для простых задач, CLOUD-FIRST для сложных,
+LOCAL-ONLY как последний фоллбэк для постинга:
 
-FAILOVER CHAIN (5 уровней до статического фоллбэка):
+FAILOVER CHAIN (6 уровней до статического фоллбэка):
   Level 0: Local Model (Qwen3-4B GGUF, CPU) — CHAT & COMMENT маршруты
   Level 1: Pollinations (API key) → KEY1 → KEY2
   Level 2: Pollinations FREE API (text.pollinations.ai, без авторизации)
   Level 3: Cloudflare Workers AI (@cf/mistralai/mistral-small-3.1-24b-instruct)
-  Last resort: Статические фоллбэк-ответы
+  Level 3.5: Local Model (fallback для FUNCTION + BACKGROUND маршрутов)
+  Last resort: LOCAL-ONLY постинг (упрощённый промпт для 4B модели)
+  Absolute last: Статические фоллбэк-ответы
 
-Стратегия маршрутизации (v65.0 — LOCAL-FIRST):
+Стратегия маршрутизации (v66.0 — LOCAL-FIRST + LOCAL-ONLY POSTING):
   CHAT route_type (пользовательские чаты) → Local → Pollinations(key) → Pollinations(free) → Cloudflare → Static
   FUNCTION route_type (посты, VIN, диагностика) → Pollinations(key) → Pollinations(free) → Cloudflare → Local(fallback) → Static
   COMMENT route_type (комментарии в группах) → Local → Pollinations(key) → Pollinations(free) → Cloudflare → Static
   VISION (фото) → Pollinations vision(key) → Pollinations vision(free) → Cloudflare vision → Static
-  BACKGROUND (новости, канал) → Pollinations(key) → Pollinations(free) → Cloudflare → Local(fallback) → Skip
+  BACKGROUND (новости, канал) → Pollinations(key) → Pollinations(free) → Cloudflare → Local(fallback) → LOCAL-ONLY posting
+  LOCAL-ONLY posting (last resort) → Local model directly with simplified prompt
   IMAGE generation → Pollinations(key) → Pollinations(free) → None
 
 Локальная модель ИДЕАЛЬНА для:
@@ -243,7 +247,7 @@ class AIRouter:
         cloudflare_status = "active" if self._cloudflare and self._cloudflare.is_available() else "unavailable"
 
         logger.info(
-            f"AI Router v65.0 LOCAL-FIRST initialized: "
+            f"AI Router v66.0 LOCAL-FIRST + LOCAL-ONLY POSTING initialized: "
             f"local={local_status} (Qwen3-4B, PRIMARY chat/comments), "
             f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + OLD API, PRIMARY functions), "
             f"cloudflare={cloudflare_status} (mistral-small-3.1, FALLBACK), "
@@ -376,7 +380,7 @@ class AIRouter:
                 prompt,
                 system_prompt=local_system,
                 messages=messages,
-                max_tokens=min(kwargs.get("max_tokens", 512), 512),
+                max_tokens=min(kwargs.get("max_tokens", 1024), 1024),
                 temperature=kwargs.get("temperature", 0.82),
             )
             if result and result.text:
@@ -571,16 +575,133 @@ class AIRouter:
         if result:
             return result
 
-        # Background failed - not critical
+        # Background failed - try LOCAL-ONLY post as last resort
         self._total_fallbacks += 1
-        logger.warning("Background task failed (all providers unavailable). Skipping.")
+        logger.warning("Background task: all cloud providers failed. Returning local-only fallback flag.")
         return AIResponse(
             text="",
             provider="none",
             model="none",
             tokens_used=0,
-            metadata={"skipped": True},
+            metadata={"skipped": True, "local_only_fallback": True},
         )
+
+    async def generate_local_post(
+        self,
+        title: str,
+        summary: str = "",
+        category: str = "",
+    ) -> AIResponse:
+        """Generate a channel post using ONLY the local model — last-resort fallback.
+
+        Called when ALL cloud providers (Pollinations, Cloudflare) are unavailable
+        or have exhausted their rate limits. Uses a SIMPLIFIED prompt optimized
+        for the Qwen3-4B 4B-parameter model running on CPU.
+
+        Key differences from normal chat() with background priority:
+          - Much shorter system prompt (4B model needs concise instructions)
+          - Direct instruction format instead of elaborate persona
+          - 1024 token limit (max for CPU speed)
+          - Bypasses all cloud providers entirely
+          - Simplified Nastya personality for small model
+
+        Args:
+            title: News article title
+            summary: News article summary/text to rewrite
+            category: News category (auto, tech, general, etc.)
+
+        Returns:
+            AIResponse from local model (may have lower quality than cloud)
+        """
+        if not self._local:
+            return AIResponse(
+                text="",
+                provider="none",
+                model="local-qwen3-4b",
+                metadata={"error": "Local model not configured"},
+            )
+
+        # Try to make local model available
+        if not self._local.is_available():
+            try:
+                await self._local.init()
+                if not self._local.is_available():
+                    return AIResponse(
+                        text="",
+                        provider="none",
+                        model="local-qwen3-4b",
+                        metadata={"error": "Local model not available after re-init"},
+                    )
+            except Exception as e:
+                return AIResponse(
+                    text="",
+                    provider="none",
+                    model="local-qwen3-4b",
+                    metadata={"error": f"Local model init error: {e}"},
+                )
+
+        # Category-specific context
+        category_note = ""
+        if category == "auto":
+            category_note = "Это авто-новость! Настя фанат BMW M3, разбирается в машинах. "
+        elif category == "tech":
+            category_note = "Это техно-новость! Настя следит за трендами. "
+        elif category == "food":
+            category_note = "Это кулинарная новость! Настя любит готовить. "
+
+        # Simplified system prompt for 4B model
+        local_system = (
+            "Ты Настя — москвичка, 23 года, блогер, канал @chasnastya. "
+            "Пиши живо и коротко. Сленг: прикинь, офигеть, капец, круто, точняк. "
+            f"{category_note}"
+            "Без политики. Без markdown. От первого лица."
+        )
+
+        user_msg = (
+            f"Новость: {title}\n\n"
+            f"{f'Текст: {summary[:500]}' if summary else ''}\n\n"
+            f"Задача: Напиши ПОСТ для Telegram-канала на основе этой новости. "
+            f"НЕ копируй — напиши СВОЙ текст. Добавь мнение или эмоцию.\n\n"
+            f"Пиши компактно — 3-5 предложений. Без заголовков и буллетов."
+        )
+
+        try:
+            result = await self._local.generate(
+                user_msg,
+                system_prompt=local_system,
+                max_tokens=1024,
+                temperature=0.85,
+            )
+            if result and result.text:
+                cleaned = self.clean_ai_response(result.text)
+                if cleaned:
+                    self._local_requests += 1
+                    logger.info(
+                        "LOCAL-ONLY post generated: %d chars",
+                        len(cleaned),
+                    )
+                    return AIResponse(
+                        text=cleaned,
+                        provider="local-only",
+                        model=result.model or "local-qwen3-4b",
+                        tokens_used=result.tokens_used,
+                        metadata={**result.metadata, "role": "local_only_post"},
+                    )
+
+            return AIResponse(
+                text="",
+                provider="local",
+                model="local-qwen3-4b",
+                metadata={"error": "Empty response from local model"},
+            )
+        except Exception as e:
+            logger.error(f"LOCAL-ONLY post generation error: {e}")
+            return AIResponse(
+                text="",
+                provider="local",
+                model="local-qwen3-4b",
+                metadata={"error": f"Local-only error: {e}"},
+            )
 
     async def transcribe_voice(self, ogg_bytes: bytes) -> Optional[str]:
         """Transcribe voice message."""

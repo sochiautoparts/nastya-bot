@@ -1,11 +1,17 @@
-"""LlamaCppProvider v6.0 - LOCAL-FIRST with AUTO-DOWNLOAD + HF_TOKEN!
+"""LlamaCppProvider v7.0 - LOCAL-FIRST with AUTO-DOWNLOAD + HF_TOKEN!
+
+v7.0 LOCAL-ONLY POSTING UPGRADE:
+  - max_tokens=1024 (was 512 - better for local-only post generation)
+  - LOCAL-ONLY posting: 1024 tokens (last-resort fallback with simplified prompt)
+  - FUNCTION route local limit: 1024 tokens (was 512, better for posts/diagnostics)
+  - All other limits remain the same (system=800, history=6, etc.)
+  - n_threads=2 (was 4 - matches GitHub Actions 2 vCPU, avoids contention)
 
 v6.0 LOCAL-FIRST UPGRADE:
   - AUTO-DOWNLOAD: Model downloads from HuggingFace if not found locally
   - HF_TOKEN support: Authenticated download for gated models (Qwen3-4B)
   - 3 download methods: huggingface_hub -> urllib with Bearer -> unauthenticated urllib
   - n_ctx=4096, n_batch=512 (faster batch processing)
-  - max_tokens=512 (was 300 - fuller responses for chat/comments)
   - Smart history: up to 6 messages (was 4 - more context with 4096 ctx)
   - System prompt: up to 800 chars (was 600 - more personality context)
   - Each message: up to 400 chars
@@ -44,7 +50,7 @@ DEFAULT_MODEL_CONFIG = {
 
 # Generation defaults
 DEFAULT_GEN_CONFIG = {
-    "max_tokens": 512,       # Fuller responses (was 300)
+    "max_tokens": 1024,      # v7: Was 512 - better for local-only post generation
     "temperature": 0.82,
     "top_p": 0.92,
     "top_k": 50,

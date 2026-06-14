@@ -90,8 +90,8 @@ ENABLE_LOCAL_MODEL: bool = _env("ENABLE_LOCAL_MODEL", "true").lower() in ("true"
 MODEL_PATH: str = _env("MODEL_PATH", "models/Qwen3-4B-Q4_K_M.gguf") if ENABLE_LOCAL_MODEL else ""
 
 MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 4096)  # Context window — 4096 for Qwen3-4B Q4
-MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 4)  # CPU threads — GitHub Actions has 2-4 cores
-MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 512)  # v65: Was 384 - fuller responses
+MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 2)  # CPU threads — GitHub Actions 2 vCPU (4 = contention)
+MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 1024)  # v66: Was 512, increased for local-only posting fallback
 MODEL_HISTORY_LIMIT: int = _env_int("MODEL_HISTORY_LIMIT", 6)  # v65: 6 history turns with 4096 ctx
 
 # HuggingFace model download URL (for auto-download + GitHub Actions)

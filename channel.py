@@ -980,8 +980,54 @@ async def post_ai_news_to_channel(bot: Bot, db, ai_router, news_item: Dict) -> b
                 # Limit length for channel
                 if len(ai_comment) > 600:
                     ai_comment = ai_comment[:597] + "..."
+            elif result and result.metadata and result.metadata.get("local_only_fallback"):
+                # ── LOCAL-ONLY FALLBACK ──
+                # All cloud providers failed — try local model directly with simplified prompt
+                logger.info("Cloud providers failed for news post — trying LOCAL-ONLY fallback")
+                try:
+                    local_result = await ai_router.generate_local_post(
+                        title=title,
+                        summary=summary or "",
+                        category=category,
+                    )
+                    if local_result and local_result.text:
+                        ai_comment = local_result.text.strip()
+                        import re as _re_loc
+                        ai_comment = _re_loc.sub(r'<[^>]+>', '', ai_comment)
+                        ai_comment = _re_loc.sub(r'^/no_think\s*', '', ai_comment)
+                        for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
+                            if ai_comment.startswith(prefix):
+                                ai_comment = ai_comment[len(prefix):].strip()
+                        if len(ai_comment) > 600:
+                            ai_comment = ai_comment[:597] + "..."
+                        logger.info("LOCAL-ONLY post generated: %d chars", len(ai_comment))
+                except Exception as loc_err:
+                    logger.error(f"LOCAL-ONLY fallback error: {loc_err}")
         except Exception as e:
             logger.error(f"AI news commentary error: {e}")
+
+            # ── LOCAL-ONLY FALLBACK (exception path) ──
+            if ai_router:
+                logger.info("AI generation threw exception — trying LOCAL-ONLY fallback")
+                try:
+                    local_result = await ai_router.generate_local_post(
+                        title=title,
+                        summary=summary or "",
+                        category=category,
+                    )
+                    if local_result and local_result.text:
+                        ai_comment = local_result.text.strip()
+                        import re as _re_loc2
+                        ai_comment = _re_loc2.sub(r'<[^>]+>', '', ai_comment)
+                        ai_comment = _re_loc2.sub(r'^/no_think\s*', '', ai_comment)
+                        for prefix in ["Настя:", "НАСТЯ:", "Nastya:"]:
+                            if ai_comment.startswith(prefix):
+                                ai_comment = ai_comment[len(prefix):].strip()
+                        if len(ai_comment) > 600:
+                            ai_comment = ai_comment[:597] + "..."
+                        logger.info("LOCAL-ONLY post after exception: %d chars", len(ai_comment))
+                except Exception as loc_err2:
+                    logger.error(f"LOCAL-ONLY fallback error after exception: {loc_err2}")
 
     # Use AI comment or fall back to template comment
     comment = ai_comment if ai_comment else template_comment
