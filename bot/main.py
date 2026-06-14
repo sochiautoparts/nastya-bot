@@ -602,7 +602,7 @@ async def on_startup(**kwargs) -> None:
 
     local_status = "LOADED" if ENABLE_LOCAL_MODEL and ai_router and ai_router._local and ai_router._local.is_available() else "OFF"
     logger.info(
-        f"=== Nastya Bot 65.0 LOCAL-FIRST Ready! "
+        f"=== Nastya Bot v67.0 LOCAL-ONLY POSTING Ready! "
         f"Local(Qwen3-4B)={local_status}, "
         f"Pollinations=ACTIVE, Cloudflare=FALLBACK ==="
     )

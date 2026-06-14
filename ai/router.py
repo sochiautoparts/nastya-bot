@@ -207,7 +207,7 @@ class AIRouter:
             try:
                 self._local = LlamaCppProvider(
                     model_path=MODEL_PATH,
-                    timeout=60.0,
+                    timeout=90.0,  # v9: Was 60s — 57s generation was timing out!
                     model_config={
                         "n_ctx": MODEL_N_CTX,
                         "n_threads": MODEL_N_THREADS,
@@ -267,7 +267,7 @@ class AIRouter:
         cloudflare_status = "active" if self._cloudflare and self._cloudflare.is_available() else "unavailable"
 
         logger.info(
-            f"AI Router v66.0 LOCAL-FIRST + LOCAL-ONLY POSTING initialized: "
+            f"AI Router v67.0 LOCAL-FIRST + LOCAL-ONLY POSTING initialized: "
             f"local={local_status} (Qwen3-4B, PRIMARY chat/comments), "
             f"pollinations={pollinations_status} ({len(CHAT_MODELS)} models + OLD API, PRIMARY functions), "
             f"cloudflare={cloudflare_status} (mistral-small-3.1, FALLBACK), "

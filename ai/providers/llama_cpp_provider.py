@@ -1,20 +1,19 @@
-"""LlamaCppProvider v8.0 - LOCAL-FIRST with AUTO-DOWNLOAD + NO-THINK-FIX!
+"""LlamaCppProvider v9.0 - LOCAL-FIRST with AUTO-DOWNLOAD + SEGFAULT FIX!
 
-v8.0 CRITICAL FIX — Empty response fix:
-  - REMOVED /no_think prefix — was causing empty responses with Qwen3-4B Q4_K_M!
-    The Q4 quantized model sometimes ignores /no_think and thinks anyway,
-    but WITH the prefix it generates ONLY thinking and NO actual content.
-  - REMOVED '<think' from stop sequences — model needs to think AND respond.
-    After stripping <think> tags, we get the actual response.
-  - INCREASED max_tokens from 1024 to 2048 — room for BOTH thinking + response.
-  - ADDED _try_model_recovery() — resets model after timeout to prevent
-    std::future_error crash with OpenBLAS backend.
-  - Warm-up: increased max_tokens from 10 to 50, removed /no_think.
+v9.0 CRITICAL FIX - Segfault after timeout recovery:
+  - REPLACED _try_model_recovery() reset() call with full model reload.
+    The OpenBLAS backend + llama-cpp-python reset() causes SEGFAULT (exit 139)
+    after a generation timeout. reset() corrupts internal state.
+    Now we fully unload and reload the model instead.
+  - INCREASED timeout from 60s to 90s - 57s generation was timing out at 60s.
+
+v8.0 Empty response fix:
+  - REMOVED /no_think prefix - was causing empty responses with Qwen3-4B Q4_K_M!
+  - REMOVED '<think' from stop sequences - model needs to think AND respond.
+  - INCREASED max_tokens from 1024 to 2048 - room for BOTH thinking + response.
 
 v7.0 LOCAL-ONLY POSTING UPGRADE:
   - max_tokens=2048 (was 512/1024 - better for local-only post generation)
-  - LOCAL-ONLY posting: 2048 tokens (room for thinking + response)
-  - FUNCTION route local limit: 2048 tokens (was 512/1024)
   - n_threads=2 (was 4 - matches GitHub Actions 2 vCPU, avoids contention)
 """
 
@@ -34,7 +33,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL_CONFIG = {
     "n_ctx": 4096,       # 4096 for Qwen3-4B Q4 - plenty of room
     "n_batch": 512,      # Faster batch processing
-    "n_threads": 2,   # GitHub Actions 2 vCPU (4 = contention)
+    "n_threads": 2,      # GitHub Actions 2 vCPU (4 = contention)
     "n_gpu_layers": 0,   # CPU only — GitHub Actions has no GPU
     "verbose": False,
     "use_mmap": True,    # Memory-mapped file — faster loading
@@ -83,7 +82,7 @@ class LlamaCppProvider(BaseProvider):
     def __init__(
         self,
         model_path: str = "",
-        timeout: float = 60.0,
+        timeout: float = 90.0,  # v9: Was 60s — 57s generation was timing out!
         model_config: Optional[Dict] = None,
         gen_config: Optional[Dict] = None,
     ):
@@ -415,7 +414,7 @@ class LlamaCppProvider(BaseProvider):
         # v8: Removed /no_think — it was causing empty responses with Q4_K_M quantization.
         # The model sometimes ignores /no_think and thinks anyway, but with the prefix
         # it generates ONLY thinking and no actual content.
-        # Instead: let the model think freely, then strip <think> tags from the response.
+        # Instead: let the model think freely, then strip  tags from the response.
         # Also removed '<think' from stop sequences so model can think AND respond.
 
         async with self._semaphore:
@@ -488,9 +487,8 @@ class LlamaCppProvider(BaseProvider):
                 self._consecutive_errors += 1
                 self._last_error_time = time.time()
                 self._error_count += 1
-                # v8: Try to recover the model after timeout — prevents std::future_error crash
-                # The OpenBLAS backend can leave the model in a bad state after timeout
-                logger.warning("LlamaCppProvider: generation timed out (%.1fs), attempting model recovery", self.timeout)
+                # v9: Full model reload instead of reset() — prevents SEGFAULT with OpenBLAS!
+                logger.warning("LlamaCppProvider: generation timed out (%.1fs), attempting model reload", self.timeout)
                 await self._try_model_recovery()
                 raise ProviderError(
                     self.name,
@@ -503,30 +501,52 @@ class LlamaCppProvider(BaseProvider):
                 self._consecutive_errors += 1
                 self._last_error_time = time.time()
                 self._error_count += 1
-                # v8: Try model recovery after any error to prevent crashes
-                logger.error("LlamaCppProvider: generation error: %s, attempting model recovery", e)
+                # v9: Full model reload instead of reset() — prevents SEGFAULT with OpenBLAS!
+                logger.error("LlamaCppProvider: generation error: %s, attempting model reload", e)
                 await self._try_model_recovery()
                 raise ProviderError(self.name, f"Generation error: {e}", retryable=True)
 
     async def _try_model_recovery(self) -> None:
         """Attempt to recover the model after a timeout or error.
 
-        v8: Prevents std::future_error crash with OpenBLAS backend.
-        After a timeout, the model's internal state can be corrupted.
-        Resetting the model context helps avoid crashes.
+        v9: DO NOT call self._llm.reset() — it causes SEGFAULT with OpenBLAS!
+        After a generation timeout, the model's internal state is corrupted.
+        Calling reset() on a corrupted model triggers a segfault (exit code 139).
+        Instead, we fully unload the model and reload it from disk.
+        This is slower (~2s) but guaranteed safe.
         """
         if not self._llm:
             return
         try:
-            # Reset the model's internal state by discarding the KV cache
-            # This is much faster than reloading the entire model
-            await asyncio.to_thread(self._llm.reset)
-            logger.info("LlamaCppProvider: model context reset after error — recovery successful")
-        except AttributeError:
-            # Older llama-cpp-python versions don't have reset()
-            logger.warning("LlamaCppProvider: model.reset() not available, skipping recovery")
+            # v9: DO NOT call reset() — it causes SEGFAULT with OpenBLAS!
+            # Fully unload and reload the model instead.
+            logger.warning("LlamaCppProvider: unloading corrupted model for full reload...")
+            try:
+                del self._llm
+            except Exception:
+                pass
+            self._llm = None
+            self._loaded = False
+
+            # Reload model from disk
+            from llama_cpp import Llama
+            start = time.time()
+            self._llm = await asyncio.to_thread(
+                Llama,
+                model_path=self.model_path,
+                **self.model_config,
+            )
+            elapsed = time.time() - start
+            self._loaded = True
+            logger.info(f"LlamaCppProvider: model reloaded after error in {elapsed:.1f}s — recovery successful")
+        except ImportError:
+            logger.error("LlamaCppProvider: llama-cpp-python not available for reload")
+            self._llm = None
+            self._loaded = False
         except Exception as e:
-            logger.error("LlamaCppProvider: model recovery failed: %s — model may be in unstable state", e)
+            logger.error("LlamaCppProvider: model reload failed: %s — model disabled", e)
+            self._llm = None
+            self._loaded = False
 
     @staticmethod
     def _build_messages(prompt: str, system_prompt: str, messages_history: Optional[List[Dict]]) -> List[Dict]:
