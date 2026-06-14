@@ -89,6 +89,7 @@ ENABLE_LOCAL_MODEL: bool = _env("ENABLE_LOCAL_MODEL", "true").lower() in ("true"
 # chat, consultations, vision, search — where quality matters most.
 # LOCAL_ONLY_POSTING=true means: NO cloud API calls for posting!
 LOCAL_ONLY_POSTING: bool = _env("LOCAL_ONLY_POSTING", "true").lower() in ("true", "1", "yes")
+LOCAL_POST_MAX_TOKENS: int = _env_int("LOCAL_POST_MAX_TOKENS", 2048)  # Max tokens for local-only posting (needs room for thinking + response)
 
 # ── LlamaCpp Model - LOCAL-FIRST Qwen3-4B ────
 # Qwen3-4B-Instruct Q4_K_M — PRIMARY for chat/comments, fallback for functions
@@ -98,7 +99,7 @@ MODEL_PATH: str = _env("MODEL_PATH", "models/Qwen3-4B-Q4_K_M.gguf") if ENABLE_LO
 
 MODEL_N_CTX: int = _env_int("MODEL_N_CTX", 4096)  # Context window — 4096 for Qwen3-4B Q4
 MODEL_N_THREADS: int = _env_int("MODEL_N_THREADS", 2)  # CPU threads — GitHub Actions 2 vCPU (4 = contention)
-MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 1024)  # v66: Was 512, increased for local-only posting fallback
+MODEL_MAX_TOKENS: int = _env_int("MODEL_MAX_TOKENS", 2048)  # v67: Was 1024, increased — Qwen3 thinks first, needs room for BOTH thinking + response
 MODEL_HISTORY_LIMIT: int = _env_int("MODEL_HISTORY_LIMIT", 6)  # v65: 6 history turns with 4096 ctx
 
 # HuggingFace model download URL (for auto-download + GitHub Actions)

@@ -1,28 +1,21 @@
-"""LlamaCppProvider v7.0 - LOCAL-FIRST with AUTO-DOWNLOAD + HF_TOKEN!
+"""LlamaCppProvider v8.0 - LOCAL-FIRST with AUTO-DOWNLOAD + NO-THINK-FIX!
+
+v8.0 CRITICAL FIX — Empty response fix:
+  - REMOVED /no_think prefix — was causing empty responses with Qwen3-4B Q4_K_M!
+    The Q4 quantized model sometimes ignores /no_think and thinks anyway,
+    but WITH the prefix it generates ONLY thinking and NO actual content.
+  - REMOVED '<think' from stop sequences — model needs to think AND respond.
+    After stripping <think> tags, we get the actual response.
+  - INCREASED max_tokens from 1024 to 2048 — room for BOTH thinking + response.
+  - ADDED _try_model_recovery() — resets model after timeout to prevent
+    std::future_error crash with OpenBLAS backend.
+  - Warm-up: increased max_tokens from 10 to 50, removed /no_think.
 
 v7.0 LOCAL-ONLY POSTING UPGRADE:
-  - max_tokens=1024 (was 512 - better for local-only post generation)
-  - LOCAL-ONLY posting: 1024 tokens (last-resort fallback with simplified prompt)
-  - FUNCTION route local limit: 1024 tokens (was 512, better for posts/diagnostics)
-  - All other limits remain the same (system=800, history=6, etc.)
+  - max_tokens=2048 (was 512/1024 - better for local-only post generation)
+  - LOCAL-ONLY posting: 2048 tokens (room for thinking + response)
+  - FUNCTION route local limit: 2048 tokens (was 512/1024)
   - n_threads=2 (was 4 - matches GitHub Actions 2 vCPU, avoids contention)
-
-v6.0 LOCAL-FIRST UPGRADE:
-  - AUTO-DOWNLOAD: Model downloads from HuggingFace if not found locally
-  - HF_TOKEN support: Authenticated download for gated models (Qwen3-4B)
-  - 3 download methods: huggingface_hub -> urllib with Bearer -> unauthenticated urllib
-  - n_ctx=4096, n_batch=512 (faster batch processing)
-  - Smart history: up to 6 messages (was 4 - more context with 4096 ctx)
-  - System prompt: up to 800 chars (was 600 - more personality context)
-  - Each message: up to 400 chars
-  - User message: up to 1500 chars
-  - Total chars safety limit: 10000 (was 8000 - more room with 4096 ctx)
-  - timeout=60.0 (was 45.0 - larger model needs more time)
-  - /no_think prefix for Qwen models
-  - stop=["<think", "<|im_end|>"] - BLOCKS Qwen3 thinking mode
-  - asyncio.Semaphore(1) for serialized generation
-  - asyncio.to_thread() for non-blocking generation
-  - Circuit breaker: 5 consecutive errors -> 2 min cooldown
 """
 
 import logging
@@ -50,14 +43,14 @@ DEFAULT_MODEL_CONFIG = {
 
 # Generation defaults
 DEFAULT_GEN_CONFIG = {
-    "max_tokens": 1024,      # v7: Was 512 - better for local-only post generation
+    "max_tokens": 2048,      # v8: Was 1024 — Qwen3 thinks first, needs room for BOTH thinking + response
     "temperature": 0.82,
     "top_p": 0.92,
     "top_k": 50,
     "repeat_penalty": 1.12,
     "frequency_penalty": 0.0,
     "presence_penalty": 0.0,
-    "stop": ["<think", "<|im_end|>"],  # Block thinking mode
+    "stop": ["<|im_end|>"],  # v8: Removed '<think' stop — was causing empty responses! Let model think + respond, strip tags after
 }
 
 # ── Context window limits for local model ──
@@ -310,14 +303,14 @@ class LlamaCppProvider(BaseProvider):
         logger.info("LlamaCppProvider: warming up model...")
         start = time.time()
         try:
-            warmup_msg = "/no_think\nПривет, как дела?"
+            # v8: No /no_think — let model think naturally, strip tags later
             await asyncio.to_thread(
                 self._llm.create_chat_completion,
                 messages=[
                     {"role": "system", "content": "Ты Настя - девушка из Москвы, 23 года, блогер."},
-                    {"role": "user", "content": warmup_msg},
+                    {"role": "user", "content": "Привет, как дела?"},
                 ],
-                max_tokens=10,
+                max_tokens=50,
                 temperature=0.1,
             )
             elapsed = time.time() - start
@@ -418,11 +411,12 @@ class LlamaCppProvider(BaseProvider):
                     messages.pop(0)
                 total_chars = sum(len(m.get("content", "")) for m in messages)
 
-        # For Qwen3: add /no_think prefix to disable thinking mode
-        if messages and messages[-1].get("role") == "user":
-            content = messages[-1]["content"]
-            if not content.startswith("/no_think"):
-                messages[-1]["content"] = f"/no_think\n{content}"
+        # For Qwen3: DO NOT add /no_think prefix!
+        # v8: Removed /no_think — it was causing empty responses with Q4_K_M quantization.
+        # The model sometimes ignores /no_think and thinks anyway, but with the prefix
+        # it generates ONLY thinking and no actual content.
+        # Instead: let the model think freely, then strip <think> tags from the response.
+        # Also removed '<think' from stop sequences so model can think AND respond.
 
         async with self._semaphore:
             self._request_count += 1
@@ -494,6 +488,10 @@ class LlamaCppProvider(BaseProvider):
                 self._consecutive_errors += 1
                 self._last_error_time = time.time()
                 self._error_count += 1
+                # v8: Try to recover the model after timeout — prevents std::future_error crash
+                # The OpenBLAS backend can leave the model in a bad state after timeout
+                logger.warning("LlamaCppProvider: generation timed out (%.1fs), attempting model recovery", self.timeout)
+                await self._try_model_recovery()
                 raise ProviderError(
                     self.name,
                     f"Generation timed out ({self.timeout}s)",
@@ -505,7 +503,30 @@ class LlamaCppProvider(BaseProvider):
                 self._consecutive_errors += 1
                 self._last_error_time = time.time()
                 self._error_count += 1
+                # v8: Try model recovery after any error to prevent crashes
+                logger.error("LlamaCppProvider: generation error: %s, attempting model recovery", e)
+                await self._try_model_recovery()
                 raise ProviderError(self.name, f"Generation error: {e}", retryable=True)
+
+    async def _try_model_recovery(self) -> None:
+        """Attempt to recover the model after a timeout or error.
+
+        v8: Prevents std::future_error crash with OpenBLAS backend.
+        After a timeout, the model's internal state can be corrupted.
+        Resetting the model context helps avoid crashes.
+        """
+        if not self._llm:
+            return
+        try:
+            # Reset the model's internal state by discarding the KV cache
+            # This is much faster than reloading the entire model
+            await asyncio.to_thread(self._llm.reset)
+            logger.info("LlamaCppProvider: model context reset after error — recovery successful")
+        except AttributeError:
+            # Older llama-cpp-python versions don't have reset()
+            logger.warning("LlamaCppProvider: model.reset() not available, skipping recovery")
+        except Exception as e:
+            logger.error("LlamaCppProvider: model recovery failed: %s — model may be in unstable state", e)
 
     @staticmethod
     def _build_messages(prompt: str, system_prompt: str, messages_history: Optional[List[Dict]]) -> List[Dict]:

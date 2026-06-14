@@ -64,6 +64,7 @@ from bot.config import (
     POLLINATIONS_API_KEY, POLLINATIONS_API_KEY_2, POLLINATIONS_MAX_TOKENS,
     CF_ACCOUNT_ID_1, CF_TOKEN_1, CF_ACCOUNT_ID_2, CF_TOKEN_2,
     ENABLE_LOCAL_MODEL, MODEL_PATH, MODEL_N_CTX, MODEL_N_THREADS,
+    LOCAL_POST_MAX_TOKENS,
 )
 
 logger = logging.getLogger(__name__)
@@ -691,7 +692,7 @@ class AIRouter:
             result = await self._local.generate(
                 user_msg,
                 system_prompt=local_system,
-                max_tokens=1024,
+                max_tokens=LOCAL_POST_MAX_TOKENS,  # v67: 2048 — room for thinking + response
                 temperature=0.85,
             )
             if result and result.text:
