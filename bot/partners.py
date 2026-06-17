@@ -1,13 +1,19 @@
-"""Partner Links System for Nastya Bot v3.0.
+"""Partner Links System for Nastya Bot v4.0.
 
 Nastya is a lifestyle blogger - she recommends products naturally in conversation.
 Partner links are integrated into her responses when relevant topics come up.
 
-v3.0 KEY CHANGES:
-- Downloads admitad_ads.json from remote GitHub URL (updateable file!)
+v4.0 KEY CHANGES (new source):
+- Downloads partners.json from https://sochiautoparts.ru/partners.json (updateable file!)
+- Reads the `campaigns` array (new format) with fallback to legacy keys
+- Reads the `regions` field (new) with fallback to `allowed_regions`
+- Extracts the `logo` field for partner post images
+- Maps the human-readable `categories` array to internal category keys via a
+  reliable domain-based mapping (DOMAIN_CATEGORY_MAP), because the source
+  `categories` are generic Russian strings ("Интернет-магазины" etc.)
 - Auto-refreshes every 6 hours
 - Uses goto_link EXACTLY as provided - NO subid additions!
-- Regional filtering by allowed_regions
+- Regional filtering by the `regions` field ("00" = worldwide)
 - For article searches, modifies ulp parameter in goto_link
 - Proper formatting: "Name (category description): goto_link"
 """
@@ -26,41 +32,143 @@ from bot.config import CHANNEL_USERNAME
 
 logger = logging.getLogger("nastya.partners")
 
-# Remote admitad_ads.json URL (updateable file!)
-ADMITAD_JSON_URL = "https://raw.githubusercontent.com/creastudioai-beep/pr/main/data/admitad_ads.json"
-ADMITAD_LOCAL_CACHE = "data/admitad_ads.json"
-ADMITAD_REFRESH_INTERVAL = 6 * 3600  # Refresh every 6 hours
+# Remote partners.json URL (updateable file!) — sochiautoparts.ru source
+PARTNERS_JSON_URL = "https://sochiautoparts.ru/partners.json"
+PARTNERS_LOCAL_CACHE = "data/partners.json"
+PARTNERS_REFRESH_INTERVAL = 6 * 3600  # Refresh every 6 hours
 
 # Default region for partner filtering
 DEFAULT_REGION = "RU"
 
+# ── Domain → internal category mapping ────────────────────────────────────────
+# Maps partner site domains to internal category keys used by the bot.
+# This is the most reliable mapping since partners.json `categories` are
+# human-readable Russian strings that are often too generic
+# (e.g. "Интернет-магазины" appears on almost every campaign).
+DOMAIN_CATEGORY_MAP: Dict[str, List[str]] = {
+    "rossko.ru": ["autoparts"],
+    "autopiter.ru": ["autoparts"],
+    "autopiter.kz": ["autoparts"],
+    "avtoall.ru": ["autoparts", "tools"],
+    "mirdvornikov.ru": ["autoparts"],
+    "lukoil-shop.com": ["autoparts"],
+    "hyperauto.ru": ["autoparts", "checkauto"],
+    "koleso.ru": ["autoparts", "tires"],
+    "euro-diski.ru": ["tires"],
+    "bs-tyres.ru": ["tires"],
+    "avtocod.ru": ["checkauto"],
+    "petrolplus.ru": ["autoinsurance"],
+    "localrent.com": ["autorent", "travel"],
+    "discovercars.com": ["autorent", "travel"],
+    "aviasales.ru": ["travel"],
+    "aliexpress.ru": ["shopping", "coupons"],
+    "aliexpress.com": ["shopping", "coupons"],
+    "alibaba.com": ["shopping", "coupons"],
+    "geekbuying.com": ["shopping", "electronics"],
+    "xistore.by": ["shopping", "electronics"],
+    "globaldrive.ru": ["shopping", "coupons"],
+    "raketacn.ru": ["shopping", "coupons"],
+    "globalyo.com": ["other"],
+    "skyeng.ru": ["other"],
+    "real-avto.com": ["other", "autoparts"],
+}
+
+# Human-readable category (from partners.json `categories`) → internal keys.
+# Used as a fallback when the domain is not in DOMAIN_CATEGORY_MAP.
+CATEGORY_NAME_KEYWORDS: Dict[str, List[str]] = {
+    "autoparts": ["товары для авто", "автомобили и мотоциклы"],
+    "tires": [],
+    "tools": [],
+    "autoinsurance": [],
+    "checkauto": ["авто"],
+    "autorent": ["аренда машин"],
+    "travel": ["билеты на самолеты", "туризм, путешествия"],
+    "shopping": ["маркетплейс", "интернет-магазины"],
+    "electronics": ["электроника и бытовая техника"],
+    "fashion": ["одежда, обувь, аксессуары", "косметика, гигиена, аптеки"],
+    "coupons": [],
+    "other": [],
+}
+
 
 class PartnerProgram:
-    """Single partner program from admitad."""
+    """Single partner program from partners.json."""
 
     def __init__(self, data: Dict):
-        self.id = str(data.get("id", ""))
+        self.id = str(data.get("id", data.get("name", "")))
         self.name = data.get("name", "")
         self.slug = data.get("slug", "")
+        # Logo / image: the new source uses the `logo` field
         self.image = (
             data.get("image") or
             data.get("image_url") or
             data.get("logo") or
             data.get("brand_logo") or
+            data.get("logo_url") or
             ""
         )
+        self.logo_url = self.image
+        self.image_url = self.image
         self.description = data.get("description", "")
         self.ad_text = data.get("ad_text", "")
         self.goto_link = data.get("goto_link", "")
         self.site_url = data.get("site_url", "")
+        # Source `categories` array (human-readable Russian strings)
+        self.categories = data.get("categories", [])
         self.category = data.get("category", "")
         self.category_name = data.get("category_name", "")
-        self.allowed_regions = data.get("allowed_regions", [])
+        # Source uses `regions` field (with legacy `allowed_regions` fallback)
+        self.allowed_regions = data.get("regions", data.get("allowed_regions", []))
         self.rating = data.get("rating", "")
         self.raw = data
+        # Map to internal category keys (autoparts, tires, tools, etc.)
+        self._internal_categories: set = self._compute_internal_categories()
+        if not self.category:
+            self.category = next(iter(sorted(self._internal_categories)), "other")
+        if not self.category_name:
+            self.category_name = self._get_category_description()
+
+    # ── Internal category mapping ──────────────────────────────────────────
+
+    def _compute_internal_categories(self) -> set:
+        """Determine internal category keys from domain + source categories.
+
+        Domain-based mapping is primary (most reliable). The human-readable
+        `categories` array from partners.json is used as a fallback.
+        """
+        cats: set = set()
+
+        # 1. Domain-based mapping (most reliable)
+        if self.site_url:
+            domain = (
+                urlparse(self.site_url).netloc.replace("www.", "").lower().rstrip("/")
+            )
+            if domain in DOMAIN_CATEGORY_MAP:
+                cats.update(DOMAIN_CATEGORY_MAP[domain])
+
+        # 2. Category-name keyword mapping (fallback / supplement)
+        if not cats:
+            combined = " ".join(self.categories).lower()
+            for internal_cat, keywords in CATEGORY_NAME_KEYWORDS.items():
+                if any(kw in combined for kw in keywords):
+                    cats.add(internal_cat)
+
+        # 3. Legacy explicit category field
+        if self.category and self.category != "":
+            cats.add(self.category)
+
+        # 4. Default fallback
+        if not cats:
+            cats.add("other")
+
+        return cats
 
     def has_region(self, region: str = DEFAULT_REGION) -> bool:
-        """Check if program is available in a region."""
+        """Check if program is available in a region.
+
+        Empty allowed_regions = available everywhere.
+        "00" in allowed_regions = worldwide.
+        """
         if not self.allowed_regions:
             return True
         region_upper = region.upper()
@@ -69,9 +177,15 @@ class PartnerProgram:
         return region_upper in [r.upper() for r in self.allowed_regions]
 
     def has_category(self, category: str) -> bool:
-        """Check if program belongs to a category."""
+        """Check if program belongs to a category.
+
+        Checks the primary internal category, the full set of internal
+        categories, and the human-readable category name.
+        """
         cat_lower = category.lower()
         if cat_lower == self.category.lower():
+            return True
+        if cat_lower in self._internal_categories:
             return True
         if cat_lower in self.category_name.lower():
             return True
@@ -131,8 +245,22 @@ class PartnerProgram:
             "rossko.ru": f"{site_url}/search?text={query_encoded}",
             "autopiter.ru": f"{site_url}/search?querystr={query_encoded}",
             "autopiter.kz": f"{site_url}/search?querystr={query_encoded}",
+            "exist.ru": f"{site_url}/Price/?p={query_encoded}",
+            "emex.ru": f"{site_url}/products?search={query_encoded}",
+            "autodoc.ru": f"{site_url}/search?keyword={query_encoded}",
+            "zzap.ru": f"{site_url}/search/?q={query_encoded}",
+            "avtoall.ru": f"{site_url}/search/?q={query_encoded}",
             "aliexpress.ru": f"{site_url}/wholesale?SearchText={query_encoded}",
             "aliexpress.com": f"{site_url}/wholesale?SearchText={query_encoded}",
+            "hyperauto.ru": f"{site_url}/search/?q={query_encoded}",
+            "euro-diski.ru": f"{site_url}/search/?q={query_encoded}",
+            "bs-tyres.ru": f"{site_url}/search/?q={query_encoded}",
+            "koleso.ru": f"{site_url}/search/?q={query_encoded}",
+            "avtocod.ru": f"{site_url}/search/?q={query_encoded}",
+            "petrolplus.ru": f"{site_url}/search/?q={query_encoded}",
+            "globaldrive.ru": f"{site_url}/search/?q={query_encoded}",
+            "mirdvornikov.ru": f"{site_url}/search/?q={query_encoded}",
+            "lukoil-shop.com": f"{site_url}/search/?q={query_encoded}",
         }
 
         for domain, pattern in search_patterns.items():
@@ -168,6 +296,10 @@ class PartnerProgram:
             "autoinsurance": "автострахование",
             "checkauto": "проверка авто",
             "autorent": "аренда авто",
+            "travel": "путешествия и билеты",
+            "shopping": "покупки",
+            "electronics": "электроника и техника",
+            "fashion": "одежда и красота",
             "coupons": "скидки и промокоды",
             "other": "рекомендую",
         }
@@ -175,9 +307,9 @@ class PartnerProgram:
 
 
 class NastyaPartnerManager:
-    """Manages partner links for Nastya Bot v3.0.
+    """Manages partner links for Nastya Bot v4.0.
 
-    Downloads admitad_ads.json from remote URL.
+    Downloads partners.json from sochiautoparts.ru.
     Uses goto_link EXACTLY as-is - NO subid additions!
     Nastya weaves partner links into her conversation style naturally.
     """
@@ -189,18 +321,18 @@ class NastyaPartnerManager:
         self._last_load_time: float = 0
 
     async def load_admitad_async(self) -> int:
-        """Load admitad programs - try remote first, then local cache."""
+        """Load partner programs - try remote first, then local cache."""
         count = await self._load_from_remote()
         if count > 0:
             return count
         return self._load_from_local()
 
     async def _load_from_remote(self) -> int:
-        """Download admitad_ads.json from GitHub."""
+        """Download partners.json from sochiautoparts.ru."""
         try:
             import httpx
             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-                response = await client.get(ADMITAD_JSON_URL)
+                response = await client.get(PARTNERS_JSON_URL)
                 if response.status_code == 200:
                     data = response.json()
                     count = self._parse_programs(data)
@@ -208,15 +340,15 @@ class NastyaPartnerManager:
                         self._save_cache(data)
                         self._loaded = True
                         self._last_load_time = time.time()
-                        logger.info(f"Loaded {count} admitad partner programs from remote URL")
+                        logger.info(f"Loaded {count} partner programs from remote URL")
                         return count
         except Exception as e:
-            logger.warning(f"Failed to load admitad_ads.json from remote: {e}")
+            logger.warning(f"Failed to load partners.json from remote: {e}")
         return 0
 
     def _load_from_local(self) -> int:
         """Load from local cache."""
-        for filepath in [ADMITAD_LOCAL_CACHE, "admitad_ads.json"]:
+        for filepath in [PARTNERS_LOCAL_CACHE, "partners.json"]:
             path = Path(filepath)
             if path.exists():
                 try:
@@ -225,24 +357,22 @@ class NastyaPartnerManager:
                     count = self._parse_programs(data)
                     self._loaded = True
                     self._last_load_time = time.time()
-                    logger.info(f"Loaded {count} admitad partner programs from local: {filepath}")
+                    logger.info(f"Loaded {count} partner programs from local: {filepath}")
                     return count
                 except Exception as e:
-                    logger.error(f"Error loading local admitad cache: {e}")
-        logger.info("No admitad_ads.json found - using direct shop links only")
+                    logger.error(f"Error loading local partners cache: {e}")
+        logger.info("No partners.json found - using direct shop links only")
         self._loaded = True
         return 0
 
-    def load_admitad(self, filepath: str = "admitad_ads.json") -> int:
+    def load_admitad(self, filepath: str = "partners.json") -> int:
         """Synchronous load from local file."""
         path = Path(filepath)
         if not path.exists():
-            path = Path(ADMITAD_LOCAL_CACHE)
-        if not path.exists():
-            path = Path("admitad_ads.json")
+            path = Path("partners.json")
 
         if not path.exists():
-            logger.info(f"No admitad_ads.json found - using direct shop links only")
+            logger.info(f"No partners.json found - using direct shop links only")
             self._loaded = True
             return 0
         try:
@@ -251,15 +381,19 @@ class NastyaPartnerManager:
             count = self._parse_programs(data)
             self._loaded = True
             self._last_load_time = time.time()
-            logger.info(f"Loaded {count} admitad partner programs for Nastya")
+            logger.info(f"Loaded {count} partner programs for Nastya")
             return count
         except Exception as e:
-            logger.error(f"Error loading admitad programs: {e}")
+            logger.error(f"Error loading partner programs: {e}")
             self._loaded = True
             return 0
 
     def _parse_programs(self, data) -> int:
-        """Parse programs from JSON data."""
+        """Parse programs from JSON data.
+
+        Supports the new partners.json format (`campaigns` array) as well as
+        legacy formats (`programs` / `items` / `results` / bare array).
+        """
         self._admitad_programs = []
         self._site_map = {}
 
@@ -267,7 +401,10 @@ class NastyaPartnerManager:
         if isinstance(data, list):
             items = data
         elif isinstance(data, dict):
-            items = data.get("programs", data.get("items", data.get("results", [])))
+            items = data.get(
+                "campaigns",
+                data.get("programs", data.get("items", data.get("results", []))),
+            )
             if not isinstance(items, list):
                 items = []
 
@@ -284,12 +421,12 @@ class NastyaPartnerManager:
     def _save_cache(self, data) -> None:
         """Save data to local cache."""
         try:
-            cache_path = Path(ADMITAD_LOCAL_CACHE)
+            cache_path = Path(PARTNERS_LOCAL_CACHE)
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             with open(cache_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False)
         except Exception as e:
-            logger.warning(f"Failed to save admitad cache: {e}")
+            logger.warning(f"Failed to save partners cache: {e}")
 
     def ensure_loaded(self) -> None:
         if not self._loaded:
@@ -297,7 +434,7 @@ class NastyaPartnerManager:
 
     async def maybe_refresh(self) -> None:
         """Refresh from remote if enough time has passed."""
-        if not self._loaded or (time.time() - self._last_load_time > ADMITAD_REFRESH_INTERVAL):
+        if not self._loaded or (time.time() - self._last_load_time > PARTNERS_REFRESH_INTERVAL):
             await self.load_admitad_async()
 
     # ── Category keyword definitions (used by detect_categories and get_all_relevant_links) ──
@@ -370,7 +507,7 @@ class NastyaPartnerManager:
         "travel": ["travel", "autorent"],
     }
 
-    # ── Ася's specific auto partners (always include for auto topics) ──
+    # ── Nastya's specific auto partners (always include for auto topics) ──
 
     AUTO_PARTNER_SITES = ["rossko.ru", "autopiter.ru", "avtoall.ru"]
 
@@ -414,7 +551,7 @@ class NastyaPartnerManager:
         using CATEGORY_GROUPS. For auto-related queries, includes autoparts +
         tires + tools + insurance + checkauto. For shopping, includes coupons.
         For travel, includes autorent.
-        Also ensures Ася's auto partners (Росско, Autopiter, AvtoALL) are
+        Also ensures Nastya's auto partners (Росско, Autopiter, AvtoALL) are
         included for car/BMW-related queries.
 
         Returns a list of dicts: {name, url, description, category_name}
@@ -442,14 +579,14 @@ class NastyaPartnerManager:
         # Get programs for all expanded categories
         programs = self.get_programs_for_categories(list(expanded_categories), region)
 
-        # If car/BMW-related, ensure Ася's auto partners are present
+        # If car/BMW-related, ensure Nastya's auto partners are present
         text_lower = text.lower()
         auto_keywords = ["bmw", "бмв", "m3", "m4", "m5", "x5", "авто", "машина", "тачк",
                          "запчаст", "ремонт", "двигател", "масло", "фильтр", "колодки",
                          "росско", "автопитер", "avtoall", "sto", "сто"]
         is_auto_topic = any(kw in text_lower for kw in auto_keywords)
         if is_auto_topic:
-            # Ensure Ася's specific auto partners are included
+            # Ensure Nastya's specific auto partners are included
             seen_ids = {p.id for p in programs}
             for site in self.AUTO_PARTNER_SITES:
                 prog = self._site_map.get(site)
@@ -551,7 +688,7 @@ class NastyaPartnerManager:
             return ""
 
         lines.append("")
-        lines.append("ВАЖНО: Ссылки выше - ПАРТНЁРСКИЕ (goto_link из admitad_ads.json). Используй их КАК ЕСТЬ, ничего не добавляй и не меняй!")
+        lines.append("ВАЖНО: Ссылки выше - ПАРТНЁРСКИЕ (goto_link из partners.json). Используй их КАК ЕСТЬ, ничего не добавляй и не меняй!")
         lines.append("Формат в ответе: 🔧 Имя — URL. НЕ используй HTML!")
         lines.append("Эти ссылки можно также естественно использовать в постах канала.")
 
@@ -561,7 +698,7 @@ class NastyaPartnerManager:
         """Get auto parts shop links specifically (for BMW-related queries).
 
         v4: Now includes ALL auto-related categories (autoparts, tires, tools,
-        insurance, checkauto) and ensures Ася's partners (Росско, Autopiter,
+        insurance, checkauto) and ensures Nastya's partners (Росско, Autopiter,
         AvtoALL) are always included.
         Format: 🔧 Name — URL
         """
@@ -574,7 +711,7 @@ class NastyaPartnerManager:
         if not parts_programs:
             parts_programs = self.find_matching_programs(query, region)
 
-        # Ensure Ася's specific auto partners are always present
+        # Ensure Nastya's specific auto partners are always present
         seen_ids = {p.id for p in parts_programs}
         for site in self.AUTO_PARTNER_SITES:
             prog = self._site_map.get(site)
@@ -596,7 +733,7 @@ class NastyaPartnerManager:
                 lines.append(f"- {link}")
 
         lines.append("Настя водит M3 и знает где покупать запчасти! Упомяни это естественно.")
-        lines.append("ВАЖНО: Ссылки - ПАРТНЁРСКИЕ (goto_link из admitad_ads.json). Используй КАК ЕСТЬ!")
+        lines.append("ВАЖНО: Ссылки - ПАРТНЁРСКИЕ (goto_link из partners.json). Используй КАК ЕСТЬ!")
         lines.append("Формат в ответе: 🔧 Имя — URL. НЕ используй HTML!")
         return "\n".join(lines)
 
@@ -609,7 +746,7 @@ class NastyaPartnerManager:
     def get_partner_links_for_post(self, category: str = "", region: str = "RU") -> List[Dict[str, str]]:
         """Get partner links suitable for channel posts.
 
-        v4: Cycles through categories intelligently, includes Ася's auto
+        v4: Cycles through categories intelligently, includes Nastya's auto
         partners, uses image field directly. goto_link used EXACTLY as-is!
 
         Returns 1-2 links that Настя can naturally include in her posts.
@@ -627,7 +764,7 @@ class NastyaPartnerManager:
         # Get programs matching category
         programs = self.get_by_category(category, region)
 
-        # For auto-related categories, also ensure Ася's partners are present
+        # For auto-related categories, also ensure Nastya's partners are present
         auto_cats = {"autoparts", "tires", "tools", "autoinsurance", "checkauto"}
         if category in auto_cats or not programs:
             seen_ids = {p.id for p in programs}
@@ -655,11 +792,11 @@ class NastyaPartnerManager:
             desc = p._get_category_description()
             links.append({
                 "name": p.name,
-                "url": p.goto_link,  # Ready-to-use link from admitad!
+                "url": p.goto_link,  # Ready-to-use link from partners.json!
                 "description": desc,
                 "category_name": p.category_name,
                 "category": p.category,
-                "image": p.image,  # Include image URL from PartnerProgram!
+                "image": p.image,  # Include image URL (logo) from PartnerProgram!
             })
 
         return links
@@ -674,16 +811,26 @@ class NastyaPartnerManager:
         self.ensure_loaded()
         if not site_url:
             return None
-        
+
         # Try parsing as URL first
         domain = urlparse(site_url).netloc.replace("www.", "") if site_url else ""
-        
+
         # If urlparse didn't extract a netloc (bare domain like "rossko.ru"),
         # treat the input itself as the domain
         if not domain and site_url:
             domain = site_url.replace("www.", "").rstrip("/")
-        
-        return self._site_map.get(domain)
+
+        # Direct lookup via site_map
+        result = self._site_map.get(domain)
+        if result:
+            return result
+
+        # Fallback: partial match on domain keys
+        for key, prog in self._site_map.items():
+            if domain in key or key in domain:
+                return prog
+
+        return None
 
 
 # ── Global instance ────────────────────────────────────────────────────────────

@@ -29,6 +29,30 @@ _recent_posts: List[str] = []
 _MAX_RECENT = 50
 
 
+def _svg_to_png(svg_data: bytes, width: int = 800, height: int = 600) -> Optional[bytes]:
+    """Convert SVG data to PNG using cairosvg.
+
+    Partners.json logos are SVG files; Telegram doesn't support SVG, so we
+    convert them to PNG with a white background.
+    Returns PNG bytes or None if conversion fails (e.g. cairosvg not installed).
+    """
+    try:
+        import cairosvg
+        png_bytes = cairosvg.svg2png(
+            bytestring=svg_data,
+            output_width=width,
+            output_height=height,
+            background_color="white",
+        )
+        if png_bytes and len(png_bytes) > 500:
+            return png_bytes
+    except ImportError:
+        logger.debug("cairosvg not available for SVG→PNG conversion")
+    except Exception as e:
+        logger.debug(f"SVG→PNG conversion failed: {e}")
+    return None
+
+
 def _is_recent_post(text: str) -> bool:
     """Check if this exact post (or very similar) was recently made."""
     text_lower = text.lower().strip()[:100]  # First 100 chars for comparison
@@ -790,31 +814,48 @@ async def post_partner_to_channel(bot: Bot, db, ai_router=None) -> bool:
             return False
 
         # Try to send partner image if available
-        # v4: Use image URL directly from partner data, not search by category
+        # v4: Use image URL directly from partner data (logo from partners.json).
+        #     Partners.json logos are SVG → convert to PNG (Telegram doesn't support SVG).
         image_sent = False
         if partner_image_url:
             try:
                 import httpx
                 async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                    img_resp = await client.get(partner_image_url)
-                    if img_resp.status_code == 200 and len(img_resp.content) > 500:
+                    img_resp = await client.get(partner_image_url, headers={
+                        "User-Agent": "NastyaBot/1.0 (+https://t.me/chasnastya)",
+                    })
+                    if img_resp.status_code == 200 and len(img_resp.content) > 200:
+                        content = img_resp.content
+                        content_type = img_resp.headers.get("content-type", "").lower()
+                        url_lower = partner_image_url.lower()
                         from io import BytesIO
-                        buf = BytesIO(img_resp.content)
-                        buf.seek(0)
 
-                        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(
-                                text="💬 Написать Насте",
-                                url=f"https://t.me/{BOT_USERNAME}?start=chat",
-                            )],
-                        ])
-                        await bot.send_photo(
-                            chat_id=CHANNEL_ID,
-                            photo=buf,
-                            caption=post_text,
-                            reply_markup=keyboard,
-                        )
-                        image_sent = True
+                        # ── SVG → PNG conversion (Telegram doesn't support SVG) ──
+                        if "svg" in content_type or url_lower.endswith(".svg"):
+                            png_data = _svg_to_png(content, width=800, height=600)
+                            if png_data:
+                                content = png_data
+                            else:
+                                logger.debug(f"SVG→PNG conversion failed for {partner_name}, skipping image")
+                                content = None
+
+                        if content:
+                            buf = BytesIO(content)
+                            buf.seek(0)
+
+                            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                                [InlineKeyboardButton(
+                                    text="💬 Написать Насте",
+                                    url=f"https://t.me/{BOT_USERNAME}?start=chat",
+                                )],
+                            ])
+                            await bot.send_photo(
+                                chat_id=CHANNEL_ID,
+                                photo=buf,
+                                caption=post_text,
+                                reply_markup=keyboard,
+                            )
+                            image_sent = True
             except Exception as img_err:
                 logger.debug(f"Partner image download failed: {img_err}")
                 # v4: Don't skip the post - continue without image

@@ -105,11 +105,13 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          # Install system dependencies for llama-cpp-python (OpenBLAS for fast CPU inference)
-          sudo apt-get update -qq && sudo apt-get install -y -qq libopenblas-dev
+          # Install system dependencies:
+          #   - libopenblas-dev for fast CPU inference via llama-cpp-python
+          #   - libcairo2-dev / libffi-dev for cairosvg (SVG→PNG conversion of partner logos)
+          sudo apt-get update -qq && sudo apt-get install -y -qq libopenblas-dev libcairo2-dev libffi-dev
           # Install llama-cpp-python with CPU optimizations (OpenBLAS for fast inference)
           CMAKE_ARGS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS" pip install llama-cpp-python>=0.3.0 --no-cache-dir
-          # Install remaining dependencies
+          # Install remaining dependencies (incl. cairosvg + Pillow for partner logo images)
           pip install -r requirements.txt
 
       - name: Clean Python cache
@@ -121,11 +123,23 @@ jobs:
       - name: Create data directory
         run: mkdir -p data models
 
-      - name: Download Admitad partner data
+      - name: Download partner data (partners.json)
         run: |
           mkdir -p data
-          curl -sL "https://raw.githubusercontent.com/creastudioai-beep/pr/main/data/admitad_ads.json" \
-            -o data/admitad_ads.json || echo "Failed to download admitad data, will use cached version"
+          # Download partners.json from sochiautoparts.ru (the single source of truth)
+          HTTP_CODE=$(curl -sL -o /tmp/partners_check.json -w "%{http_code}" "https://sochiautoparts.ru/partners.json")
+          if [ "$HTTP_CODE" = "200" ]; then
+            # Validate it's actually JSON with a `campaigns` array
+            if python3 -c "import json,sys; d=json.load(open('/tmp/partners_check.json')); assert isinstance(d.get('campaigns'), list) and d['campaigns'], 'no campaigns'" 2>/dev/null; then
+              cp /tmp/partners_check.json data/partners.json
+              CAMPAIGNS=$(python3 -c "import json; print(len(json.load(open('data/partners.json'))['campaigns']))")
+              echo "Partner data downloaded successfully: $CAMPAIGNS campaigns"
+            else
+              echo "WARNING: Downloaded file is not valid partners.json, skipping"
+            fi
+          else
+            echo "Failed to download partners.json (HTTP $HTTP_CODE), partner posts will be skipped"
+          fi
 
       - name: Restore database cache
         uses: actions/cache@v4

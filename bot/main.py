@@ -550,10 +550,10 @@ async def on_startup(**kwargs) -> None:
     await ai_router.init()
     logger.info(f"AI Router: LlamaCppProvider, status={ai_router.get_status()}")
 
-    # Load partner programs from remote admitad_ads.json (updateable file!)
+    # Load partner programs from remote partners.json (updateable file!)
     from bot.partners import nastya_partner_manager
     partner_count = await nastya_partner_manager.load_admitad_async()
-    logger.info(f"Admitad partner programs loaded: {partner_count}")
+    logger.info(f"Partner programs loaded: {partner_count}")
 
     # Interbot removed — each bot works independently
 

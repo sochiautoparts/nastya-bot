@@ -4016,7 +4016,7 @@ def _replace_plain_urls_with_affiliate(text: str) -> str:
     """Replace any plain partner domain URLs with affiliate goto_link equivalents.
     
     When the AI generates responses containing plain URLs like rossko.ru or 
-    autopiter.ru instead of the affiliate tracking links from admitad_ads.json,
+    autopiter.ru instead of the affiliate tracking links from partners.json,
     this function detects them and replaces with the proper goto_link.
     
     This handles cases where:

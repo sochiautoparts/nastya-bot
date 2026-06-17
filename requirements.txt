@@ -4,5 +4,7 @@ aiosqlite>=0.20.0
 feedparser>=6.0.0
 python-dotenv>=1.0.0
 pyswisseph>=2.10.3
+cairosvg>=2.7.0
+Pillow>=10.0.0
 # llama-cpp-python installed via CMAKE_ARGS in workflow (not here — needs system libs)
 # huggingface_hub for authenticated model download (installed in workflow when HF_TOKEN is set)
