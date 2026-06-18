@@ -694,6 +694,212 @@ class NastyaPartnerManager:
 
         return "\n".join(lines)
 
+    # ── Conversation / comment context (v4.1) ───────────────────────────────
+    #
+    # The bot should be able to use ALL partner programs in dialogues and
+    # group comments, not only when a strict category keyword matches. These
+    # methods provide a context-aware partner pool that ALWAYS gives the AI
+    # something to work with, so partner links can be woven naturally into
+    # any conversation.
+
+    def get_all_partners_pool(
+        self, region: str = DEFAULT_REGION, max_programs: int = 25
+    ) -> List[Dict[str, str]]:
+        """Return ALL partner programs available in the region.
+
+        This is the full pool the bot can draw from in any dialogue or
+        comment. Every entry includes name, url (goto_link as-is),
+        description, category, and image (logo URL). Used as a fallback
+        when generate_partner_context finds no category-specific matches.
+        """
+        self.ensure_loaded()
+        pool: List[Dict[str, str]] = []
+        seen_ids: set = set()
+        for p in self._admitad_programs:
+            if not p.has_region(region):
+                continue
+            if p.id in seen_ids or not p.goto_link:
+                continue
+            seen_ids.add(p.id)
+            pool.append({
+                "name": p.name,
+                "url": p.goto_link,  # Use EXACTLY as-is!
+                "description": p._get_category_description(),
+                "category_name": p.category_name,
+                "category": p.category,
+                "image": p.image,  # logo URL (SVG handled by channel.py)
+                "site_url": p.site_url,
+            })
+            if len(pool) >= max_programs:
+                break
+        return pool
+
+    def generate_conversation_partner_context(
+        self,
+        text: str,
+        max_programs: int = 6,
+        region: str = DEFAULT_REGION,
+        is_group: bool = False,
+    ) -> str:
+        """Generate partner context for dialogues and group comments.
+
+        v4.1: Unlike generate_partner_context (which returns "" when no
+        category keyword matches), this method ALWAYS provides partners so
+        the bot can use ALL affiliate programs in any conversation context.
+
+        Strategy:
+        1. Try context-based matching (existing detect_categories logic).
+           If matches found -> use those (most relevant).
+        2. If no category match -> provide a DIVERSE pool sampled across
+           ALL categories (auto, shopping, travel, electronics, fashion,
+           coupons, etc.) so the bot has variety to draw from.
+        3. For group comments, keep the pool smaller (3-4) since comments
+           must be short; for private chat provide a larger pool (6).
+
+        goto_link used EXACTLY as-is - no modifications!
+        Format: 🔧 Name — URL (simple, NOT HTML)
+        """
+        self.ensure_loaded()
+
+        # 1. Try context-based matching first (most relevant)
+        context_links = self.get_all_relevant_links(text, max_programs=max_programs, region=region)
+
+        # Also add direct text matches
+        matches = self.find_matching_programs(text, region)
+        seen_urls = {l["url"] for l in context_links}
+        for p in matches:
+            if p.goto_link and p.goto_link not in seen_urls:
+                context_links.append({
+                    "name": p.name,
+                    "url": p.goto_link,
+                    "description": p._get_category_description(),
+                    "category_name": p.category_name,
+                    "category": p.category,
+                })
+                seen_urls.add(p.goto_link)
+
+        # 2. If no context matches -> build a DIVERSE pool from all categories
+        if not context_links:
+            # For group comments, use a smaller pool (comments are short)
+            pool_size = 3 if is_group else max_programs
+            context_links = self._build_diverse_pool(pool_size, region)
+
+        # Still empty (no partners at all)?
+        if not context_links:
+            return ""
+
+        # Limit final count
+        effective_max = 4 if is_group else max_programs
+        context_links = context_links[:effective_max]
+
+        # Check for article number (for search-specific links)
+        article_match = re.search(r'\b([A-Z0-9]{4,}[-/]?[A-Z0-9]*)\b', text.upper())
+        article = article_match.group(1) if article_match else ""
+
+        categories = self.detect_categories(text)
+        cat_labels = [c for c in categories] if categories else ["разное"]
+
+        if is_group:
+            intro = (
+                f"Партнёрские ссылки (можешь ВСТАВИТЬ ОДНУ если подходит к разговору — "
+                f"тема: {', '.join(cat_labels)}):"
+            )
+        else:
+            intro = (
+                f"Партнёрские ссылки для темы: {', '.join(cat_labels)} "
+                f"(вставь ЕСТЕСТВЕННО если подходит к разговору!)"
+            )
+
+        lines = [
+            intro,
+            "Формат: 🔧 Имя — URL. НЕ как реклама — как личная рекомендация!",
+        ]
+
+        for link_data in context_links:
+            name = link_data["name"]
+            url = link_data["url"]
+            desc = link_data.get("description", "")
+            if desc and desc != "рекомендую":
+                lines.append(f"- 🔧 {name} ({desc}) — {url}")
+            else:
+                lines.append(f"- 🔧 {name} — {url}")
+
+        if len(lines) <= 2:
+            return ""
+
+        lines.append("")
+        lines.append("ВАЖНО: Ссылки - ПАРТНЁРСКИЕ (goto_link из partners.json). Используй КАК ЕСТЬ!")
+        lines.append("Не обязательно вставлять ссылку в каждый ответ — только если К МЕСТУ.")
+
+        return "\n".join(lines)
+
+    def _build_diverse_pool(
+        self, pool_size: int, region: str = DEFAULT_REGION
+    ) -> List[Dict[str, str]]:
+        """Build a diverse partner pool covering multiple categories.
+
+        Picks partners from different categories so the bot has variety
+        (e.g. one autoparts, one shopping, one travel, one electronics...).
+        Always includes Nastya's auto partners first.
+        """
+        self.ensure_loaded()
+        pool: List[Dict[str, str]] = []
+        seen_ids: set = set()
+
+        # 1. Always include Nastya's auto partners first
+        for site in self.AUTO_PARTNER_SITES:
+            prog = self._site_map.get(site)
+            if prog and prog.has_region(region) and prog.id not in seen_ids and prog.goto_link:
+                seen_ids.add(prog.id)
+                pool.append({
+                    "name": prog.name,
+                    "url": prog.goto_link,
+                    "description": prog._get_category_description(),
+                    "category_name": prog.category_name,
+                    "category": prog.category,
+                })
+
+        # 2. Group remaining programs by internal category for diversity
+        by_category: Dict[str, List[PartnerProgram]] = {}
+        for p in self._admitad_programs:
+            if p.id in seen_ids or not p.has_region(region) or not p.goto_link:
+                continue
+            # Use the primary internal category for grouping
+            primary_cat = p.category or "other"
+            by_category.setdefault(primary_cat, []).append(p)
+
+        # 3. Round-robin pick one from each category until pool is full
+        category_keys = list(by_category.keys())
+        random.shuffle(category_keys)
+        idx = 0
+        while len(pool) < pool_size and by_category:
+            if idx >= len(category_keys):
+                idx = 0
+                # Remove empty categories
+                category_keys = [c for c in category_keys if by_category.get(c)]
+                if not category_keys:
+                    break
+                continue
+            cat = category_keys[idx]
+            progs = by_category.get(cat, [])
+            if progs:
+                p = random.choice(progs)
+                if p.id not in seen_ids:
+                    seen_ids.add(p.id)
+                    pool.append({
+                        "name": p.name,
+                        "url": p.goto_link,
+                        "description": p._get_category_description(),
+                        "category_name": p.category_name,
+                        "category": p.category,
+                    })
+                progs.remove(p)
+                if not progs:
+                    by_category.pop(cat, None)
+            idx += 1
+
+        return pool
+
     def get_auto_parts_links(self, query: str, region: str = DEFAULT_REGION) -> str:
         """Get auto parts shop links specifically (for BMW-related queries).
 

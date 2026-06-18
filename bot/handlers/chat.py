@@ -3539,15 +3539,19 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
             logger.warning(f"Web search error: {e}")
 
     # ── Partner links context ──
-    # Nastya gives partner links naturally in conversation - not as ads, but as personal recommendations
-    # v4: Uses get_all_relevant_links for cross-category coverage + 🔧 format
+    # Nastya gives partner links naturally in conversation - not as ads, but as personal recommendations.
+    # v4.1: Use generate_conversation_partner_context so the bot can use ALL
+    # partner programs in dialogues AND group comments. Unlike the old method
+    # (which returned "" when no category keyword matched), this ALWAYS gives
+    # the AI a pool of partners (context-matched, or a diverse fallback pool)
+    # so links can be woven into any conversation when they fit.
     try:
-        # First: use the enhanced generate_partner_context which now includes
-        # cross-category links via get_all_relevant_links
-        partner_context = nastya_partner_manager.generate_partner_context(text, max_programs=5)
+        partner_context = nastya_partner_manager.generate_conversation_partner_context(
+            text, max_programs=5, is_group=is_group
+        )
         if partner_context:
             system_prompt += f"\n\n{partner_context}"
-            logger.info(f"Partner context added for user {user_id}: categories detected")
+            logger.info(f"Partner context added for user {user_id} (is_group={is_group})")
     except Exception as e:
         logger.warning(f"Partner context error: {e}")
 
