@@ -319,6 +319,20 @@ class NastyaPartnerManager:
         self._site_map: Dict[str, PartnerProgram] = {}
         self._loaded = False
         self._last_load_time: float = 0
+        # ── v4.2 performance caches (rebuilt only when partners reload) ──
+        # Pre-built pool per region so generate_conversation_partner_context
+        # and get_all_partners_pool don't re-iterate on every chat message.
+        self._pool_cache: Dict[str, List[Dict[str, str]]] = {}
+        # Pre-built by-category index for _build_diverse_pool round-robin
+        self._by_category_cache: Dict[str, Dict[str, List[PartnerProgram]]] = {}
+        # ── v4.2 dedup: track recently recommended partner ids per chat ──
+        # {chat_key: deque([id, id, ...], maxlen=8)} — avoids repeating the
+        # same partner across consecutive messages in the same chat.
+        from collections import defaultdict, deque
+        self._recent_recommendations: Dict[str, "deque"] = defaultdict(
+            lambda: deque(maxlen=8)
+        )
+        self._defaultdeque = deque
 
     async def load_admitad_async(self) -> int:
         """Load partner programs - try remote first, then local cache."""
@@ -396,6 +410,9 @@ class NastyaPartnerManager:
         """
         self._admitad_programs = []
         self._site_map = {}
+        # v4.2: invalidate performance caches on reload
+        self._pool_cache.clear()
+        self._by_category_cache.clear()
 
         items = []
         if isinstance(data, list):
@@ -417,6 +434,68 @@ class NastyaPartnerManager:
                     self._site_map[domain] = prog
 
         return len(self._admitad_programs)
+
+    # ── v4.2 cached builders (avoid re-iterating on every message) ──
+
+    def _get_cached_pool(self, region: str) -> List[Dict[str, str]]:
+        """Return the region pool, building + caching it on first access."""
+        if region in self._pool_cache:
+            return self._pool_cache[region]
+        pool: List[Dict[str, str]] = []
+        seen_ids: set = set()
+        for p in self._admitad_programs:
+            if not p.has_region(region):
+                continue
+            if p.id in seen_ids or not p.goto_link:
+                continue
+            seen_ids.add(p.id)
+            pool.append({
+                "name": p.name,
+                "url": p.goto_link,
+                "description": p._get_category_description(),
+                "category_name": p.category_name,
+                "category": p.category,
+                "image": p.image,
+                "site_url": p.site_url,
+                "id": p.id,
+            })
+        self._pool_cache[region] = pool
+        return pool
+
+    def _get_cached_by_category(
+        self, region: str
+    ) -> Dict[str, List[PartnerProgram]]:
+        """Return {category: [programs]} index for the region, cached."""
+        if region in self._by_category_cache:
+            return self._by_category_cache[region]
+        by_cat: Dict[str, List[PartnerProgram]] = {}
+        for p in self._admitad_programs:
+            if not p.has_region(region) or not p.goto_link:
+                continue
+            primary_cat = p.category or "other"
+            by_cat.setdefault(primary_cat, []).append(p)
+        self._by_category_cache[region] = by_cat
+        return by_cat
+
+    def _record_recommendation(self, chat_key: str, partner_id: str) -> None:
+        """Record that a partner was recommended in a chat (for dedup)."""
+        self._recent_recommendations[chat_key].append(partner_id)
+
+    def _filter_recent(
+        self, links: List[Dict[str, str]], chat_key: str
+    ) -> List[Dict[str, str]]:
+        """Move recently-recommended partners to the end of the list.
+
+        Does not hard-remove them (we may need fallback), but surfaces fresh
+        partners first so the bot doesn't repeat the same recommendation in
+        consecutive messages of the same chat.
+        """
+        recent = self._recent_recommendations.get(chat_key)
+        if not recent:
+            return links
+        fresh = [l for l in links if l.get("id") not in recent]
+        used = [l for l in links if l.get("id") in recent]
+        return fresh + used
 
     def _save_cache(self, data) -> None:
         """Save data to local cache."""
@@ -711,28 +790,13 @@ class NastyaPartnerManager:
         comment. Every entry includes name, url (goto_link as-is),
         description, category, and image (logo URL). Used as a fallback
         when generate_partner_context finds no category-specific matches.
+
+        v4.2: Uses a cached pool (rebuilt only when partners reload).
         """
         self.ensure_loaded()
-        pool: List[Dict[str, str]] = []
-        seen_ids: set = set()
-        for p in self._admitad_programs:
-            if not p.has_region(region):
-                continue
-            if p.id in seen_ids or not p.goto_link:
-                continue
-            seen_ids.add(p.id)
-            pool.append({
-                "name": p.name,
-                "url": p.goto_link,  # Use EXACTLY as-is!
-                "description": p._get_category_description(),
-                "category_name": p.category_name,
-                "category": p.category,
-                "image": p.image,  # logo URL (SVG handled by channel.py)
-                "site_url": p.site_url,
-            })
-            if len(pool) >= max_programs:
-                break
-        return pool
+        cached = self._get_cached_pool(region)
+        # Return a shallow copy limited to max_programs
+        return cached[:max_programs]
 
     def generate_conversation_partner_context(
         self,
@@ -740,12 +804,15 @@ class NastyaPartnerManager:
         max_programs: int = 6,
         region: str = DEFAULT_REGION,
         is_group: bool = False,
+        chat_key: str = "",
     ) -> str:
         """Generate partner context for dialogues and group comments.
 
         v4.1: Unlike generate_partner_context (which returns "" when no
         category keyword matches), this method ALWAYS provides partners so
         the bot can use ALL affiliate programs in any conversation context.
+        v4.2: Dedup — if chat_key is given, recently-recommended partners
+        for that chat are deprioritized so the bot doesn't repeat itself.
 
         Strategy:
         1. Try context-based matching (existing detect_categories logic).
@@ -775,6 +842,7 @@ class NastyaPartnerManager:
                     "description": p._get_category_description(),
                     "category_name": p.category_name,
                     "category": p.category,
+                    "id": p.id,
                 })
                 seen_urls.add(p.goto_link)
 
@@ -788,9 +856,20 @@ class NastyaPartnerManager:
         if not context_links:
             return ""
 
+        # v4.2: dedup — surface fresh partners first for this chat
+        if chat_key:
+            context_links = self._filter_recent(context_links, chat_key)
+
         # Limit final count
         effective_max = 4 if is_group else max_programs
         context_links = context_links[:effective_max]
+
+        # v4.2: record recommended partner ids for future dedup
+        if chat_key:
+            for l in context_links:
+                pid = l.get("id")
+                if pid:
+                    self._record_recommendation(chat_key, pid)
 
         # Check for article number (for search-specific links)
         article_match = re.search(r'\b([A-Z0-9]{4,}[-/]?[A-Z0-9]*)\b', text.upper())
@@ -841,6 +920,9 @@ class NastyaPartnerManager:
         Picks partners from different categories so the bot has variety
         (e.g. one autoparts, one shopping, one travel, one electronics...).
         Always includes Nastya's auto partners first.
+
+        v4.2: Uses a cached by-category index (rebuilt only on reload) and
+        works on shallow copies so the cached structures stay intact.
         """
         self.ensure_loaded()
         pool: List[Dict[str, str]] = []
@@ -857,16 +939,14 @@ class NastyaPartnerManager:
                     "description": prog._get_category_description(),
                     "category_name": prog.category_name,
                     "category": prog.category,
+                    "id": prog.id,
                 })
 
-        # 2. Group remaining programs by internal category for diversity
-        by_category: Dict[str, List[PartnerProgram]] = {}
-        for p in self._admitad_programs:
-            if p.id in seen_ids or not p.has_region(region) or not p.goto_link:
-                continue
-            # Use the primary internal category for grouping
-            primary_cat = p.category or "other"
-            by_category.setdefault(primary_cat, []).append(p)
+        # 2. Use cached by-category index (shallow-copied so we can remove)
+        by_category: Dict[str, List[PartnerProgram]] = {
+            cat: list(progs) for cat, progs in self._get_cached_by_category(region).items()
+            if cat != "autoparts"  # auto partners already added above
+        }
 
         # 3. Round-robin pick one from each category until pool is full
         category_keys = list(by_category.keys())
@@ -892,6 +972,7 @@ class NastyaPartnerManager:
                         "description": p._get_category_description(),
                         "category_name": p.category_name,
                         "category": p.category,
+                        "id": p.id,
                     })
                 progs.remove(p)
                 if not progs:

@@ -53,6 +53,51 @@ def _svg_to_png(svg_data: bytes, width: int = 800, height: int = 600) -> Optiona
     return None
 
 
+# ── v4.2 Logo PNG cache ──────────────────────────────────────────────────────
+# Partner logos rarely change, so we cache the converted PNG to disk keyed by
+# the logo URL. Avoids re-downloading + re-converting SVG on every partner post.
+import hashlib as _hashlib
+import os as _os
+_LOGO_CACHE_DIR = "data/logo_cache"
+_LOGO_CACHE_TTL = 7 * 24 * 3600  # 7 days
+
+
+def _logo_cache_path(logo_url: str) -> str:
+    """Return the on-disk cache path for a logo URL."""
+    key = _hashlib.md5(logo_url.encode("utf-8")).hexdigest()
+    return f"{_LOGO_CACHE_DIR}/{key}.png"
+
+
+def _get_cached_logo(logo_url: str) -> Optional[bytes]:
+    """Return cached PNG bytes for a logo URL, or None if not cached/expired."""
+    try:
+        path = _logo_cache_path(logo_url)
+        if not _os.path.exists(path):
+            return None
+        # TTL check
+        mtime = _os.path.getmtime(path)
+        if (time.time() - mtime) > _LOGO_CACHE_TTL:
+            return None
+        with open(path, "rb") as f:
+            data = f.read()
+        if len(data) > 500:
+            return data
+    except Exception:
+        pass
+    return None
+
+
+def _save_cached_logo(logo_url: str, png_bytes: bytes) -> None:
+    """Save converted PNG bytes to the logo cache."""
+    try:
+        _os.makedirs(_LOGO_CACHE_DIR, exist_ok=True)
+        path = _logo_cache_path(logo_url)
+        with open(path, "wb") as f:
+            f.write(png_bytes)
+    except Exception as e:
+        logger.debug(f"Failed to cache logo: {e}")
+
+
 def _is_recent_post(text: str) -> bool:
     """Check if this exact post (or very similar) was recently made."""
     text_lower = text.lower().strip()[:100]  # First 100 chars for comparison
@@ -816,49 +861,64 @@ async def post_partner_to_channel(bot: Bot, db, ai_router=None) -> bool:
         # Try to send partner image if available
         # v4: Use image URL directly from partner data (logo from partners.json).
         #     Partners.json logos are SVG → convert to PNG (Telegram doesn't support SVG).
+        # v4.2: Cache converted PNG to disk (logos rarely change) — avoids
+        #       re-downloading + re-converting SVG on every partner post.
         image_sent = False
         if partner_image_url:
-            try:
-                import httpx
-                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                    img_resp = await client.get(partner_image_url, headers={
-                        "User-Agent": "NastyaBot/1.0 (+https://t.me/chasnastya)",
-                    })
-                    if img_resp.status_code == 200 and len(img_resp.content) > 200:
-                        content = img_resp.content
-                        content_type = img_resp.headers.get("content-type", "").lower()
-                        url_lower = partner_image_url.lower()
-                        from io import BytesIO
+            from io import BytesIO
+            content: Optional[bytes] = None
+            # v4.2: try cached PNG first
+            cached = _get_cached_logo(partner_image_url)
+            if cached:
+                content = cached
+                logger.debug(f"Logo cache HIT for {partner_name}")
+            else:
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                        img_resp = await client.get(partner_image_url, headers={
+                            "User-Agent": "NastyaBot/1.0 (+https://t.me/chasnastya)",
+                        })
+                        if img_resp.status_code == 200 and len(img_resp.content) > 200:
+                            raw = img_resp.content
+                            content_type = img_resp.headers.get("content-type", "").lower()
+                            url_lower = partner_image_url.lower()
 
-                        # ── SVG → PNG conversion (Telegram doesn't support SVG) ──
-                        if "svg" in content_type or url_lower.endswith(".svg"):
-                            png_data = _svg_to_png(content, width=800, height=600)
-                            if png_data:
-                                content = png_data
-                            else:
-                                logger.debug(f"SVG→PNG conversion failed for {partner_name}, skipping image")
-                                content = None
+                            # ── Raster image (jpg/png/webp) → use as-is ──
+                            if any(ft in content_type for ft in ["image/jpeg", "image/png", "image/webp", "image/gif"]) or \
+                               any(url_lower.endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"]):
+                                content = raw
+                            # ── SVG → PNG conversion (Telegram doesn't support SVG) ──
+                            elif "svg" in content_type or url_lower.endswith(".svg"):
+                                png_data = _svg_to_png(raw, width=800, height=600)
+                                if png_data:
+                                    content = png_data
+                                    _save_cached_logo(partner_image_url, png_data)
+                                else:
+                                    logger.debug(f"SVG→PNG conversion failed for {partner_name}, skipping image")
+                except Exception as img_err:
+                    logger.debug(f"Partner image download failed: {img_err}")
 
-                        if content:
-                            buf = BytesIO(content)
-                            buf.seek(0)
-
-                            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                                [InlineKeyboardButton(
-                                    text="💬 Написать Насте",
-                                    url=f"https://t.me/{BOT_USERNAME}?start=chat",
-                                )],
-                            ])
-                            await bot.send_photo(
-                                chat_id=CHANNEL_ID,
-                                photo=buf,
-                                caption=post_text,
-                                reply_markup=keyboard,
-                            )
-                            image_sent = True
-            except Exception as img_err:
-                logger.debug(f"Partner image download failed: {img_err}")
-                # v4: Don't skip the post - continue without image
+            if content:
+                try:
+                    buf = BytesIO(content)
+                    buf.seek(0)
+                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(
+                            text="💬 Написать Насте",
+                            url=f"https://t.me/{BOT_USERNAME}?start=chat",
+                        )],
+                    ])
+                    await bot.send_photo(
+                        chat_id=CHANNEL_ID,
+                        photo=buf,
+                        caption=post_text,
+                        reply_markup=keyboard,
+                    )
+                    image_sent = True
+                except Exception as send_err:
+                    logger.debug(f"send_photo failed for {partner_name}: {send_err}")
+            # v4: Don't skip the post - continue without image if image failed
 
         # If no image was sent, send as text message
         if not image_sent:

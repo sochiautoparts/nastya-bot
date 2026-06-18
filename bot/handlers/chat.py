@@ -153,8 +153,9 @@ _CONSULTATION_FALSE_POSITIVE_WORDS = {
 # v42: Per-user message dedup - track ACTIVE AI tasks per user
 _user_processing: dict = {}  # user_id -> asyncio.Task (active AI task) or None
 
-# v59: Max chars for group/supergroup comments - keep it short!
-GROUP_COMMENT_MAX_CHARS = 600
+# v4.2: Max chars for group/supergroup comments - keep it short & natural!
+# 600 was too long for Telegram groups (real comments are 1-3 sentences).
+GROUP_COMMENT_MAX_CHARS = 350
 
 
 def _cleanup_trackers():
@@ -2552,8 +2553,18 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
         # Decide: respond if mentioned/replied, or by probability for interesting content
         should_respond = is_mentioned or is_reply_to_bot or has_interest
         if not should_respond:
+            # v4.2: Night-time quiet hours (02:00-07:00 Moscow = UTC+3).
+            # Nastya "sleeps" — lower response chance so groups stay calm at night.
+            # Mentioned/replied/interest messages still go through (should_respond=True).
+            import datetime as _dt
+            try:
+                moscow_hour = (_dt.datetime.utcnow() + _dt.timedelta(hours=3)).hour
+            except Exception:
+                moscow_hour = 12
+            is_night = 2 <= moscow_hour < 7
+            response_chance = 0.3 if is_night else GROUP_RESPONSE_CHANCE
             # Random chance to comment even without being mentioned - Nastya is active in groups!
-            if random.random() < GROUP_RESPONSE_CHANCE:
+            if random.random() < response_chance:
                 should_respond = True
             else:
                 return  # Skip this group message
@@ -3545,13 +3556,33 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     # (which returned "" when no category keyword matched), this ALWAYS gives
     # the AI a pool of partners (context-matched, or a diverse fallback pool)
     # so links can be woven into any conversation when they fit.
+    # v4.2: Probability gate for casual messages — don't show partner context
+    # on EVERY message (would feel spammy). Always show when the message looks
+    # like a purchase/product/parts intent; otherwise ~40% chance. Also pass
+    # chat_key so recently-recommended partners are deprioritized (dedup).
     try:
-        partner_context = nastya_partner_manager.generate_conversation_partner_context(
-            text, max_programs=5, is_group=is_group
-        )
-        if partner_context:
-            system_prompt += f"\n\n{partner_context}"
-            logger.info(f"Partner context added for user {user_id} (is_group={is_group})")
+        text_lower_pc = text.lower()
+        # Strong-intent keywords: always provide partner context
+        purchase_intent_kw = [
+            "купить", "заказать", "цена", "стоимость", "скидк", "промокод",
+            "где купить", "подобрать", "найти", "поищи", "магазин", "заказ",
+            "запчаст", "детал", "артикул", "масло", "фильтр", "колодки",
+            "шины", "диски", "билет", "отель", "аренд", "путешеств",
+            "алиэкспресс", "aliexpress", "ozon", "wildberri", "маркетплейс",
+        ]
+        has_purchase_intent = any(kw in text_lower_pc for kw in purchase_intent_kw)
+
+        # v4.2: ~40% chance for casual messages, 100% for purchase-intent
+        should_show_partners = has_purchase_intent or (random.random() < 0.4)
+
+        if should_show_partners:
+            chat_key = f"chat:{message.chat.id}" if message.chat else f"user:{user_id}"
+            partner_context = nastya_partner_manager.generate_conversation_partner_context(
+                text, max_programs=5, is_group=is_group, chat_key=chat_key
+            )
+            if partner_context:
+                system_prompt += f"\n\n{partner_context}"
+                logger.info(f"Partner context added for user {user_id} (is_group={is_group}, intent={has_purchase_intent})")
     except Exception as e:
         logger.warning(f"Partner context error: {e}")
 
