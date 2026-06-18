@@ -157,6 +157,14 @@ _user_processing: dict = {}  # user_id -> asyncio.Task (active AI task) or None
 # 600 was too long for Telegram groups (real comments are 1-3 sentences).
 GROUP_COMMENT_MAX_CHARS = 350
 
+# v4.3 #13: Cached static base system prompt.
+# The persona description (NASTYA_SYSTEM_PROMPT) is ~5KB and never changes
+# between messages. Providers that support prompt prefix caching (Pollinations,
+# Gemini, OpenRouter) cache the leading tokens, so we keep the static persona
+# FIRST in the prompt and append dynamic context (mood/date/news/partners)
+# AFTER it. This constant is computed once at import time.
+_STATIC_BASE_PROMPT = NASTYA_SYSTEM_PROMPT
+
 
 def _cleanup_trackers():
     """Remove entries for users inactive for > 24 hours."""
@@ -2537,6 +2545,62 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     is_group = chat_type in ("group", "supergroup")
 
     if is_group:
+        # v4.3: Detect + persist group topic so partner pool can be themed.
+        # Cheap keyword-based heuristic; result cached in chat_topics table.
+        try:
+            _chat_id_for_topic = message.chat.id
+            _topic_kw_map = {
+                "auto": ["bmw", "бмв", "авто", "машин", "запчаст", "двигат", "масло",
+                         "фильтр", "колодки", "ремонт", "сто", "m3", "x5", "росско"],
+                "shopping": ["купить", "заказать", "цена", "магазин", "алиэкспресс",
+                             "ozon", "wildberri", "маркетплейс", "скидк"],
+                "travel": ["путешеств", "тур", "билет", "самолёт", "отель", "авиа"],
+                "fashion": ["одежд", "платье", "сумоч", "обувь", "косметик", "маникюр"],
+                "electronics": ["айфон", "iphone", "телефон", "ноутбук", "техник"],
+            }
+            _detected_topic = None
+            for _t, _kws in _topic_kw_map.items():
+                if any(_k in text_lower for _k in _kws):
+                    _detected_topic = _t
+                    break
+            if _detected_topic and db:
+                # Persist (fire-and-forget, don't block group response)
+                try:
+                    asyncio.create_task(db.set_chat_topic(_chat_id_for_topic, _detected_topic))
+                except Exception:
+                    pass
+        except Exception:
+            _detected_topic = None
+
+        # v4.3: Reactions for short group messages — instead of a text reply,
+        # Nastya drops a reaction emoji. Much more natural in busy groups and
+        # doesn't clutter the chat. Only for short triggers without mention.
+        is_mentioned_quick = f"@{BOT_USERNAME}" in text_lower if BOT_USERNAME else False
+        if not is_mentioned_quick and len(text) <= 40:
+            _reaction_triggers = {
+                "👍": ["спасибо", "спс", "благодар", "пасиб"],
+                "❤️": ["люблю", "обожаю", "милый", "мило", "прикольно", "класс"],
+                "🔥": ["огонь", "офигенно", "вау", "капец", "жесть", "круто"],
+                "😂": ["хах", "лол", "ржу", "смешно", "хаха", "😂"],
+                "💅": ["настя", "насть", "красот"],
+                "😮": ["ого", "прикинь", "неожидан"],
+            }
+            _react_emoji = None
+            for _emo, _kws in _reaction_triggers.items():
+                if any(_k in text_lower for _k in _kws):
+                    _react_emoji = _emo
+                    break
+            if _react_emoji:
+                # Drop a reaction and skip text reply (50% chance, to stay varied)
+                if random.random() < 0.5:
+                    try:
+                        await message.react([{"type": "emoji", "emoji": _react_emoji}])
+                        logger.info(f"Group reaction '{_react_emoji}' for chat {message.chat.id}")
+                        return  # Skip text reply — reaction is enough
+                    except Exception as _re:
+                        logger.debug(f"react failed: {_re}")
+                        # Fall through to text response if react fails
+
         # In groups: Always respond if mentioned or if bot username is in text
         is_mentioned = f"@{BOT_USERNAME}" in text_lower if BOT_USERNAME else False
         is_reply_to_bot = False
@@ -3423,7 +3487,8 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
     _time_str = _now.strftime("%H:%M")
     _month_name = ["", "января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"][_now.month]
     _date_context = f" Сегодня {_day_name}, {_now.day} {_month_name} {_now.year} года, время {_time_str} МСК. Учитывай это - не пиши про старые новости как свежие."
-    system_prompt = NASTYA_SYSTEM_PROMPT + f" Настроение: {mood}. Время: {time_mood}.{_date_context}"
+    # v4.3 #13: Static persona FIRST (prompt-prefix cacheable), then dynamic context.
+    system_prompt = _STATIC_BASE_PROMPT + f" Настроение: {mood}. Время: {time_mood}.{_date_context}"
     system_prompt += f" {user_context}"
     if extra_context:
         system_prompt += f" {extra_context}"
@@ -3577,14 +3642,36 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
         if should_show_partners:
             chat_key = f"chat:{message.chat.id}" if message.chat else f"user:{user_id}"
+            # v4.3: pass recent history so partner relevance considers the
+            # whole recent conversation, not just the current message (#5)
             partner_context = nastya_partner_manager.generate_conversation_partner_context(
-                text, max_programs=5, is_group=is_group, chat_key=chat_key
+                text, max_programs=5, is_group=is_group, chat_key=chat_key,
+                history=history if not is_group else None,
             )
             if partner_context:
                 system_prompt += f"\n\n{partner_context}"
                 logger.info(f"Partner context added for user {user_id} (is_group={is_group}, intent={has_purchase_intent})")
     except Exception as e:
         logger.warning(f"Partner context error: {e}")
+
+    # v4.3 #11: If this is a group with a detected topic, hint the persona so
+    # partner recommendations feel on-topic (e.g. auto-club -> auto partners).
+    if is_group and db and message.chat:
+        try:
+            chat_topic = await db.get_chat_topic(message.chat.id)
+            if chat_topic and chat_topic != "general":
+                topic_hints = {
+                    "auto": " Эта группа про авто — если уместно, вспомни что водишь BMW M3 и знаешь где брать запчасти.",
+                    "shopping": " Эта группа про покупки — если уместно, поделись где сама покупаешь.",
+                    "travel": " Эта группа про путешествия — если уместно, поделись своим опытом поездок.",
+                    "fashion": " Эта группа про моду/красоту — будь как подруга-модница.",
+                    "electronics": " Эта группа про технику — поделись своим опытом с гаджетами.",
+                }
+                hint = topic_hints.get(chat_topic)
+                if hint:
+                    system_prompt += hint
+        except Exception:
+            pass
 
     # ── Auto parts specific: if user mentions BMW or auto parts, add direct shop links ──
     # Настя водит BMW M3 — она знает где покупать запчасти!
@@ -3728,6 +3815,17 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     # CRITICAL: Replace any plain partner URLs with affiliate goto_link equivalents
     response_text = _replace_plain_urls_with_affiliate(response_text)
+
+    # v4.3 #14: Tag partner goto_links with utm_source so clicks are trackable
+    # in admitad analytics (chat vs group vs channel). Safe — only appends
+    # utm_ params, preserves the affiliate tracking id.
+    try:
+        _utm_source = "group" if is_group else "chat"
+        response_text = nastya_partner_manager.tag_links_in_text(
+            response_text, source=_utm_source, medium="nastya", campaign="bot"
+        )
+    except Exception as _utm_err:
+        logger.debug(f"utm tagging skipped: {_utm_err}")
 
     # Add search result link if no URLs remain after cleanup
     if search_results and not re.search(r'https?://\S+', response_text):

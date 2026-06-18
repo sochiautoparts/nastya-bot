@@ -497,6 +497,67 @@ class NastyaPartnerManager:
         used = [l for l in links if l.get("id") in recent]
         return fresh + used
 
+    # ── v4.3 Click tracking (utm_source tagging) ───────────────────────────
+    #
+    # Adds utm_source/utm_medium/utm_campaign to a goto_link so clicks can be
+    # attributed to a specific source (chat / group / channel) in admitad
+    # analytics. OFF by default — the raw goto_link is the source of truth and
+    # is used as-is everywhere. Enable explicitly per call site with
+    # with_tracking=True so we only tag links we actually send to users.
+
+    def tag_link(
+        self,
+        url: str,
+        source: str = "chat",
+        medium: str = "nastya",
+        campaign: str = "bot",
+    ) -> str:
+        """Append utm_ params to a goto_link for click attribution.
+
+        Preserves any existing query params. Safe for admitad goto_links
+        (they forward extra query params to the advertiser).
+        """
+        if not url:
+            return url
+        try:
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            # Don't overwrite existing utm_ params
+            params.setdefault("utm_source", [source])
+            params.setdefault("utm_medium", [medium])
+            params.setdefault("utm_campaign", [campaign])
+            new_query = urlencode(
+                {k: v[0] if len(v) == 1 else v for k, v in params.items()},
+                doseq=True,
+            )
+            return urlunparse(parsed._replace(query=new_query))
+        except Exception:
+            return url
+
+    def tag_links_in_text(
+        self,
+        text: str,
+        source: str = "chat",
+        medium: str = "nastya",
+        campaign: str = "bot",
+    ) -> str:
+        """Tag all known partner goto_links found in a text with utm params.
+
+        Scans the text for each loaded partner's goto_link and appends utm_
+        tracking. Used as a post-processing step on AI responses before
+        sending, so every affiliate link the bot emits is trackable.
+        """
+        self.ensure_loaded()
+        if not text:
+            return text
+        result = text
+        for p in self._admitad_programs:
+            if p.goto_link and p.goto_link in result:
+                tagged = self.tag_link(p.goto_link, source=source, medium=medium, campaign=campaign)
+                if tagged != p.goto_link:
+                    result = result.replace(p.goto_link, tagged)
+        return result
+
     def _save_cache(self, data) -> None:
         """Save data to local cache."""
         try:
@@ -805,6 +866,7 @@ class NastyaPartnerManager:
         region: str = DEFAULT_REGION,
         is_group: bool = False,
         chat_key: str = "",
+        history: Optional[List[Dict[str, str]]] = None,
     ) -> str:
         """Generate partner context for dialogues and group comments.
 
@@ -813,10 +875,13 @@ class NastyaPartnerManager:
         the bot can use ALL affiliate programs in any conversation context.
         v4.2: Dedup — if chat_key is given, recently-recommended partners
         for that chat are deprioritized so the bot doesn't repeat itself.
+        v4.3: history-based context — recent user messages are merged with
+        the current text so partner relevance is based on the whole recent
+        conversation, not just one message.
 
         Strategy:
-        1. Try context-based matching (existing detect_categories logic).
-           If matches found -> use those (most relevant).
+        1. Try context-based matching (existing detect_categories logic)
+           on current text + recent history. If matches found -> use those.
         2. If no category match -> provide a DIVERSE pool sampled across
            ALL categories (auto, shopping, travel, electronics, fashion,
            coupons, etc.) so the bot has variety to draw from.
@@ -828,11 +893,23 @@ class NastyaPartnerManager:
         """
         self.ensure_loaded()
 
-        # 1. Try context-based matching first (most relevant)
-        context_links = self.get_all_relevant_links(text, max_programs=max_programs, region=region)
+        # v4.3: build a combined text from recent user history + current text
+        # so category detection considers the whole recent conversation.
+        combined_text = text
+        if history:
+            recent_user_msgs = [
+                m.get("content", "")
+                for m in history[-8:]
+                if m.get("role") == "user" and m.get("content")
+            ]
+            if recent_user_msgs:
+                combined_text = " ".join(recent_user_msgs[-4:]) + " " + text
 
-        # Also add direct text matches
-        matches = self.find_matching_programs(text, region)
+        # 1. Try context-based matching first (most relevant)
+        context_links = self.get_all_relevant_links(combined_text, max_programs=max_programs, region=region)
+
+        # Also add direct text matches (on current text for freshness)
+        matches = self.find_matching_programs(combined_text, region)
         seen_urls = {l["url"] for l in context_links}
         for p in matches:
             if p.goto_link and p.goto_link not in seen_urls:

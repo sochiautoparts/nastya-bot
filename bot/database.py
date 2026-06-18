@@ -108,6 +108,15 @@ CREATE TABLE IF NOT EXISTS user_consultations (
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_consultations ON user_consultations(user_id);
+
+CREATE TABLE IF NOT EXISTS chat_topics (
+    chat_id INTEGER PRIMARY KEY,
+    topic TEXT DEFAULT 'general',
+    confidence REAL DEFAULT 0.0,
+    detected_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_topics ON chat_topics(chat_id);
 """
 
 MOODS = [
@@ -416,6 +425,42 @@ class Database:
         except Exception as e:
             logger.error(f"cleanup_old_history error: {e}")
             return 0
+
+    # ── v4.3 Chat topic detection (group theming) ──────────────────────────
+
+    async def get_chat_topic(self, chat_id: int) -> str:
+        """Get the detected topic for a chat ('auto', 'shopping', 'travel',
+        'fashion', 'general', ...). Returns 'general' if unknown."""
+        conn = await self._get_conn()
+        try:
+            async with conn.execute(
+                "SELECT topic FROM chat_topics WHERE chat_id = ?", (chat_id,)
+            ) as cur:
+                row = await cur.fetchone()
+                if row:
+                    return row[0] or "general"
+        except Exception as e:
+            logger.debug(f"get_chat_topic error: {e}")
+        return "general"
+
+    async def set_chat_topic(
+        self, chat_id: int, topic: str, confidence: float = 1.0
+    ) -> None:
+        """Upsert the detected topic for a chat."""
+        conn = await self._get_conn()
+        try:
+            now = time.time()
+            async with self._write_lock:
+                await conn.execute(
+                    "INSERT INTO chat_topics (chat_id, topic, confidence, detected_at) "
+                    "VALUES (?,?,?,?) "
+                    "ON CONFLICT(chat_id) DO UPDATE SET topic=excluded.topic, "
+                    "confidence=excluded.confidence, detected_at=excluded.detected_at",
+                    (chat_id, topic, confidence, now),
+                )
+                await conn.commit()
+        except Exception as e:
+            logger.debug(f"set_chat_topic error: {e}")
 
     # ── Donations ────────────────────────────────────────────
 
