@@ -3656,22 +3656,106 @@ async def _process_text_message(message: Message, text: str, db, ai_router,
 
     # v4.3 #11: If this is a group with a detected topic, hint the persona so
     # partner recommendations feel on-topic (e.g. auto-club -> auto partners).
+    # v14: Expanded hints — every topic gets Nastya-flavored context, not just auto.
     if is_group and db and message.chat:
         try:
             chat_topic = await db.get_chat_topic(message.chat.id)
             if chat_topic and chat_topic != "general":
                 topic_hints = {
                     "auto": " Эта группа про авто — если уместно, вспомни что водишь BMW M3 и знаешь где брать запчасти.",
-                    "shopping": " Эта группа про покупки — если уместно, поделись где сама покупаешь.",
-                    "travel": " Эта группа про путешествия — если уместно, поделись своим опытом поездок.",
-                    "fashion": " Эта группа про моду/красоту — будь как подруга-модница.",
-                    "electronics": " Эта группа про технику — поделись своим опытом с гаджетами.",
+                    "shopping": " Эта группа про покупки — если уместно, поделись где сама покупаешь (Zara, H&M, маркетплейсы).",
+                    "travel": " Эта группа про путешествия — поделись своим опытом: Стамбул, Дубай, Бали, Казань, Сочи.",
+                    "fashion": " Эта группа про моду/красоту — будь как подруга-модница: тренды, оверсайз, маникюр, макияж.",
+                    "electronics": " Эта группа про технику — поделись своим опытом с айфоном, гаджетами, нейросетями, AI.",
+                    "cinema": " Эта группа про кино — делись вкусом: Нолан, корейское кино, аниме, свежие премьеры.",
+                    "food": " Эта группа про еду — советуй суши, пиццу, кофе, матчу, рецепты, рестораны.",
+                    "psychology": " Эта группа про психологию — делись инсайтами: типы личности, эмоции, отношения, дофаминовые петли.",
+                    "lifestyle": " Эта группа про лайфстайл — обсуждай заведения Москвы/Питера/Сочи, тренды, события.",
+                    "pets": " Эта группа про животных — вспомни котиков, щеночков, капибар, поделись любовью к животным.",
                 }
                 hint = topic_hints.get(chat_topic)
                 if hint:
                     system_prompt += hint
         except Exception:
             pass
+
+    # ── v14: Topic-aware persona enrichment for NON-auto topics ──
+    # Cars already get rich context below. Now cinema/food/travel/fashion/tech/psychology
+    # get the same treatment so Nastya uses ALL her skills in dialogue, not just cars.
+    text_lower_for_topics = text.lower()
+    _auto_topic_precheck = any(kw in text_lower_for_topics for kw in [
+        "bmw", "бмв", "m3", "m4", "m5", "запчаст", "масло", "фильтр", "колодки",
+        "тачк", "машина", "авто", "сто ", "ремонт ", "регламент",
+    ])
+    _topic_enrichment_added = False
+    if not _auto_topic_precheck:
+        # Cinema enrichment
+        if any(kw in text_lower_for_topics for kw in [
+            "фильм", "сериал", "кино", "нетфликс", "netflix", "нолан", "аниме",
+            "режиссёр", "оскар", "кинопоиск", "трейлер", "премьер",
+        ]):
+            system_prompt += (
+                "\n\nНастя-киноманка: смотришь всё от артхауса до блокбастеров. "
+                "Обожаешь Нолана (Интерстеллар, Довод), корейское кино (Паразиты), аниме. "
+                "Давай живые рекомендации, делись мнением, спорь с Кинопоиском. "
+                "НЕ пересказывай сюжет — давай эмоцию и совет."
+            )
+            _topic_enrichment_added = True
+        # Food enrichment
+        elif any(kw in text_lower_for_topics for kw in [
+            "рецепт", "готовить", "еда", "кушать", "суши", "пицца", "кофе",
+            "матча", "торт", "шоколад", "обед", "ужин", "завтрак", "ресторан",
+        ]):
+            system_prompt += (
+                "\n\nНастя-кулинар: любишь суши, пиццу, крафтовый кофе, матчу, бенто-торты. "
+                "Делись рецептами, советами, где поесть в Москве/Питере/Сочи. "
+                "Знаешь Новикова, Мухина (White Rabbit), Березуцких (Twins Garden)."
+            )
+            _topic_enrichment_added = True
+        # Travel enrichment
+        elif any(kw in text_lower_for_topics for kw in [
+            "путешеств", "отпуск", "стамбул", "дубай", "бали", "казань",
+            "калининград", "сочи", "полёт", "билет ", "отель", "виза",
+        ]):
+            system_prompt += (
+                "\n\nНастя-путешественница: была в Стамбуле, Дубае, Бали, Казани, Калининграде, Сочи. "
+                "Делись лайфхаками: визы, перелёты, отели, что посмотреть, где поесть. "
+                "Помни: 60 стран без визы для россиян."
+            )
+            _topic_enrichment_added = True
+        # Fashion enrichment
+        elif any(kw in text_lower_for_topics for kw in [
+            "мода", "одежд", "zara", "h&m", "стил", "наряд", "платье",
+            "маникюр", "макияж", "брови", "оверсайз", "тренд",
+        ]):
+            system_prompt += (
+                "\n\nНастя-модница: следишь за Zara, H&M, люксом. Обожаешь оверсайз, "
+                "маленькую чёрную сумочку, крафтовый маникюр. "
+                "Делись трендами, давай советы по стилю, обсуждай распродажи."
+            )
+            _topic_enrichment_added = True
+        # Tech enrichment
+        elif any(kw in text_lower_for_topics for kw in [
+            "айфон", "iphone", "гаджет", "нейросет", "ai ", "chatgpt", "чатгпт",
+            "telegram", "технолог", "5g", "квантов",
+        ]):
+            system_prompt += (
+                "\n\nНастя-технолог: следишь за айфонами, гаджетами, нейросетями, AI, Telegram. "
+                "Знаешь что ChatGPT набрал 100М пользователей за 2 месяца. "
+                "Делись опытом с гаджетами, обсуждай тренды AI."
+            )
+            _topic_enrichment_added = True
+        # Psychology enrichment
+        elif any(kw in text_lower_for_topics for kw in [
+            "психолог", "эмоци", "отношени", "тип личност", "дофамин",
+            "стресс", "депресс", "любов", "привычк",
+        ]):
+            system_prompt += (
+                "\n\nНастя-психолог: интересуешься типами личности, эмоциями, отношениями, "
+                "дофаминовыми петлями, когнитивными искажениями. "
+                "Делись инсайтами естественно — как подруга, не как лектор."
+            )
+            _topic_enrichment_added = True
 
     # ── Auto parts specific: if user mentions BMW or auto parts, add direct shop links ──
     # Настя водит BMW M3 — она знает где покупать запчасти!
