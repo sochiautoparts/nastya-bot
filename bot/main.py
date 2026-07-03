@@ -19,6 +19,8 @@ from bot.handlers.groups import group_router
 from bot.handlers.channels import channel_router
 from bot.handlers.admin import admin_router
 from bot.handlers.inline import inline_router
+from bot.handlers.payment import payment_router
+from bot.handlers.fun import fun_router
 
 OPENCLAW_STATE_DIR = os.getenv("OPENCLAW_STATE_DIR", str(Path.cwd() / ".openclaw-state"))
 _openclaw_proc = None
@@ -75,6 +77,8 @@ class NastyaBot:
         self.bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=None))
         self.dp = Dispatcher(storage=MemoryStorage())
         self.dp.include_router(admin_router)
+        self.dp.include_router(fun_router)
+        self.dp.include_router(payment_router)
         self.dp.include_router(chat_router)
         self.dp.include_router(group_router)
         self.dp.include_router(channel_router)
@@ -121,7 +125,7 @@ class NastyaBot:
         await self._notify_owner()
         try: await self.bot.delete_webhook(drop_pending_updates=False)
         except: pass
-        allowed = ["message", "edited_message", "channel_post", "edited_channel_post", "inline_query", "chosen_inline_result"]
+        allowed = ["message", "edited_message", "channel_post", "edited_channel_post", "inline_query", "chosen_inline_result", "pre_checkout_query"]
         logger.info("=== Настя в сети — слушаю сообщения ===")
         polling_retries = 0
         while True:

@@ -18,6 +18,15 @@ CREATE INDEX IF NOT EXISTS idx_uf_user ON user_facts(user_id, id DESC);
 CREATE TABLE IF NOT EXISTS private_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, ts INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_pm_user_ts ON private_messages(user_id, id DESC);
 CREATE TABLE IF NOT EXISTS reactions_dedup (message_id INTEGER NOT NULL, chat_id INTEGER NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (chat_id, message_id));
+CREATE TABLE IF NOT EXISTS donations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    stars_amount INTEGER,
+    telegram_charge_id TEXT,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_donations_user ON donations(user_id);
+
 CREATE TABLE IF NOT EXISTS chat_summaries (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, summary TEXT NOT NULL, topics TEXT DEFAULT '', ts INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_cs_chat ON chat_summaries(chat_id, id DESC);
 CREATE TABLE IF NOT EXISTS moods (id INTEGER PRIMARY KEY DEFAULT 1, mood TEXT DEFAULT 'спокойная', energy REAL DEFAULT 0.5, ts INTEGER NOT NULL);
@@ -172,6 +181,16 @@ async def set_mood(mood, energy):
     await _conn().commit()
 
 # Cleanup
+async def record_donation(user_id, stars, charge_id):
+    await _conn().execute("INSERT INTO donations (user_id, stars_amount, telegram_charge_id, created_at) VALUES (?,?,?,?)", (user_id, stars, charge_id, int(time.time())))
+    await _conn().commit()
+
+async def get_total_donated(user_id):
+    cur = await _conn().execute("SELECT COALESCE(SUM(stars_amount),0) FROM donations WHERE user_id=?", (user_id,))
+    row = await cur.fetchone()
+    return int(row[0]) if row else 0
+
+
 async def run_periodic_cleanup():
     import asyncio
     while True:
