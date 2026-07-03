@@ -1,169 +1,92 @@
-"""Nastya Admin Handler - admin commands for monitoring + news + channel."""
+"""Настя Admin handler — owner commands."""
 import logging
 from aiogram import Router, F
-from aiogram.filters import Command
 from aiogram.types import Message
-from bot.config import OWNER_ID, ADMIN_IDS, CHANNEL_ID
+from aiogram.filters import Command
+from bot.config import config
+from bot import database as db
+from ai import client as ai_client
 
-logger = logging.getLogger(__name__)
-router = Router()
+logger = logging.getLogger("nastya.admin")
+admin_router = Router()
 
+def _is_admin(message):
+    uid = message.from_user.id if message.from_user else 0
+    return uid == config.OWNER_ID or uid in config.ADMIN_IDS
 
-@router.message(Command("stats"))
-async def cmd_stats(message: Message, db=None, ai_router=None) -> None:
-    """Bot statistics."""
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("Настя не обязана отчитываться! 😤")
-        return
+@admin_router.message(Command("stats"))
+async def cmd_stats(message):
+    if not _is_admin(message): return
+    s = ai_client.stats()
+    await message.reply(f"📊 Статистика AI:\nЗапросов: {s.get('requests',0)}\nOpenClaw: {s.get('openclaw_ok',0)}\nPollinations: {s.get('pollinations_backup',0)}\nStatic: {s.get('static_fallback',0)}\nОшибок: {s.get('fail',0)}\nПоследняя: {s.get('last_error','—')[:80]}")
 
-    if not db:
-        return
+@admin_router.message(Command("providers"))
+async def cmd_providers(message):
+    if not _is_admin(message): return
+    await message.reply(f"🔌 Провайдеры:\n{config.providers_status()}")
 
-    stats = await db.get_stats()
-
-    channel_info = ""
-    if CHANNEL_ID:
-        channel_info = f"\n📺 Постов в канале: {stats.get('total_channel_posts', 0)}"
-
-    text = (
-        f"📊 Статистика Насти 2.0:\n\n"
-        f"👥 Пользователей: {stats['total_users']}\n"
-        f"⭐ Звёзд получено: {stats['total_stars']}\n"
-        f"💝 Донатов: {stats['total_donations']}\n"
-        f"📰 Новостей в базе: {stats.get('total_news', 0)}"
-        f"{channel_info}\n\n"
-        f"🎀 Настя работает!"
-    )
-    await message.answer(text)
-
-
-@router.message(Command("providers"))
-async def cmd_providers(message: Message, db=None, ai_router=None) -> None:
-    """Show available AI providers and their status."""
-    if message.from_user.id not in ADMIN_IDS:
-        return
-
-    if not ai_router:
-        return
-
-    status = ai_router.get_status()
-    lines = ["🤖 AI Провайдеры Насти:\n"]
-
-    for name, info in status.items():
-        if name == "_stats":
-            continue
-        if isinstance(info, dict):
-            available = "✅" if info.get("available") or info.get("model_loaded") else "❌"
-            model_path = info.get('model_path', '?')
-            model_name = model_path.split('/')[-1] if model_path != '?' else '?'
-            lines.append(f"  {available} {name}")
-            if name == "llama_cpp":
-                lines.append(f"    Model: {model_name}")
-                lines.append(f"    Loaded: {info.get('model_loaded', False)} | n_ctx: {info.get('n_ctx', 0)} | n_threads: {info.get('n_threads', 0)}")
-                lines.append(f"    Requests: {info.get('request_count', 0)} | Avg time: {info.get('avg_gen_time', 0):.1f}s | Errors: {info.get('error_count', 0)}")
-            elif name == "pollinations":
-                on_cooldown = "🔒" if info.get('on_cooldown') else "🔓"
-                lines.append(f"    Available: {available} {on_cooldown}")
-
-    stats = status.get("_stats", {})
-    lines.append(f"\n📊 Запросов: {stats.get('total_requests', 0)}")
-    lines.append(f"🏠 Локальных: {stats.get('local_requests', 0)}")
-    lines.append(f"☁️ Pollinations: {stats.get('pollinations_requests', 0)}")
-    lines.append(f"🔥 Cloudflare: {stats.get('cloudflare_requests', 0)}")
-    lines.append(f"🔄 Фоллбэков: {stats.get('total_fallbacks', 0)}")
-
-    await message.answer("\n".join(lines))
-
-
-@router.message(Command("reset"))
-async def cmd_reset(message: Message, db=None, ai_router=None) -> None:
-    """Reset circuit breaker for all providers."""
-    if message.from_user.id not in ADMIN_IDS:
-        return
-
-    if not ai_router:
-        return
-
-    # Перезагрузка провайдеров
-    reloaded = []
-    if ai_router._pollinations:
-        try:
-            await ai_router._pollinations.close()
-            await ai_router._pollinations.init()
-            reloaded.append("Pollinations")
-        except Exception as e:
-            logger.error(f"Pollinations reload error: {e}")
-    if ai_router._local:
-        try:
-            await ai_router._local.close()
-            await ai_router._local.init()
-            reloaded.append("Local")
-        except Exception as e:
-            logger.error(f"Local model reload error: {e}")
-    if reloaded:
-        await message.answer(f"🔄 Провайдеры перезагружены: {', '.join(reloaded)}!")
-    else:
-        await message.answer("❌ Провайдеры не найдены!")
-
-
-@router.message(Command("fetchnews"))
-async def cmd_fetch_news(message: Message, db=None, ai_router=None) -> None:
-    """Manually trigger news fetch."""
-    if message.from_user.id not in ADMIN_IDS:
-        return
-
-    if not db or not ai_router:
-        return
-
-    await message.answer("📰 Настя идёт читать новости... 🔍")
-
+@admin_router.message(Command("models"))
+async def cmd_models(message):
+    if not _is_admin(message): return
+    import httpx
+    s = ai_client.stats()
     try:
-        from news import run_news_cycle
-        commented = await run_news_cycle(db, ai_router)
-        await message.answer(f"📰 Готово! Новых с комментариями: {commented}")
-    except Exception as e:
-        logger.error(f"Fetch news error: {e}")
-        await message.answer("❌ Настя не смогла загрузить новости... Попробуй позже!")
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            r = await c.get("https://text.pollinations.ai/models")
+        models = r.json() if r.status_code == 200 else []
+    except: models = []
+    lines = ["🤖 Модели Pollinations:"]
+    for m in models: lines.append(f"  • {m.get('name','?')} — {m.get('description','')[:50]}")
+    lines.append(f"\n📊 AI stats:\n  Запросов: {s.get('requests',0)}\n  OpenClaw: {s.get('openclaw_ok',0)}\n  Pollinations: {s.get('pollinations_backup',0)}\n  Ошибок: {s.get('fail',0)}")
+    await message.reply("\n".join(lines))
 
-
-@router.message(Command("postchannel"))
-async def cmd_post_channel(message: Message, db=None, ai_router=None) -> None:
-    """Manually trigger channel post."""
-    if message.from_user.id not in ADMIN_IDS:
-        return
-
-    if not CHANNEL_ID:
-        await message.answer("❌ CHANNEL_ID не настроен!")
-        return
-
-    if not db or not ai_router:
-        return
-
-    await message.answer("📺 Настя постит в канал... 💅")
-
+@admin_router.message(Command("diag"))
+async def cmd_diag(message):
+    if not _is_admin(message): return
+    c = message.chat
+    u = message.from_user
+    info = [f"🔧 Диагностика:", f"Бот: @{config.BOT_USERNAME} (id={config.BOT_ID})", f"Чат: id={c.id}, тип={c.type}, title={c.title or '—'}", f"Ты: {u.first_name} (id={u.id})", f"Провайдеры: {config.providers_status()}"]
     try:
-        from channel import run_channel_cycle
-        posted = await run_channel_cycle(message.bot, db, ai_router)
-        await message.answer(f"📺 Готово! Постов: {posted}")
-    except Exception as e:
-        logger.error(f"Channel post error: {e}")
-        await message.answer("❌ Настя не смогла запостить... Попробуй позже!")
+        recent = await db.get_recent_group_messages(c.id, limit=5)
+        info.append(f"\nЛог сообщений ({len(recent)}):")
+        if not recent: info.append("  (пусто)")
+        else:
+            for m in recent[-5:]:
+                who = m.get("first_name") or "?"
+                if m.get("user_id") == config.BOT_ID: who = "Настя"
+                info.append(f"  {who}: {(m.get('content') or '')[:50]}")
+    except: pass
+    try: await message.reply("\n".join(info))
+    except: pass
 
+@admin_router.message(Command("channel_on"))
+async def cmd_channel_on(message):
+    if not _is_admin(message): return
+    parts = (message.text or "").split()
+    if len(parts) < 2: await message.reply("Использование: /channel_on <chat_id>"); return
+    try: chat_id = int(parts[1])
+    except: await message.reply("chat_id должен быть числом"); return
+    await db.set_channel_enabled(chat_id, True)
+    await message.reply(f"✅ Реакции для канала {chat_id} включены")
 
-@router.message(Command("testnews"))
-async def cmd_test_news(message: Message, db=None, ai_router=None) -> None:
-    """Test news commentary generation - AI-powered!"""
-    if message.from_user.id not in ADMIN_IDS:
-        return
+@admin_router.message(Command("channel_off"))
+async def cmd_channel_off(message):
+    if not _is_admin(message): return
+    parts = (message.text or "").split()
+    if len(parts) < 2: await message.reply("Использование: /channel_off <chat_id>"); return
+    try: chat_id = int(parts[1])
+    except: await message.reply("chat_id должен быть числом"); return
+    await db.set_channel_enabled(chat_id, False)
+    await message.reply(f"🚫 Реакции для канала {chat_id} выключены")
 
-    test_title = "В Москве открыли новый торговый центр"
-    test_category = "general"
-    await message.answer(f"🧪 Генерю реакцию на: {test_title}")
-
+@admin_router.message(Command("broadcast"))
+async def cmd_broadcast(message):
+    if not _is_admin(message): return
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 3: await message.reply("Использование: /broadcast <chat_id> <текст>"); return
+    try: chat_id = int(parts[1])
+    except: await message.reply("chat_id должен быть числом"); return
     try:
-        from news import generate_ai_commentary
-        comment = await generate_ai_commentary(test_title, category=test_category, ai_router=ai_router)
-        await message.answer(f"💬 Реакция Насти (AI): {comment}")
-    except Exception as e:
-        logger.error(f"Test news error: {e}")
-        await message.answer("❌ Настя пока не может реагировать на новости...")
+        await message.bot.send_message(chat_id, parts[2])
+        await message.reply("✅ Отправлено")
+    except Exception as e: await message.reply(f"❌ Ошибка: {e}")

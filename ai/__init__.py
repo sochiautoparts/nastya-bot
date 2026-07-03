@@ -1,1 +1,1 @@
-"""AI module for Nastya Bot."""
+"""AI package."""

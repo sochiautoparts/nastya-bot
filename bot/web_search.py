@@ -1,616 +1,139 @@
-"""Nastya Web Search v2.0 - MULTI-ENGINE SEARCH with fallbacks!
-
-v2.0: ROBUST search with multiple engines:
-  1. DuckDuckGo HTML (primary) - works most of the time
-  2. Yandex HTML search (fallback #1) - Russian-focused, better for RU queries
-  3. SearXNG public instances (fallback #2) - meta search engine
-  4. DuckDuckGo API (fallback #3) - instant answers only
-
-This ensures /find ALWAYS returns results even if one engine is blocked.
-
-Enables Nastya to:
-  - Search for real-time information when discussing events/news
-  - Verify facts and find links to share with users
-  - Find REAL product links instead of hallucinating URLs
-  - Make conversations more lively with up-to-date knowledge
-  - Always include source links when sharing information
-"""
-import logging
-import re
-import time
-import random
-from typing import Dict, List, Optional
-from urllib.parse import unquote, quote_plus
-
+"""Люба Web Search — DuckDuckGo + SearXNG + Yandex + article fetch."""
+import asyncio, logging, re
+from typing import List, Dict
+from urllib.parse import quote_plus
 import httpx
+from bot.config import config
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("nastya.web_search")
 
-# Cache search results to avoid repeated queries
-_search_cache: Dict[str, Dict] = {}
-_CACHE_TTL = 1800  # 30 minutes
-_MAX_CACHE = 100
+class SearchResult:
+    def __init__(self, title, url, snippet="", source=""):
+        self.title, self.url, self.snippet, self.source = title, url, snippet, source
 
-# Common headers for web scraping
-_SEARCH_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-}
+_HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7"}
+_search_client: httpx.AsyncClient | None = None
 
+async def _get_client():
+    global _search_client
+    if _search_client is None or _search_client.is_closed:
+        _search_client = httpx.AsyncClient(timeout=httpx.Timeout(config.SEARCH_TIMEOUT_SECONDS, connect=8.0), limits=httpx.Limits(max_connections=20, max_keepalive_connections=10), follow_redirects=True, headers=_HEADERS)
+    return _search_client
 
-def _clean_cache():
-    """Remove expired cache entries."""
-    now = time.time()
-    expired = [k for k, v in _search_cache.items() if now - v.get("ts", 0) > _CACHE_TTL]
-    for k in expired:
-        del _search_cache[k]
-    while len(_search_cache) > _MAX_CACHE:
-        oldest = min(_search_cache.items(), key=lambda x: x[1].get("ts", 0))
-        del _search_cache[oldest[0]]
+def _clean_html(s):
+    s = re.sub(r"<[^>]+>", "", s)
+    for old, new in [("&amp;","&"),("&nbsp;"," "),("&quot;",'"'),("&#39;","'"),("&lt;","<"),("&gt;",">")]:
+        s = s.replace(old, new)
+    return re.sub(r"\s+", " ", s).strip()
 
-
-async def search_web(query: str, num_results: int = 3) -> List[Dict]:
-    """Search the web using multiple search engines with fallbacks.
-
-    Engine order:
-      1. DuckDuckGo HTML - primary, fast
-      2. Yandex HTML - Russian-focused, excellent for RU queries
-      3. SearXNG public instance - meta search
-      4. DuckDuckGo API - instant answers only (weak)
-
-    Returns list of dicts with: title, snippet, url
-    """
-    _clean_cache()
-
-    # Check cache
-    cache_key = query.lower().strip()
-    cached = _search_cache.get(cache_key)
-    if cached and time.time() - cached.get("ts", 0) < _CACHE_TTL:
-        return cached.get("results", [])[:num_results]
-
+async def search_ddg_html(query, max_results=5):
     results = []
-
-    # ── Engine 1: DuckDuckGo HTML (primary) ──
     try:
-        results = await _search_ddg_html(query, num_results)
-        if results:
-            logger.info(f"DDG HTML: found {len(results)} results for '{query[:50]}'")
+        client = await _get_client()
+        resp = await client.get("https://html.duckduckgo.com/html/", params={"q": query, "kl": "ru-ru", "no_redirect": "1"})
+        if resp.status_code == 202:
+            resp = await client.get("https://lite.duckduckgo.com/lite/", params={"q": query, "kl": "ru-ru"})
+            if resp.status_code != 200: return results
+            urls = re.findall(r'<a[^>]+class="result-link"[^>]+href="([^"]+)"', resp.text)
+            titles = re.findall(r'<a[^>]+class="result-link"[^>]*>(.*?)</a>', resp.text, re.DOTALL)
+            snippets = re.findall(r'<td[^>]+class="result-snippet"[^>]*>(.*?)</td>', resp.text, re.DOTALL)
+            for i, url in enumerate(urls[:max_results]):
+                results.append(SearchResult(_clean_html(titles[i]) if i < len(titles) else "", url, _clean_html(snippets[i]) if i < len(snippets) else "", "ddg_lite"))
+            return results
+        if resp.status_code != 200: return results
+        blocks = re.findall(r'<a rel="nofollow" class="result__a" href="([^"]+?)".*?>(.*?)</a>.*?<a class="result__snippet".*?>(.*?)</a>', resp.text, re.DOTALL)
+        for url, title, snippet in blocks[:max_results]:
+            results.append(SearchResult(_clean_html(title), url, _clean_html(snippet), "ddg"))
     except Exception as e:
-        logger.warning(f"DDG HTML search error: {e}")
-
-    # ── Engine 2: Yandex HTML (fallback #1) ──
-    if not results:
-        try:
-            results = await _search_yandex_html(query, num_results)
-            if results:
-                logger.info(f"Yandex HTML: found {len(results)} results for '{query[:50]}'")
-        except Exception as e:
-            logger.warning(f"Yandex HTML search error: {e}")
-
-    # ── Engine 3: SearXNG (fallback #2) ──
-    if not results:
-        try:
-            results = await _search_searxng(query, num_results)
-            if results:
-                logger.info(f"SearXNG: found {len(results)} results for '{query[:50]}'")
-        except Exception as e:
-            logger.warning(f"SearXNG search error: {e}")
-
-    # ── Engine 4: DuckDuckGo instant answer API (fallback #3) ──
-    if not results:
-        try:
-            results = await _search_ddg_api(query, num_results)
-            if results:
-                logger.info(f"DDG API: found {len(results)} results for '{query[:50]}'")
-        except Exception as e:
-            logger.warning(f"DDG API fallback error: {e}")
-
-    if not results:
-        logger.warning(f"ALL search engines failed for query: '{query[:50]}'")
-
-    # Cache results
-    if results:
-        _search_cache[cache_key] = {"results": results, "ts": time.time()}
-
-    return results[:num_results]
-
-
-# ══════════════════════════════════════════════════════════════
-#  ENGINE 1: DuckDuckGo HTML
-# ══════════════════════════════════════════════════════════════
-
-async def _search_ddg_html(query: str, num_results: int) -> List[Dict]:
-    """Search using DuckDuckGo HTML endpoint."""
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(12.0, connect=5.0),
-        follow_redirects=True,
-        headers=_SEARCH_HEADERS,
-    ) as client:
-        response = await client.post(
-            "https://html.duckduckgo.com/html/",
-            data={"q": query, "kl": "ru-ru", "b": ""},
-        )
-
-        if response.status_code == 200:
-            return _parse_ddg_html(response.text, num_results)
-
-    return []
-
-
-def _parse_ddg_html(html: str, num_results: int) -> List[Dict]:
-    """Parse DuckDuckGo HTML search results."""
-    results = []
-
-    # Primary pattern: result__a link + result__snippet
-    result_pattern = re.compile(
-        r'<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?'
-        r'<(?:a|td)[^>]+class="result__snippet"[^>]*>(.*?)</(?:a|td)>',
-        re.DOTALL | re.IGNORECASE,
-    )
-
-    for match in result_pattern.finditer(html):
-        if len(results) >= num_results:
-            break
-        url = match.group(1)
-        title = _strip_html(match.group(2)).strip()
-        snippet = _strip_html(match.group(3)).strip()
-
-        if title and url:
-            url = _clean_ddg_url(url)
-            if url:
-                results.append({
-                    "title": title[:200],
-                    "snippet": snippet[:300],
-                    "url": url,
-                })
-
-    # Fallback: simpler pattern (just links, no snippets)
-    if not results:
-        link_pattern = re.compile(
-            r'<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
-            re.DOTALL | re.IGNORECASE,
-        )
-        for match in link_pattern.finditer(html):
-            if len(results) >= num_results:
-                break
-            url = match.group(1)
-            title = _strip_html(match.group(2)).strip()
-            if title and url and not url.startswith("#"):
-                url = _clean_ddg_url(url)
-                if url:
-                    results.append({
-                        "title": title[:200],
-                        "snippet": "",
-                        "url": url,
-                    })
-
+        logger.debug(f"DDG error: {e}")
     return results
 
-
-def _clean_ddg_url(url: str) -> str:
-    """Clean a DuckDuckGo redirect URL to get the actual URL."""
-    if url.startswith("//duckduckgo.com/l/"):
-        actual_url_match = re.search(r'uddg=([^&]+)', url)
-        if actual_url_match:
-            return unquote(actual_url_match.group(1))
-        return ""  # Can't extract real URL
-    if url.startswith("//"):
-        url = "https:" + url
-    return url
-
-
-# ══════════════════════════════════════════════════════════════
-#  ENGINE 2: Yandex HTML search
-# ══════════════════════════════════════════════════════════════
-
-async def _search_yandex_html(query: str, num_results: int) -> List[Dict]:
-    """Search using Yandex HTML. Excellent for Russian-language queries."""
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(12.0, connect=5.0),
-        follow_redirects=True,
-        headers={
-            **_SEARCH_HEADERS,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
-    ) as client:
-        response = await client.get(
-            "https://yandex.ru/search/",
-            params={
-                "text": query,
-                "lr": 213,  # Moscow region
-                "numdoc": num_results,
-            },
-        )
-
-        if response.status_code == 200:
-            return _parse_yandex_html(response.text, num_results)
-
-    return []
-
-
-def _parse_yandex_html(html: str, num_results: int) -> List[Dict]:
-    """Parse Yandex search results HTML."""
+async def search_searxng(query, max_results=5):
     results = []
-
-    # Yandex uses various class names, try multiple patterns
-    # Pattern 1: Organic results with data attributes
-    organic_pattern = re.compile(
-        r'<a[^>]+class="[^"]*Link[^"]*"[^>]+href="((?:https?://)[^"]+)"[^>]*>(.*?)</a>',
-        re.DOTALL | re.IGNORECASE,
-    )
-
-    seen_urls = set()
-    for match in organic_pattern.finditer(html):
-        if len(results) >= num_results:
-            break
-        url = match.group(1)
-        title = _strip_html(match.group(2)).strip()
-
-        # Skip Yandex internal URLs and duplicates
-        if not title or not url.startswith("http"):
-            continue
-        if any(skip in url for skip in ["yandex.ru", "yandex.com", "ya.ru", "/search/"]):
-            continue
-        if url in seen_urls:
-            continue
-        seen_urls.add(url)
-
-        results.append({
-            "title": title[:200],
-            "snippet": "",  # Yandex snippets are harder to extract reliably
-            "url": url,
-        })
-
-    # Pattern 2: Try simpler href extraction if pattern 1 failed
-    if not results:
-        href_pattern = re.compile(
-            r'href="(https?://(?!yandex\.(?:ru|com)|ya\.ru)[^"]+)"[^>]*>([^<]{10,}?)</a>',
-            re.IGNORECASE,
-        )
-        for match in href_pattern.finditer(html):
-            if len(results) >= num_results:
-                break
-            url = match.group(1)
-            title = _strip_html(match.group(2)).strip()
-            if title and url and url not in seen_urls:
-                seen_urls.add(url)
-                results.append({
-                    "title": title[:200],
-                    "snippet": "",
-                    "url": url,
-                })
-
-    return results
-
-
-# ══════════════════════════════════════════════════════════════
-#  ENGINE 3: SearXNG public instance
-# ══════════════════════════════════════════════════════════════
-
-# List of public SearXNG instances to try
-_SEARXNG_INSTANCES = [
-    "https://search.sapti.me",
-    "https://searx.be",
-    "https://search.bus-hit.me",
-    "https://searx.fmac.xyz",
-]
-
-
-async def _search_searxng(query: str, num_results: int) -> List[Dict]:
-    """Search using SearXNG public instances. Meta search engine."""
-    results = []
-
-    for instance in _SEARXNG_INSTANCES:
+    for instance in ["https://searx.be/search", "https://search.sapti.me/search"]:
         try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(10.0, connect=5.0),
-                follow_redirects=True,
-                headers=_SEARCH_HEADERS,
-            ) as client:
-                response = await client.get(
-                    f"{instance}/search",
-                    params={
-                        "q": query,
-                        "format": "json",
-                        "language": "ru",
-                        "categories": "general",
-                    },
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    for item in data.get("results", [])[:num_results]:
-                        title = item.get("title", "").strip()
-                        url = item.get("url", "").strip()
-                        snippet = item.get("content", "").strip()
-
-                        if title and url and url.startswith("http"):
-                            results.append({
-                                "title": title[:200],
-                                "snippet": snippet[:300],
-                                "url": url,
-                            })
-
-                    if results:
-                        return results
-        except Exception:
-            continue
-
+            client = await _get_client()
+            resp = await client.get(instance, params={"q": query, "format": "html"})
+            if resp.status_code != 200: continue
+            urls = re.findall(r'<h[34]>.*?<a[^>]+href="(https?://[^"]+)"[^>]*>(.*?)</a>', resp.text, re.DOTALL)
+            for url, title in urls[:max_results]:
+                title = _clean_html(title)
+                if url and title and "searx" not in url:
+                    results.append(SearchResult(title=title, url=url, source="searxng"))
+            if results: break
+        except Exception: pass
     return results
 
+async def web_search(query, max_results=5):
+    results = await search_ddg_html(query, max_results)
+    if not results: results = await search_searxng(query, max_results)
+    seen, unique = set(), []
+    for r in results:
+        if r.url not in seen: seen.add(r.url); unique.append(r)
+    return unique[:max_results]
 
-# ══════════════════════════════════════════════════════════════
-#  ENGINE 4: DuckDuckGo instant answer API
-# ══════════════════════════════════════════════════════════════
-
-async def _search_ddg_api(query: str, num_results: int) -> List[Dict]:
-    """Search using DuckDuckGo instant answer API (weakest - only for definitions)."""
-    results = []
-
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(8.0, connect=4.0),
-    ) as client:
-        response = await client.get(
-            "https://api.duckduckgo.com/",
-            params={"q": query, "format": "json", "no_html": 1, "skip_disambig": 1},
-        )
-        if response.status_code == 200:
-            data = response.json()
-            # Try abstract
-            abstract = data.get("Abstract", "")
-            abstract_url = data.get("AbstractURL", "")
-            abstract_title = data.get("Heading", "")
-            if abstract and abstract_url:
-                results.append({
-                    "title": abstract_title,
-                    "snippet": abstract[:300],
-                    "url": abstract_url,
-                })
-            # Try related topics
-            for topic in data.get("RelatedTopics", [])[:3]:
-                if isinstance(topic, dict) and topic.get("Text") and topic.get("FirstURL"):
-                    results.append({
-                        "title": topic.get("Text", "")[:100],
-                        "snippet": topic.get("Text", "")[:300],
-                        "url": topic.get("FirstURL", ""),
-                    })
-
-    return results
-
-
-# ══════════════════════════════════════════════════════════════
-#  UTILITY FUNCTIONS
-# ══════════════════════════════════════════════════════════════
-
-def _strip_html(text: str) -> str:
-    """Remove HTML tags from text."""
-    text = re.sub(r'<[^>]+>', ' ', text)
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
-
-
-def should_search(text: str) -> Optional[str]:
-    """Determine if the user message warrants a web search.
-
-    Returns the search query if search is needed, None otherwise.
-    Only searches when the topic is clearly about factual/news content.
-
-    v33: Убраны триггеры "что за" и "расскажи про" - это эмоциональные
-    выражения, не поисковые запросы. "Что за бред" не должно искать "бред"!
-    """
-    text_lower = text.lower()
-
-    # v33: ИСКЛЮЧЕНИЯ - эмоциональные выражения которые НЕ должны вызывать поиск
-    emotional_expressions = [
-        "что за бред", "что за фигня", "что за хрень", "что за хуйня",
-        "че за бред", "че за фигня", "какой бред", "полный бред",
-        "что это за", "какого хера", "на хуя",
-    ]
-    for expr in emotional_expressions:
-        if expr in text_lower:
-            return None
-
-    # Direct search triggers
-    search_triggers = [
-        "поищи", "найди", "search", "find", "узнай", "проверь",
-        "что такое", "кто такой", "кто такая", "что значит", "что означает",
-        "правда ли", "действительно ли", "это правда", "подтверд",
-        "сколько стоит", "какой курс", "какая погода", "какая температура",
-        "когда будет", "где находится", "где купить", "как доехать",
-        "последние новости", "свежие новости", "что нового в",
-        "что случилось", "что произошло", "какие события",
-        # v46: Product/service/price search triggers
-        "где найти", "где заказать", "где продается", "лучшая цена",
-        "подешевле", "поиск товара", "ищу товар", "купить", "заказать",
-        "цена на", "стоимость", "сколько стоит", "рейтинг", "топ лучших",
-        "отзывы о", "сравнение", "какой лучше", "что выбрать",
-        "рекомендуй", "посоветуй", "что купить", "какой выбрать",
-        "аналог", "замена", "альтернатива",
-        "кто победил", "кто выиграл", "кто стал",
-        "какой результат", "какой счёт", "сколько",
-    ]
-
-    for trigger in search_triggers:
-        if trigger in text_lower:
-            idx = text_lower.find(trigger)
-            query = text[idx + len(trigger):].strip().rstrip("?!.،")
-            if len(query) > 2:
-                return query[:100]
-            return text[:100]
-
-    # Question detection - search for factual questions
-    question_patterns = [
-        r"кто (?:создал|изобрёл|написал|построил|основал)",
-        r"когда (?:состоялся|произошёл|начался|закончился|изобрели)",
-        r"где (?:находится|проходит|состоится|пройдёт)",
-        r"сколько (?:стоит|стоит|человек|жителей|население)",
-        r"какой (?:рекорд|результат|счёт|курс|прогноз)",
-        r"что (?:произошло|случилось|нового|известно)",
-    ]
-
-    for pattern in question_patterns:
-        if re.search(pattern, text_lower):
-            return text[:100]
-
-    # Event/news discussion triggers - lower threshold
-    news_triggers = [
-        "в новости", "в новостях", "прочитала что", "говорят что",
-        "в интернете пишут", "сегодня произошло", "недавно было",
-        "вы слышали про", "ты знаешь про", "расскажи про",
-    ]
-
-    for trigger in news_triggers:
-        if trigger in text_lower:
-            idx = text_lower.find(trigger)
-            query = text[idx + len(trigger):].strip().rstrip("?!.،")
-            if len(query) > 3:
-                return query[:100]
-
-    return None
-
-
-def format_search_results_for_prompt(results: List[Dict], query: str) -> str:
-    """Format search results for injection into AI system prompt.
-
-    Nastya should use these results naturally in her conversation,
-    always including the source URL when sharing information.
-    """
-    if not results:
-        return ""
-
-    lines = [
-        f"🔍 Настя только что нашла в интернете про '{query}':",
-        "ОБЯЗАТЕЛЬНО используй эту информацию и ПРИКРЕПИ ССЫЛКИ! Это правило!",
-    ]
-
-    for i, result in enumerate(results[:3], 1):
-        title = result.get("title", "")
-        snippet = result.get("snippet", "")
-        url = result.get("url", "")
-        entry = f"{i}. {title}"
-        if snippet:
-            entry += f" - {snippet[:200]}"
-        if url:
-            entry += f" [Ссылка: {url}]"
-        lines.append(entry)
-
-    lines.append(
-        "⛔ Когда обсуждаешь эту информацию - ОБЯЗАТЕЛЬНО добавь ссылку на источник! "
-        "НЕТ ССЫЛКИ = НАРУШЕНИЕ! Пиши URL из результатов выше!"
-    )
-
+def format_search_results(results, max_items=3):
+    if not results: return ""
+    lines = []
+    for r in results[:max_items]:
+        snippet = f" — {r.snippet}" if r.snippet else ""
+        lines.append(f"• {r.title}{snippet}\n  {r.url}")
     return "\n".join(lines)
 
+async def fetch_article(url, max_chars=1500):
+    try:
+        client = await _get_client()
+        r = await client.get(url)
+        if r.status_code != 200: return ""
+        html = r.text
+        html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(r"<nav[^>]*>.*?</nav>", "", html, flags=re.DOTALL | re.IGNORECASE)
+        article = re.search(r"<article[^>]*>(.*?)</article>", html, re.DOTALL | re.IGNORECASE)
+        if article: html = article.group(1)
+        paras = re.findall(r"<p[^>]*>(.*?)</p>", html, re.DOTALL | re.IGNORECASE)
+        text = "\n".join(_clean_html(p) for p in (paras or [html]))
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", re.sub(r"\s+", " ", text).strip()) if len(s.strip()) > 30]
+        return " ".join(sentences)[:max_chars]
+    except Exception: return ""
 
-def get_search_link_for_response(results: List[Dict]) -> Optional[str]:
-    """Get the most relevant URL from search results for appending to response."""
-    if not results:
-        return None
-    for result in results:
-        url = result.get("url", "")
-        if url and url.startswith("http"):
-            return url
-    return None
+async def research_topic(topic, max_queries=2):
+    topic = (topic or "").strip()
+    if len(topic) < 5: return ""
+    queries = [topic[:300]]
+    short = topic[:60].split("—")[0].split(":")[0].strip()
+    if short and short.lower() != topic[:60].lower(): queries.append(short)
+    async def _q(q):
+        try: return await asyncio.wait_for(web_search(q, max_results=5), timeout=8.0)
+        except: return []
+    search_results_lists = await asyncio.gather(*[_q(q) for q in queries[:max_queries]])
+    seen, all_results = set(), []
+    for lst in search_results_lists:
+        for r in lst:
+            if r.url not in seen: seen.add(r.url); all_results.append(r)
+    if not all_results: return ""
+    top = all_results[:2]
+    articles = await asyncio.gather(*[fetch_article(r.url, 1200) for r in top])
+    lines = [f"Развёрнутые результаты веб-поиска по теме «{topic[:80]}»:"]
+    for i, r in enumerate(all_results[:4]):
+        snippet = f" — {r.snippet}" if r.snippet else ""
+        lines.append(f"\n[{i+1}] {r.title}{snippet}\n    {r.url}")
+    for i, (r, content) in enumerate(zip(top, articles)):
+        if content: lines.append(f"\nСодержание статьи [{i+1}] ({r.title[:60]}):\n{content}")
+    lines.append("\nИспользуй эти данные чтобы РАЗВЁРНУТО дополнить ответ: приведи конкретные факты, цифры, даты, контекст. Упомяни источник ссылкой.")
+    return "\n".join(lines)
 
+async def verify_claim(claim, fast=True):
+    timeout = 5.0 if fast else config.SEARCH_TIMEOUT_SECONDS
+    try:
+        results = await asyncio.wait_for(web_search(claim, max_results=3), timeout=timeout)
+    except: return ""
+    if not results: return ""
+    return format_search_results(results, max_items=2)
 
-# ── Poll topic suggestions for channel ──
+def first_url(context):
+    m = re.search(r"https?://\S+", context or "")
+    return m.group(0) if m else ""
 
-POLL_TOPICS = [
-    {
-        "question": "Котятки, какой знак зодиака самый капризный? 🤔",
-        "options": ["Овен 🔥", "Близнецы ♊", "Скорпион 🦂", "Настя! 💅"],
-    },
-    {
-        "question": "Срочно! Суши или пицца? 🍣🍕",
-        "options": ["Суши! 🍣", "Пицца! 🍕", "И то и другое! 😍", "Настя не выбирает - Настя хочет всё! 💅"],
-    },
-    {
-        "question": "Кто лучше: Настя или Алиса? 💅🤖",
-        "options": ["Настя! 💅✨", "Алиса 🤖", "Обе! 😍", "Siri! 😤 (шутка)"],
-    },
-    {
-        "question": "Какой сериал смотреть вечером? 📺",
-        "options": ["Эмили в Париже 💋", "Игра престолов 🐉", "Друзья ☕", "Что Настя скажет! 💅"],
-    },
-    {
-        "question": "Кофе или чай? ☕🍵",
-        "options": ["Кофе! ☕", "Чай! 🍵", "Матча! 🍵✨", "Коктейль! 🍹"],
-    },
-    {
-        "question": "Шопинг онлайн или в магазине? 🛍️",
-        "options": ["Онлайн! 📱", "В магазине! 🏬", "И то и другое! 💅", "Настя не шопинг - Настя искусство! ✨"],
-    },
-    {
-        "question": "Котики или собачки? 🐱🐶",
-        "options": ["Котики! 🐱", "Собачки! 🐶", "Обоих! 😍", "Хомячки! 🐹"],
-    },
-    {
-        "question": "Маникюр: гель или обычный? 💅",
-        "options": ["Гель! 💅", "Обычный! 🎨", "Оба! ✨", "Настя за гель, точняк! 💅💅"],
-    },
-    {
-        "question": "Куда поехать в отпуск? ✈️",
-        "options": ["Стамбул! 🇹🇷", "Дубай! 🇦🇪", "Бали! 🌴", "Сочи! 🏖️"],
-    },
-    {
-        "question": "Какой цвет круче? 🎨",
-        "options": ["Розовый! 💖", "Красный! ❤️", "Чёрный! 🖤", "Бежевый! 🤍"],
-    },
-    {
-        "question": "Настя сегодня в каком настроении? 🤔",
-        "options": ["Капризная! 😤", "Любящая! 🥰", "Голодная! 🍽️", "Ленивая! 😴"],
-    },
-    {
-        "question": "Лучший завтрак? 🍳",
-        "options": ["Кофе и всё! ☕", "Панкейки! 🥞", "Смузи! 🥤", "Кровать - лучший завтрак! 🛏️"],
-    },
-    {
-        "question": "Какой мессенджер лучше? 📱",
-        "options": ["Telegram! 💙", "WhatsApp! 💚", "VK! 🔵", "Настя общается лично! 💅"],
-    },
-    {
-        "question": "Смотреть фильмы: дома или в кино? 🎬",
-        "options": ["Дома! 🛋️", "В кино! 🍿", "Оба! ✨", "Настя смотрит в телефоне! 📱"],
-    },
-    {
-        "question": "Настина тема дня? 💅",
-        "options": ["Шопинг! 🛍️", "Сон! 😴", "Кофе! ☕", "Всё сразу! ✨"],
-    },
-    {
-        "question": "Какой формат контента хотите в канале? 📺",
-        "options": ["Новости! 📰", "Факты! 🤓", "Опросы! 📊", "Личное! 💅"],
-    },
-    {
-        "question": "Настя хочет купить... Что посоветуете? 🛒",
-        "options": ["Айфон! 📱", "Наушники! 🎧", "Сумочку! 👜", "Котика! 🐱"],
-    },
-    {
-        "question": "Какой день недели самый тяжёлый? 😤",
-        "options": ["Понедельник! 😫", "Среда! 😐", "Пятница (ожидание)! 🥱", "Воскресенье (завтра работать)! 😱"],
-    },
-    {
-        "question": "Настя учится готовить! Что приготовить? 🍳",
-        "options": ["Пасту! 🍝", "Суши дома! 🍣", "Блины! 🥞", "Лучше заказать! 📱"],
-    },
-    {
-        "question": "Какой язык программирования самый крутой? 💻",
-        "options": ["Python! 🐍", "JavaScript! 🌐", "C++! ⚡", "Настя не программист! 💅"],
-    },
-    {
-        "question": "Лучшая социальная сеть? 📱",
-        "options": ["Telegram! 💙", "TikTok! 🎵", "Instagram! 📸", "YouTube! ▶️"],
-    },
-    {
-        "question": "Что делать в выходные? 🎉",
-        "options": ["Шопинг! 🛍️", "Сериал! 📺", "Гулять! 🚶‍♀️", "Спать! 😴"],
-    },
-    {
-        "question": "Какое время года лучшее? 🌈",
-        "options": ["Лето! ☀️", "Осень! 🍂", "Зима! ❄️", "Весна! 🌸"],
-    },
-    {
-        "question": "Настя идёт в спортзал... Шутка! Но если бы? 💪",
-        "options": ["Йога! 🧘‍♀️", "Бег! 🏃‍♀️", "Плавание! 🏊‍♀️", "Лежать - тоже спорт! 😴"],
-    },
-]
+def all_urls(context):
+    return re.findall(r"https?://\S+", context or "")

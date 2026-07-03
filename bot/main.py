@@ -1,880 +1,196 @@
-"""Nastya Bot v71.0 - RUADAPT QWEN3-4B-INSTRUCT + CHAT/COMMENT FIXES!
-
-Architecture v56.0:
-  - PERSONA: Настя - москвичка, 23 года, блогер, владеет BMW M3 2025 серого цвета!
-  - BMW EXPERT: регламенты, болячки, приколы - Настя знает ВСЁ про баварцев!
-  - DATE AWARE: Настя знает какой сегодня день и учитывает актуальность!
-  - LOCAL EXPERT: Москва, Питер, Сочи, Красная Поляна - заведения, мероприятия!
-  - ЧАТ: Pollinations.ai EXPANDED MULTI-MODEL (30 моделей, балансировка нагрузки!)
-  - INLINE MODE: Настя работает в любом чате через @asnastya_bot!
-  - VISION: Pollinations vision API - Настя ВИДИТ фото! 14 vision-моделей
-  - IMAGE GEN: Pollinations image API - Настя РИСУЕТ! 🎨
-  - SEARCH: MULTI-ENGINE! DuckDuckGo -> Yandex -> SearXNG -> DDG API fallback!
-  - /find - поиск товаров, услуг, лучших цен - ВСЕГДА находит!
-  - /films - подборка фильмов от Насти! 🎬
-  - /weather - погода в любом городе! 🌤️
-  - /events - мероприятия и афиша! 🎫
-  - /places - заведения и рестораны! 🍽️
-  - /image - Настя нарисует что хочешь! 🎨
-  - DISCOVERY: Авто-посты + кино-подборки + рецепты + места + мероприятия!
-  - URL: Настя понимает ссылки!
-  - PHOTO SEARCH: фото -> распознавание -> поиск товаров/цен!
-  - Новости: 22+ RSS-источника + AI-комментарии (AI ONLY!)
-  - Канал: AI-посты на основе новостей, опросы, факты, рецепты
-  - sochiautoparts.ru/rss.xml - источник автомобильных новостей
-  - Channel posts: @chasnastya link format
-  - Group chat: Nastya COMMENTS ACTIVELY in groups - 70% response!
-  - Proactive messaging + discovery sharing - Настя активный собеседник
-"""
-import asyncio
-import fcntl
-import logging
-import os
-import signal
-import sys
-import time
-import traceback
-import random
+"""Настя Main — starts OpenClaw gateway subprocess + aiogram bot + channel scheduler."""
+import asyncio, logging, os, signal, subprocess, sys, time, random
 from pathlib import Path
-
-# Load .env file before any other imports
-try:
-    from dotenv import load_dotenv
-    _env_path = Path(__file__).parent.parent / ".env"
-    if _env_path.exists():
-        load_dotenv(_env_path)
-        logging.getLogger(__name__).info(f"Loaded .env from {_env_path}")
-except ImportError:
-    pass  # python-dotenv not installed, rely on system env vars
-
-from aiogram import Bot, Dispatcher, BaseMiddleware
-from aiogram.enums import ParseMode
-from aiogram.types import TelegramObject, Message, CallbackQuery
+from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-
-logging.basicConfig(
-    level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO"), logging.INFO),
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger("nastya-bot")
-
-from bot.config import (
-    BOT_TOKEN, ADMIN_IDS, DB_PATH, SESSION_DURATION_SECONDS, OWNER_ID,
-    NEWS_FETCH_INTERVAL, CHANNEL_POST_INTERVAL, CHANNEL_ID, CHANNEL_USERNAME,
-    POLLINATIONS_API_KEY, ENABLE_LOCAL_MODEL,
-    MODEL_PATH, MODEL_N_CTX, MODEL_MAX_TOKENS, MODEL_HISTORY_LIMIT,
-    POLLINATIONS_MAX_TOKENS,
-)
-
-if not BOT_TOKEN:
-    logger.critical("Missing BOT_TOKEN")
-    sys.exit(1)
-
-
-# ════════════════════════════════════════════════════════════
-#  CONFLICT TRACKER - exit on persistent conflicts
-# ════════════════════════════════════════════════════════════
-# If TelegramConflictError persists for >60 seconds, the bot
-# will exit with code 2, triggering the workflow's auto-restart.
-# This prevents the bot from being stuck in an infinite retry loop.
-
-_consecutive_conflicts: int = 0
-_first_conflict_time: float = 0
-_MAX_CONFLICT_SECONDS = 45  # Exit after 45s of continuous conflicts
-_should_exit = False  # Flag for conflict_monitor to signal main loop
-
-# ── Health watchdog state ──
-_last_successful_update: float = 0  # Timestamp of last successful Telegram update
-_HEALTH_CHECK_INTERVAL = 300  # Check health every 300s
-_MAX_UNRESPONSIVE_SECONDS = 120  # Restart if no response for 2 minutes
-_model_reload_count: int = 0  # Track model reload attempts
-
-
-def record_conflict() -> bool:
-    """Record a conflict error. Returns True if we should exit."""
-    global _consecutive_conflicts, _first_conflict_time, _should_exit
-    now = time.time()
-    _consecutive_conflicts += 1
-    if _first_conflict_time == 0:
-        _first_conflict_time = now
-
-    duration = now - _first_conflict_time
-    if duration > _MAX_CONFLICT_SECONDS and _consecutive_conflicts > 5:
-        logger.critical(
-            f"Persistent Conflict for {duration:.0f}s ({_consecutive_conflicts} conflicts). "
-            f"EXITING to trigger auto-restart!"
-        )
-        _should_exit = True
-        return True
-    return False
-
-
-def clear_conflicts():
-    """Reset conflict tracker on successful update."""
-    global _consecutive_conflicts, _first_conflict_time
-    _consecutive_conflicts = 0
-    _first_conflict_time = 0
-
-
-# ════════════════════════════════════════════════════════════
-#  MIDDLEWARE
-# ════════════════════════════════════════════════════════════
-
-class ErrorHandlingMiddleware(BaseMiddleware):
-    """Catch and log errors without crashing the bot.
-
-    NEVER sends error messages to users - they should only see Nastya's personality.
-    """
-
-    async def __call__(self, handler, event: TelegramObject, data: dict):
-        try:
-            return await handler(event, data)
-        except (SystemExit, KeyboardInterrupt):
-            raise
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.error(f"Unhandled error: {e}\n{traceback.format_exc()}")
-            return None
-
-
-class LoggingMiddleware(BaseMiddleware):
-    """Log all incoming updates for monitoring."""
-
-    async def __call__(self, handler, event, data: dict):
-        start = time.time()
-        user_info = ""
-
-        if isinstance(event, Message) and event.from_user:
-            user_info = f"user={event.from_user.id} ({event.from_user.username or 'no_username'})"
-            if event.text:
-                logger.info(f"MSG {user_info}: {event.text[:100]}")
-            elif event.photo:
-                logger.info(f"PHOTO {user_info}: caption={event.caption[:50] if event.caption else 'none'}")
-        elif isinstance(event, CallbackQuery) and event.from_user:
-            user_info = f"user={event.from_user.id} cb={event.data}"
-            logger.info(f"CB {user_info}")
-
-        result = await handler(event, data)
-        elapsed = time.time() - start
-        if elapsed > 3.0:
-            logger.warning(f"Slow handler: {elapsed:.2f}s for {user_info}")
-        # Clear conflict tracker on successful handler execution
-        clear_conflicts()
-        return result
-
-
-class RateLimitMiddleware(BaseMiddleware):
-    """Per-user rate limiting to prevent abuse."""
-
-    def __init__(self, max_per_minute: int = 30):
-        self.max_per_minute = max_per_minute
-        self._user_requests: dict = {}
-
-    async def __call__(self, handler, event, data: dict):
-        user_id = None
-        if isinstance(event, (Message, CallbackQuery)) and event.from_user:
-            user_id = event.from_user.id
-
-        if not user_id:
-            return await handler(event, data)
-
-        now = time.time()
-        if user_id not in self._user_requests:
-            self._user_requests[user_id] = []
-
-        self._user_requests[user_id] = [
-            t for t in self._user_requests[user_id] if now - t < 60
-        ]
-
-        if len(self._user_requests[user_id]) >= self.max_per_minute:
-            if isinstance(event, Message):
-                await event.answer("Настя не успевает отвечать! Подожди минуточку! 💅")
-            elif isinstance(event, CallbackQuery):
-                await event.answer("Слишком быстро!", show_alert=True)
-            return
-
-        self._user_requests[user_id].append(now)
-        return await handler(event, data)
-
-
-class ConflictTrackingMiddleware(BaseMiddleware):
-    """Track TelegramConflictError from aiogram's polling loop.
-
-    aiogram's default retry policy retries conflicts with exponential backoff,
-    but it never records them. We hook into the error callback to track them
-    so our conflict_monitor can detect persistent conflicts and exit.
-    """
-
-    async def __call__(self, handler, event, data: dict):
-        # This middleware is for update processing - conflicts happen
-        # at the polling level, not here. We clear conflicts on success.
-        clear_conflicts()
-        return await handler(event, data)
-
-
-# ── Global instances ───────────────────────────────────────
-from bot.database import Database
-from bot.handlers import all_routers
-from ai.router import AIRouter
-
-db: Database = None
-ai_router: AIRouter = None
-bot: Bot = None
-dp: Dispatcher = None
-_start_time: float = 0
-
-# ── SINGLETON LOCK: prevent multiple bot instances ──────────
-_lock_file = None
-LOCK_PATH = "/tmp/nastya-bot.lock"
-
-
-def acquire_singleton_lock() -> bool:
-    """Try to acquire a file lock. Returns True if successful.
-
-    If another bot instance is running, the lock will fail and
-    this instance will exit immediately - preventing TelegramConflictError.
-    """
-    global _lock_file
-    try:
-        _lock_file = open(LOCK_PATH, 'w')
-        fcntl.flock(_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        _lock_file.write(str(os.getpid()))
-        _lock_file.flush()
-        logger.info(f"Singleton lock acquired: {LOCK_PATH} (PID {os.getpid()})")
-        return True
-    except (IOError, OSError):
-        logger.critical("Another bot instance is already running! Exiting to prevent TelegramConflictError.")
-        if _lock_file:
-            _lock_file.close()
-        return False
-
-
-def release_singleton_lock():
-    """Release the singleton lock on shutdown."""
-    global _lock_file
-    try:
-        if _lock_file:
-            fcntl.flock(_lock_file, fcntl.LOCK_UN)
-            _lock_file.close()
-            _lock_file = None
-        Path(LOCK_PATH).unlink(missing_ok=True)
-    except Exception:
-        pass
-
-
-# ════════════════════════════════════════════════════════════
-#  BACKGROUND TASKS
-# ════════════════════════════════════════════════════════════
-
-async def news_scheduler(bot_instance: Bot) -> None:
-    """Background task: periodically fetch news and generate Nastya's commentary.
-
-    v31: Увеличены задержки между AI-запросами чтобы не блокировать чат.
-    Фоновые задачи не используют AI - RSS + шаблоны.
-    """
-    from news import run_news_cycle
-
-    # Wait for startup
-    await asyncio.sleep(60)  # Даём время модели прогреться
-
-    while True:
-        try:
-            if db and ai_router:
-                commented = await run_news_cycle(db, ai_router)
-                if commented > 0:
-                    logger.info(f"News scheduler: {commented} items commented")
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"News scheduler error: {e}")
-
-        await asyncio.sleep(NEWS_FETCH_INTERVAL)
-
-
-async def channel_scheduler(bot_instance: Bot) -> None:
-    """Background task: periodically post to Telegram channel @chasnastya.
-
-    v36: Увеличена задержка старта чтобы модель успела загрузиться.
-    """
-    from channel import run_channel_cycle
-
-    # Wait for startup + initial news fetch
-    await asyncio.sleep(120)  # v31: 120с вместо 60 - не мешаем пользователю
-
-    while True:
-        try:
-            if db and ai_router and CHANNEL_ID:
-                posted = await run_channel_cycle(bot_instance, db, ai_router)
-                if posted > 0:
-                    logger.info(f"Channel scheduler: {posted} posts made")
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"Channel scheduler error: {e}")
-
-        await asyncio.sleep(CHANNEL_POST_INTERVAL)
-
-
-async def proactive_scheduler(bot_instance: Bot) -> None:
-    """Background task: periodically send proactive messages."""
-    from bot.handlers.chat import check_and_send_proactive
-
-    # Wait for startup
-    await asyncio.sleep(120)
-
-    while True:
-        try:
-            wait_time = random.randint(1800, 3600)  # 30-60 min - less spammy, but still fun!
-            await asyncio.sleep(wait_time)
-            if db and ai_router:
-                await check_and_send_proactive(bot_instance, db, ai_router)
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"Proactive scheduler error: {e}")
-            await asyncio.sleep(60)
-
-
-async def discovery_scheduler(bot_instance: Bot) -> None:
-    """Background task: periodically discover interesting content for channel.
-
-    Searches for: recipes, numerology, astrology, events, deals, facts.
-    Posts to channel with source links and shares with chat users.
-    """
-    from bot.discover import run_discovery_cycle, get_discovery_for_chat
-
-    # Wait for startup
-    await asyncio.sleep(300)  # 5 min - let other systems settle first
-
-    while True:
-        try:
-            # Run discovery cycle for channel
-            if db and ai_router:
-                posted = await run_discovery_cycle(bot_instance, db, ai_router)
-                if posted > 0:
-                    logger.info(f"Discovery scheduler: {posted} posts made")
-
-                # 30% chance to also share with an active chat user
-                if random.random() < 0.30:
-                    try:
-                        from bot.handlers.chat import check_and_send_proactive
-                        # Proactive sharing is already handled by proactive_scheduler
-                        # This just increases the chance of sharing discoveries
-                        pass
-                    except Exception:
-                        pass
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"Discovery scheduler error: {e}")
-
-        # Random interval: 30-60 minutes
-        wait = random.randint(1800, 3600)
-        await asyncio.sleep(wait)
-
-
-async def partner_post_scheduler(bot_instance: Bot) -> None:
-    """Background task: periodically post partner recommendations to channel.
-
-    Runs every 6 hours, max 3 partner posts per day.
-    Uses post_partner_to_channel_capped for daily cap enforcement.
-    """
-    from channel import post_partner_to_channel_capped
-
-    # Wait for startup
-    await asyncio.sleep(180)  # 3 min - let other systems settle first
-
-    while True:
-        try:
-            if db and CHANNEL_ID:
-                posted = await post_partner_to_channel_capped(bot_instance, db, ai_router)
-                if posted:
-                    logger.info("Partner post scheduler: posted partner recommendation to channel")
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"Partner post scheduler error: {e}")
-
-        # Every 6 hours
-        await asyncio.sleep(6 * 3600)
-
-
-async def periodic_db_cleanup() -> None:
-    """Background task: periodically clean up old DB records."""
-    while True:
-        try:
-            await asyncio.sleep(86400)  # Once per day
-            if db:
-                deleted = await db.cleanup_old_history(max_age_hours=720)
-                if deleted > 0:
-                    logger.info(f"DB cleanup: removed {deleted} old messages")
-
-                # Also cleanup AI cache
-                cache_deleted = await db.cache_cleanup(max_age=7200)
-                if cache_deleted > 0:
-                    logger.info(f"Cache cleanup: removed {cache_deleted} old entries")
-
-                # Cleanup old news
-                from bot.config import NEWS_MAX_ITEMS
-                news_deleted = await db.cleanup_old_news(NEWS_MAX_ITEMS)
-                if news_deleted > 0:
-                    logger.info(f"News cleanup: removed {news_deleted} old news items")
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"DB cleanup error: {e}")
-
-
-async def memory_cleanup() -> None:
-    """Background task: periodically clean in-memory trackers to prevent leaks."""
-    while True:
-        try:
-            await asyncio.sleep(3600)  # Every hour
-            from bot.handlers.chat import _cleanup_trackers
-            _cleanup_trackers()
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"Memory cleanup error: {e}")
-
-
-
-
-async def conflict_monitor() -> None:
-    """Background task: monitor conflict state and exit if persistent.
-
-    Uses os._exit(2) instead of SystemExit(2).
-    SystemExit raised in a background task is caught by asyncio's
-    event loop and never reaches the main thread. os._exit() kills
-    the entire process immediately, ensuring the workflow's
-    auto-restart mechanism kicks in.
-    """
-    await asyncio.sleep(15)  # Give startup time to settle
-    while True:
-        try:
-            await asyncio.sleep(5)
-            # Check if we've been in conflict state for too long
-            if _consecutive_conflicts > 5 and _first_conflict_time > 0:
-                duration = time.time() - _first_conflict_time
-                if duration > _MAX_CONFLICT_SECONDS:
-                    logger.critical(
-                        f"Conflict monitor: {duration:.0f}s of persistent conflicts "
-                        f"({_consecutive_conflicts} conflicts). "
-                        f"FORCE EXITING with os._exit(2) to trigger auto-restart!"
-                    )
-                    os._exit(2)
-            # Also check the global exit flag
-            if _should_exit:
-                logger.critical("Exit flag set! Force exiting with os._exit(2)")
-                os._exit(2)
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"Conflict monitor error: {e}")
-
-
-async def health_watchdog() -> None:
-    """Background task: monitor bot health.
-
-    v36: No more Ollama - model is loaded in-process via llama-cpp-python.
-    Only checks Telegram API health now.
-    """
-    await asyncio.sleep(30)  # Give startup time to settle
-    logger.info("Health watchdog started")
-
-    while True:
-        try:
-            await asyncio.sleep(_HEALTH_CHECK_INTERVAL)
-
-            # ── Check 1: Model health (non-critical - Pollinations handles chat) ──
-            if ai_router and ai_router._pollinations:
-                try:
-                    model_ok = ai_router._pollinations.is_available()
-                    if not model_ok:
-                        logger.warning("Pollinations provider not available! Chat may be affected.")
-                except Exception:
-                    pass
-
-            # ── Check 2: Telegram API health ──
-            if bot:
-                try:
-                    me = await bot.get_me()
-                    if me and me.id:
-                        continue  # Bot is healthy!
-                except Exception as e:
-                    logger.warning(f"Telegram API health check failed: {e}")
-                    if _first_conflict_time > 0:
-                        unresponsive_time = time.time() - _first_conflict_time
-                        if unresponsive_time > _MAX_UNRESPONSIVE_SECONDS:
-                            logger.critical(
-                                f"Bot unresponsive for {unresponsive_time:.0f}s! "
-                                f"FORCE EXITING to trigger restart!"
-                            )
-                            os._exit(3)
-
-            # ── Check 3: Uptime sanity ──
-            if _start_time > 0 and ai_router:
-                uptime = time.time() - _start_time
-                status = ai_router.get_status()
-                total_req = status.get("_stats", {}).get("total_requests", 0)
-                if uptime > 600 and total_req == 0:
-                    logger.warning(
-                        f"Bot running for {uptime:.0f}s with 0 AI requests. "
-                        f"Polling may be stuck. Continuing to monitor..."
-                    )
-
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"Health watchdog error: {e}")
-
-
-# ════════════════════════════════════════════════════════════
-#  STARTUP / SHUTDOWN
-# ════════════════════════════════════════════════════════════
-
-async def on_startup(**kwargs) -> None:
-    global db, ai_router, _start_time
-    _start_time = time.time()
-    logger.info("=== Nastya Bot v71.0 RUADAPT QWEN3-4B-INSTRUCT + CHAT/COMMENT FIXES Starting ===")
-
-    # NOTE: Webhook deletion and conflict resolution is handled in main()
-    # before start_polling() - no need to do it here again
-
-    db = Database(DB_PATH)
-    await db.init()
-    logger.info("Database initialized")
-
-    ai_router = AIRouter(db)
-    await ai_router.init()
-    logger.info(f"AI Router: LlamaCppProvider, status={ai_router.get_status()}")
-
-    # Load partner programs from remote partners.json (updateable file!)
-    from bot.partners import nastya_partner_manager
-    partner_count = await nastya_partner_manager.load_admitad_async()
-    logger.info(f"Partner programs loaded: {partner_count}")
-
-    # Interbot removed — each bot works independently
-
-    try:
-        await db.get_or_create_user(OWNER_ID, "owner", "Owner")
-    except Exception as e:
-        logger.error(f"Owner setup error: {e}")
-
-    dp_ref = kwargs.get("dispatcher") or kwargs.get("router") or dp
-    if dp_ref:
-        dp_ref.workflow_data["db"] = db
-        dp_ref.workflow_data["ai_router"] = ai_router
-        logger.info(f"workflow_data set: db={db is not None}, ai_router={ai_router is not None}")
-
-    if bot:
-        asyncio.create_task(news_scheduler(bot))
-        asyncio.create_task(channel_scheduler(bot))
-        asyncio.create_task(proactive_scheduler(bot))
-        asyncio.create_task(discovery_scheduler(bot))
-        asyncio.create_task(partner_post_scheduler(bot))
-        asyncio.create_task(periodic_db_cleanup())
-        asyncio.create_task(memory_cleanup())
-        asyncio.create_task(conflict_monitor())
-        asyncio.create_task(health_watchdog())
-
-        # Startup notification - Nastya-style, NO technical info
-        for admin_id in ADMIN_IDS:
-            if admin_id:
-                try:
-                    from bot.nastya import get_random_fact
-                    thought = get_random_fact()
-                    startup_msg = f"💅 Настя проснулась!\n\n{thought}"
-                    await bot.send_message(
-                        admin_id,
-                        startup_msg,
-                        parse_mode="HTML",
-                    )
-                    # Save startup message to chat history so AI knows what it said
-                    try:
-                        if db:
-                            await db.add_message(admin_id, "assistant", startup_msg)
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-
-    local_status = "LOADED" if ENABLE_LOCAL_MODEL and ai_router and ai_router._local and ai_router._local.is_available() else "OFF"
-    logger.info(
-        f"=== Nastya Bot v71.0 RUADAPT QWEN3-4B-INSTRUCT Ready! "
-        f"Local(RuadaptQwen3-4B-Instruct/v13)={local_status}, "
-        f"Pollinations=ACTIVE, Cloudflare=FALLBACK ==="
-    )
-
-
-async def on_shutdown(**kwargs) -> None:
-    global db, ai_router
-    logger.info("=== Nastya Bot Shutting Down ===")
-
-    if bot:
-        for admin_id in ADMIN_IDS:
-            try:
-                sleepy = random.choice([
-                    "Я спать 💤",
-                    "Я спать! Не буди! 😤💤",
-                    "Настя спать... 💤",
-                    "Всё, я спать! 💅💤",
-                    "Спать хочу! Ночи! 🌙💤",
-                ])
-                await bot.send_message(admin_id, sleepy)
-                # Save shutdown message to chat history for context continuity
-                try:
-                    if db:
-                        await db.add_message(admin_id, "assistant", sleepy)
-                except Exception:
-                    pass
-            except Exception:
-                pass
-
-    if ai_router:
-        await ai_router.close()
-    if db:
-        await db.close()
-
-    logger.info("=== Nastya Bot Stopped ===")
-
-
-def setup_dispatcher() -> Dispatcher:
-    """Configure dispatcher with all routers and middleware."""
-    global dp
-    dp = Dispatcher()
-
-    dp.message.middleware(RateLimitMiddleware(max_per_minute=30))
-    dp.callback_query.middleware(RateLimitMiddleware(max_per_minute=30))
-    dp.message.middleware(LoggingMiddleware())
-    dp.callback_query.middleware(LoggingMiddleware())
-    dp.message.outer_middleware(ErrorHandlingMiddleware())
-    dp.callback_query.outer_middleware(ErrorHandlingMiddleware())
-    dp.pre_checkout_query.middleware(ErrorHandlingMiddleware())
-
-    for router in all_routers:
-        dp.include_router(router)
-
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
-    return dp
-
-
-# ════════════════════════════════════════════════════════════
-#  TAKEOVER - resolve TelegramConflictError
-# ════════════════════════════════════════════════════════════
-
-async def force_takeover(bot_instance: Bot) -> bool:
-    """Force-take control of the bot from any previous instance.
-
-    v19.0 ROOT CAUSE FIX: The previous code used get_updates(timeout=0)
-    for the takeover test. This is WRONG because:
-    1. aiogram's Bot.get_updates() creates a NEW aiohttp session internally
-    2. Even with timeout=0, it sends a getUpdates HTTP request to Telegram
-    3. When aiogram's polling loop starts later, it creates ANOTHER session
-    4. For a brief moment, BOTH sessions are calling getUpdates -> Conflict!
-
-    FIX: Use a DEDICATED httpx client (NOT aiogram's Bot) for the takeover
-    test. This way aiogram's internal session is NEVER opened before
-    start_polling(), so there's no session leak.
-
-    Returns True if takeover succeeded.
-    """
+from aiogram.fsm.storage.memory import MemoryStorage
+from bot.config import config
+from bot import database as db
+from bot.mood import mood_loop, current_mood_descriptor
+from bot.partners import partner_manager
+from ai import client as ai_client
+
+logging.basicConfig(level=getattr(logging, config.LOG_LEVEL.upper(), logging.INFO), format="%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+logger = logging.getLogger("nastya.main")
+for noisy in ["aiogram.event", "httpx", "httpcore", "aiosqlite"]: logging.getLogger(noisy).setLevel(logging.WARNING)
+
+from bot.handlers.chat import chat_router
+from bot.handlers.groups import group_router
+from bot.handlers.channels import channel_router
+from bot.handlers.admin import admin_router
+from bot.handlers.inline import inline_router
+
+OPENCLAW_STATE_DIR = os.getenv("OPENCLAW_STATE_DIR", str(Path.cwd() / ".openclaw-state"))
+_openclaw_proc = None
+
+def _generate_openclaw_config():
+    state_dir = OPENCLAW_STATE_DIR
+    Path(state_dir).mkdir(parents=True, exist_ok=True)
+    out = str(Path(state_dir) / "openclaw.json")
+    gen = str(Path(__file__).resolve().parent.parent / "scripts" / "gen_openclaw_config.py")
+    env = os.environ.copy(); env["OPENCLAW_STATE_DIR"] = state_dir
+    r = subprocess.run([sys.executable, gen, "--out", out, "--state-dir", state_dir], env=env)
+    if r.returncode != 0: raise RuntimeError(f"OpenClaw config generation failed (code {r.returncode})")
+    return out
+
+def _start_openclaw_gateway(config_path):
+    env = os.environ.copy()
+    env["OPENCLAW_STATE_DIR"] = OPENCLAW_STATE_DIR
+    env["OPENCLAW_CONFIG_PATH"] = config_path
+    npm_global = os.path.expanduser("~/.npm-global/bin")
+    env["PATH"] = npm_global + ":" + env.get("PATH", "")
+    cmd = [config.OPENCLAW_BIN, "gateway", "--port", str(config.OPENCLAW_PORT), "--auth", "none", "--bind", "loopback", "--allow-unconfigured"]
+    log_path = str(Path(OPENCLAW_STATE_DIR) / "gateway.log")
+    logger.info(f"Starting OpenClaw Gateway: {' '.join(cmd)}")
+    log_f = open(log_path, "a", buffering=1)
+    return subprocess.Popen(cmd, env=env, stdout=log_f, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+
+async def _wait_for_gateway(timeout=120.0):
     import httpx
-
-    MAX_ATTEMPTS = 10
-    logger.info(f"=== Starting takeover (up to {MAX_ATTEMPTS} attempts) ===")
-
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        # Step 1: Delete webhook - this kicks the old instance's long-poll
-        # and forces it to return with a Conflict error
+    url = f"{config.OPENCLAW_URL}/v1/models"
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
         try:
-            await bot_instance.delete_webhook(drop_pending_updates=True)
-            logger.info(f"[Takeover {attempt}] delete_webhook OK")
-        except Exception as e:
-            logger.warning(f"[Takeover {attempt}] delete_webhook failed: {e}")
-
-        # Step 2: Wait for old instance to die
-        # Progressive delay: 3s -> 5s -> 8s -> 12s -> 15s
-        if attempt <= 2:
-            wait = 5
-        elif attempt <= 4:
-            wait = 8
-        elif attempt <= 6:
-            wait = 12
-        else:
-            wait = 15
-        logger.info(f"[Takeover {attempt}] Waiting {wait}s for old instance to die...")
-        await asyncio.sleep(wait)
-
-        # Step 3: Test with a DEDICATED httpx client (NOT aiogram's session!)
-        # This prevents the aiogram session leak that was causing
-        # persistent TelegramConflictError.
-        try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
-                # Call getUpdates directly via HTTP - no aiogram involvement
-                resp = await client.get(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates",
-                    params={"limit": 1, "timeout": 5},
-                )
-                data = resp.json()
-
-                if data.get("ok"):
-                    logger.info(
-                        f"[Takeover {attempt}] getUpdates SUCCESS via httpx - "
-                        f"we are the sole instance!"
-                    )
-                    return True
-                elif data.get("error_code") == 409:
-                    logger.warning(
-                        f"[Takeover {attempt}] Conflict - old instance still alive, retrying..."
-                    )
-                    # Delete webhook AGAIN to keep kicking the old instance
-                    try:
-                        await bot_instance.delete_webhook(drop_pending_updates=True)
-                    except Exception:
-                        pass
-                else:
-                    logger.warning(
-                        f"[Takeover {attempt}] Telegram error: {data.get('description', 'unknown')}"
-                    )
-                    # Non-conflict error - might be network issue. Try polling anyway.
-                    return True
-
-        except httpx.TimeoutException:
-            # Timeout is OK - it means the long-poll is working (no conflict!)
-            logger.info(f"[Takeover {attempt}] Timeout (means no conflict!) - SUCCESS!")
-            return True
-        except Exception as e:
-            logger.warning(f"[Takeover {attempt}] httpx test error: {e}")
-            # Network issue - try polling anyway
-            return True
-
-    logger.error("FAILED to take over after all attempts!")
+            async with httpx.AsyncClient() as c:
+                r = await c.get(url, timeout=5.0)
+                if r.status_code == 200: return True
+        except: pass
+        if _openclaw_proc is not None and _openclaw_proc.poll() is not None: return False
+        await asyncio.sleep(2.0)
     return False
 
+def _stop_openclaw_gateway():
+    global _openclaw_proc
+    if _openclaw_proc is not None:
+        try:
+            _openclaw_proc.terminate()
+            try: _openclaw_proc.wait(timeout=10)
+            except: _openclaw_proc.kill()
+        except: pass
+        _openclaw_proc = None
+
+class NastyaBot:
+    def __init__(self):
+        if not config.BOT_TOKEN: raise RuntimeError("BOT_TOKEN not set")
+        self.bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=None))
+        self.dp = Dispatcher(storage=MemoryStorage())
+        self.dp.include_router(admin_router)
+        self.dp.include_router(chat_router)
+        self.dp.include_router(group_router)
+        self.dp.include_router(channel_router)
+        self.dp.include_router(inline_router)
+        from aiogram.types import ErrorEvent
+        @self.dp.error()
+        async def on_error(event: ErrorEvent):
+            try:
+                exc = event.exception
+                from aiogram.exceptions import TelegramRetryAfter
+                if isinstance(exc, TelegramRetryAfter): logger.warning(f"Flood control (RetryAfter {exc.retry_after}s)")
+                else: logger.error(f"Handler error (suppressed): {type(exc).__name__}: {exc}", exc_info=False)
+            except: pass
+
+    async def start(self):
+        logger.info("=== Настя (OpenClaw) стартует ===")
+        try:
+            me = await self.bot.get_me()
+            config.BOT_ID = me.id
+            config.BOT_USERNAME = (me.username or config.BOT_USERNAME or "").lstrip("@")
+            logger.info(f"Bot: @{config.BOT_USERNAME} (id={config.BOT_ID}) «{me.first_name or ''}», owner={config.OWNER_ID}")
+        except Exception as e: logger.warning(f"get_me failed: {e}")
+        await db.init_db()
+        logger.info("DB initialized")
+        try:
+            await partner_manager.load()
+            logger.info(f"Partners loaded: {len(partner_manager.campaigns)} campaigns")
+        except: pass
+        await ai_client.initialize()
+        logger.info(f"AI client ready — {config.providers_status()}")
+        asyncio.create_task(mood_loop(), name="mood_loop")
+        asyncio.create_task(db.run_periodic_cleanup(), name="cleanup_loop")
+        try:
+            from bot.proactive import proactive_loop, summary_loop, set_bot
+            set_bot(self.bot)
+            asyncio.create_task(proactive_loop(), name="proactive_loop")
+            asyncio.create_task(summary_loop(), name="summary_loop")
+            logger.info("Proactive + summary loops enabled")
+        except Exception as e: logger.warning(f"Proactive failed: {e}")
+        # Channel scheduler — Настя posts to @chasnastya
+        if config.CHANNEL_ID:
+            asyncio.create_task(self._channel_scheduler(), name="channel_scheduler")
+            logger.info(f"Channel scheduler enabled (@{config.CHANNEL_USERNAME})")
+        await self._notify_owner()
+        try: await self.bot.delete_webhook(drop_pending_updates=False)
+        except: pass
+        allowed = ["message", "edited_message", "channel_post", "edited_channel_post", "inline_query", "chosen_inline_result"]
+        logger.info("=== Настя в сети — слушаю сообщения ===")
+        polling_retries = 0
+        while True:
+            try:
+                await self.dp.start_polling(self.bot, allowed_updates=allowed)
+                break
+            except Exception as e:
+                polling_retries += 1
+                logger.error(f"Polling error (attempt {polling_retries}): {type(e).__name__}: {e}")
+                if polling_retries > 50: break
+                await asyncio.sleep(5 if polling_retries <= 5 else 10)
+        try: await ai_client.close()
+        except: pass
+
+    async def _channel_scheduler(self):
+        """Background task: periodically post to @chasnastya channel."""
+        from bot.persona import CHANNEL_POST_PROMPT, NASTYA_FACTS
+        await asyncio.sleep(120)  # wait for startup
+        post_interval = 1200  # 20 min
+        while True:
+            try:
+                channel_id = int(config.CHANNEL_ID)
+                mood = await current_mood_descriptor()
+                # Alternate: personality post / fact / AI-generated post
+                post_type = random.choice(["personality", "fact", "ai_post"])
+                if post_type == "fact":
+                    fact = random.choice(NASTYA_FACTS)
+                    await self.bot.send_message(channel_id, f"🎀 Факт от Насти:\n\n{fact}")
+                    logger.info(f"Channel: posted fact")
+                else:
+                    topics = ["мода и тренды этого сезона", "новый фильм на Netflix", "астрология и знаки зодиака", "шопинг и скидки", "BMW M3 — лучшая тачка", "психология отношений", "тренды в соцсетях", "кофе и лайфстайл", "путешествия и Стамбул", "что нового в мире технологий"]
+                    topic = random.choice(topics)
+                    prompt = f"Напиши пост для канала @chasnastya на тему: {topic}. Настроение: {mood}. 3-5 предложений, живо, с эмодзи."
+                    post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, fast=True, max_tokens=300, allow_static_fallback=False)
+                    if post:
+                        await self.bot.send_message(channel_id, post[:4000])
+                        logger.info(f"Channel: posted AI post ({len(post)} chars)")
+            except asyncio.CancelledError: break
+            except Exception as e:
+                logger.error(f"Channel scheduler error: {e}")
+            await asyncio.sleep(post_interval)
+
+    async def _notify_owner(self):
+        mood = await current_mood_descriptor()
+        try:
+            await self.bot.send_message(config.OWNER_ID, f"Я на связи 🎀 Настя, сейчас я {mood}. OpenClaw: {config.OPENCLAW_URL}. Провайдеры: {config.providers_status()}. Канал: @{config.CHANNEL_USERNAME}. Пиши или добавь в группу 💬")
+        except: pass
 
 async def main():
-    global bot
-
-    # ── Signal handlers for clean shutdown ──
-    def handle_signal(signum, frame):
-        sig_name = signal.Signals(signum).name
-        logger.info(f"Received {sig_name}, initiating clean shutdown...")
-        # Don't call sys.exit here - just set the flag
-        # The polling loop will catch it
-
-    signal.signal(signal.SIGTERM, handle_signal)
-    signal.signal(signal.SIGINT, handle_signal)
-
-    # ── SINGLETON CHECK: exit if another instance is running ──
-    # In GitHub Actions, old instances are cancelled by concurrency group,
-    # but there's a race: old process may still be alive when new one starts.
-    # We handle this with aggressive takeover below.
-    if not acquire_singleton_lock():
-        # Lock file exists - but in GitHub Actions, the old process
-        # may have been killed without releasing the lock.
-        # Force-remove stale lock and try again.
-        logger.warning("Stale lock detected, force-removing...")
-        try:
-            Path(LOCK_PATH).unlink(missing_ok=True)
-        except Exception:
-            pass
-        if not acquire_singleton_lock():
-            logger.critical("Cannot acquire lock even after cleanup. Exiting.")
-            sys.exit(0)
-
-    # Create bot instance for takeover phase
-    takeover_bot = Bot(
-        token=BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
-
-    # ═══════════════════════════════════════════════════════
-    #  SMART TAKEOVER - resolve TelegramConflictError
-    # ═══════════════════════════════════════════════════════
-    takeover_ok = await force_takeover(takeover_bot)
-
-    if not takeover_ok:
-        logger.error("Takeover failed! Will try polling anyway...")
-
-    # ═══════════════════════════════════════════════════════
-    #  CRITICAL: Close takeover bot and create FRESH bot for polling
-    # ═══════════════════════════════════════════════════════
-    # The takeover bot's aiohttp session may have stale connections
-    # that interfere with aiogram's polling. Create a brand new bot.
-    try:
-        await takeover_bot.session.close()
-        logger.info("Takeover bot session closed")
-    except Exception:
-        pass
-
-    # Small delay to ensure old connections are fully cleaned up
-    await asyncio.sleep(2)
-
-    # Create FRESH bot instance for polling
-    bot = Bot(
-        token=BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
-
-    # Final webhook cleanup with fresh bot (no stale sessions!)
-    try:
-        await bot.delete_webhook(drop_pending_updates=True)
-        logger.info("Final webhook cleanup with fresh bot OK")
-    except Exception as e:
-        logger.warning(f"Final webhook cleanup failed: {e}")
-
-    dispatcher = setup_dispatcher()
-
-    try:
-        async def session_timeout():
-            await asyncio.sleep(SESSION_DURATION_SECONDS)
-            logger.info("Session timeout, shutting down...")
-            os._exit(0)  # Use os._exit to ensure process dies
-
-        timeout_task = asyncio.create_task(session_timeout())
-
-        # Include poll_answer updates so Nastya can react to poll votes
-        allowed_updates = dispatcher.resolve_used_update_types()
-        if "poll_answer" not in allowed_updates:
-            allowed_updates.append("poll_answer")
-
-        logger.info("Starting aiogram polling with fresh bot session...")
-        await dispatcher.start_polling(bot, allowed_updates=allowed_updates)
-
-    except SystemExit as e:
-        code = e.code if isinstance(e.code, int) else 0
-        if code == 2:
-            logger.info("Bot exiting due to persistent conflicts (will auto-restart)")
-        else:
-            logger.info("Bot stopped (session timeout)")
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        logger.critical(f"Bot crashed: {e}\n{traceback.format_exc()}")
-    finally:
-        try:
-            timeout_task.cancel()
-        except Exception:
-            pass
-        await on_shutdown()
-        release_singleton_lock()
-        try:
-            await bot.session.close()
-        except Exception:
-            pass
-
+    global _openclaw_proc
+    cfg_path = _generate_openclaw_config()
+    _openclaw_proc = _start_openclaw_gateway(cfg_path)
+    ready = await _wait_for_gateway(120.0)
+    if not ready:
+        logger.error("OpenClaw Gateway did not become ready — exiting")
+        _stop_openclaw_gateway()
+        sys.exit(1)
+    bot = NastyaBot()
+    def _sig(*_): asyncio.create_task(bot.dp.stop_polling())
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try: asyncio.get_running_loop().add_signal_handler(sig, _sig)
+        except: pass
+    try: await bot.start()
+    finally: _stop_openclaw_gateway()
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
-    except SystemExit as e:
-        code = e.code if isinstance(e.code, int) else 1
-        sys.exit(code)
+    try: asyncio.run(main())
+    except KeyboardInterrupt: pass
     except Exception as e:
-        logger.critical(f"Fatal: {e}")
+        logger.exception(f"Fatal: {e}")
+        _stop_openclaw_gateway()
         sys.exit(1)

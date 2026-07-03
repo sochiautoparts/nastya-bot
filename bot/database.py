@@ -1,855 +1,184 @@
-"""Nastya Bot 2.0 - Database. SQLite with WAL mode.
-
-Tables:
-  - users: user profiles with gender, mood, message count
-  - chat_history: conversation context (30 days)
-  - donations: Stars payment records
-  - nastya_moods: mood probability distribution
-  - news_items: fetched news articles for context
-  - channel_posts: auto-posted channel content
-  - ai_cache: response caching (from ai-mega-bot)
-"""
+"""Настя Database — SQLite async (aiosqlite), WAL mode."""
+import logging, time
+from typing import List, Optional
 import aiosqlite
-import logging
-import time
-import asyncio
-import json
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from bot.config import config
 
-from bot.config import DB_PATH
+logger = logging.getLogger("nastya.db")
 
-logger = logging.getLogger(__name__)
-
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
-    username TEXT,
-    first_name TEXT,
-    gender TEXT DEFAULT 'unknown',
-    language_code TEXT DEFAULT 'ru',
-    created_at REAL,
-    total_messages INTEGER DEFAULT 0,
-    last_active REAL,
-    last_mood TEXT DEFAULT 'капризная',
-    last_mood_change REAL DEFAULT 0,
-    subscribed_channel INTEGER DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS chat_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    role TEXT,
-    content TEXT,
-    created_at REAL
-);
-
-CREATE TABLE IF NOT EXISTS donations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    stars_amount INTEGER,
-    telegram_charge_id TEXT,
-    created_at REAL
-);
-
-CREATE TABLE IF NOT EXISTS nastya_moods (
-    mood TEXT PRIMARY KEY,
-    emoji TEXT,
-    description TEXT,
-    probability REAL DEFAULT 0.1
-);
-
-CREATE TABLE IF NOT EXISTS news_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    source TEXT,
-    title TEXT,
-    link TEXT UNIQUE,
-    summary TEXT,
-    nastya_comment TEXT,
-    category TEXT DEFAULT 'general',
-    posted_to_channel INTEGER DEFAULT 0,
-    created_at REAL
-);
-
-CREATE TABLE IF NOT EXISTS channel_posts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    news_id INTEGER,
-    post_text TEXT,
-    post_type TEXT DEFAULT 'news',
-    created_at REAL
-);
-
-CREATE TABLE IF NOT EXISTS ai_cache (
-    cache_key TEXT PRIMARY KEY,
-    task_type TEXT,
-    response_data TEXT,
-    created_at REAL
-);
-
-CREATE INDEX IF NOT EXISTS idx_chat_history_user ON chat_history(user_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_donations_user ON donations(user_id);
-CREATE INDEX IF NOT EXISTS idx_news_link ON news_items(link);
-CREATE INDEX IF NOT EXISTS idx_news_category ON news_items(category, created_at);
-CREATE INDEX IF NOT EXISTS idx_news_unposted ON news_items(posted_to_channel, created_at);
-CREATE INDEX IF NOT EXISTS idx_channel_posts_type ON channel_posts(post_type, created_at);
-CREATE INDEX IF NOT EXISTS idx_ai_cache_key ON ai_cache(cache_key);
-
-CREATE TABLE IF NOT EXISTS user_consultations (
-    user_id INTEGER PRIMARY KEY,
-    birth_day INTEGER,
-    birth_month INTEGER,
-    birth_year INTEGER,
-    birth_time TEXT DEFAULT '',
-    birth_place TEXT DEFAULT '',
-    blood_type TEXT DEFAULT '',
-    last_consultation TEXT DEFAULT '',
-    consultation_count INTEGER DEFAULT 0,
-    updated_at REAL
-);
-
-CREATE INDEX IF NOT EXISTS idx_user_consultations ON user_consultations(user_id);
-
-CREATE TABLE IF NOT EXISTS chat_topics (
-    chat_id INTEGER PRIMARY KEY,
-    topic TEXT DEFAULT 'general',
-    confidence REAL DEFAULT 0.0,
-    detected_at REAL
-);
-
-CREATE INDEX IF NOT EXISTS idx_chat_topics ON chat_topics(chat_id);
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS channels (chat_id INTEGER PRIMARY KEY, username TEXT DEFAULT '', title TEXT DEFAULT '', enabled INTEGER DEFAULT 1, seen INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS group_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, user_id INTEGER NOT NULL, username TEXT DEFAULT '', first_name TEXT DEFAULT '', content TEXT DEFAULT '', is_media INTEGER DEFAULT 0, media_caption TEXT DEFAULT '', is_bot INTEGER DEFAULT 0, ts INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_gm_chat_ts ON group_messages(chat_id, id DESC);
+CREATE TABLE IF NOT EXISTS group_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, user_id INTEGER NOT NULL, fact TEXT NOT NULL, ts INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_gmem_chat ON group_memory(chat_id, id DESC);
+CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT DEFAULT '', first_name TEXT DEFAULT '', last_name TEXT DEFAULT '', is_bot INTEGER DEFAULT 0, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL, msg_count INTEGER DEFAULT 0, private_msgs INTEGER DEFAULT 0, group_msgs INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS user_facts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, fact TEXT NOT NULL, source_chat INTEGER NOT NULL, ts INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_uf_user ON user_facts(user_id, id DESC);
+CREATE TABLE IF NOT EXISTS private_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, ts INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_pm_user_ts ON private_messages(user_id, id DESC);
+CREATE TABLE IF NOT EXISTS reactions_dedup (message_id INTEGER NOT NULL, chat_id INTEGER NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (chat_id, message_id));
+CREATE TABLE IF NOT EXISTS chat_summaries (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, summary TEXT NOT NULL, topics TEXT DEFAULT '', ts INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_cs_chat ON chat_summaries(chat_id, id DESC);
+CREATE TABLE IF NOT EXISTS moods (id INTEGER PRIMARY KEY DEFAULT 1, mood TEXT DEFAULT 'спокойная', energy REAL DEFAULT 0.5, ts INTEGER NOT NULL);
 """
 
-MOODS = [
-    ("капризная", "😤", "Настя в капризном настроении", 0.22),
-    ("любящая", "🥰", "Настя сегодня ласковая", 0.16),
-    ("загадочная", "🔮", "Настя говорит загадками", 0.10),
-    ("модная", "👗", "Настя одержима модой", 0.10),
-    ("ремонтная", "🔨", "Настя одержима ремонтом", 0.08),
-    ("спортивная", "🏃‍♀️", "Настя в спортивном настроении", 0.08),
-    ("голодная", "🍽️", "Настя хочет есть", 0.08),
-    ("философская", "🧘‍♀️", "Настя философствует", 0.08),
-    ("драма", "🎭", "Настя в драме", 0.06),
-    ("щедрая", "💝", "Настя добрая сегодня", 0.04),
-]
+_db: Optional[aiosqlite.Connection] = None
 
+async def init_db():
+    global _db
+    import os
+    os.makedirs(os.path.dirname(config.DB_PATH) or ".", exist_ok=True)
+    _db = await aiosqlite.connect(config.DB_PATH)
+    _db.row_factory = aiosqlite.Row
+    await _db.execute("PRAGMA journal_mode=WAL;")
+    await _db.execute("PRAGMA synchronous=NORMAL;")
+    await _db.executescript(_SCHEMA)
+    await _db.commit()
+    logger.info(f"DB ready at {config.DB_PATH}")
 
-class Database:
-    """Database with shared persistent connection - fast & concurrent-safe!
+async def close_db():
+    global _db
+    if _db: await _db.close(); _db = None
 
-    Architecture:
-    - One aiosqlite connection shared across all operations
-    - asyncio.Lock serializes writes (SQLite WAL allows 1 writer at a time)
-    - Reads can happen concurrently via WAL snapshots
-    - Auto-reconnect on stale/closed connections
-    """
+def _conn():
+    if _db is None: raise RuntimeError("DB not initialised")
+    return _db
 
-    def __init__(self, db_path: str = DB_PATH):
-        self.db_path = db_path
-        self._initialized = False
-        self._conn: Optional[aiosqlite.Connection] = None
-        self._write_lock = asyncio.Lock()
+# Channels
+async def upsert_channel(chat_id, username="", title=""):
+    await _conn().execute("INSERT INTO channels(chat_id, username, title, enabled, seen) VALUES(?, ?, ?, 1, ?) ON CONFLICT(chat_id) DO UPDATE SET username=excluded.username, title=excluded.title, seen=excluded.seen", (chat_id, username, title, int(time.time())))
+    await _conn().commit()
 
-    async def _get_conn(self) -> aiosqlite.Connection:
-        """Get the shared connection, reconnecting if needed."""
-        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+async def is_channel_enabled(chat_id):
+    cur = await _conn().execute("SELECT enabled FROM channels WHERE chat_id=?", (chat_id,))
+    row = await cur.fetchone()
+    return row is None or row["enabled"] == 1
 
-        if self._conn is not None:
-            try:
-                async with self._conn.execute("SELECT 1") as cur:
-                    await cur.fetchone()
-                return self._conn
-            except Exception:
-                logger.warning("DB connection stale, reconnecting...")
-                try:
-                    await self._conn.close()
-                except Exception:
-                    pass
-                self._conn = None
+async def set_channel_enabled(chat_id, enabled):
+    await _conn().execute("INSERT INTO channels(chat_id, enabled, seen) VALUES(?, ?, ?) ON CONFLICT(chat_id) DO UPDATE SET enabled=excluded.enabled", (chat_id, 1 if enabled else 0, int(time.time())))
+    await _conn().commit()
 
-        conn = await aiosqlite.connect(self.db_path)
-        await conn.execute("PRAGMA journal_mode=WAL")
-        await conn.execute("PRAGMA synchronous=NORMAL")
-        await conn.execute("PRAGMA busy_timeout=10000")
-        await conn.execute("PRAGMA cache_size=-2000")
-        self._conn = conn
-        return conn
+# Group messages
+async def add_group_message(chat_id, user_id, username, first_name, content, is_media=False, media_caption="", is_bot=False):
+    await _conn().execute("INSERT INTO group_messages(chat_id, user_id, username, first_name, content, is_media, media_caption, is_bot, ts) VALUES(?,?,?,?,?,?,?,?,?)", (chat_id, user_id, username, first_name, content, int(is_media), media_caption, int(is_bot), int(time.time())))
+    await _conn().commit()
+    await _conn().execute("DELETE FROM group_messages WHERE chat_id=? AND id NOT IN (SELECT id FROM group_messages WHERE chat_id=? ORDER BY id DESC LIMIT ?)", (chat_id, chat_id, config.GROUP_MEMORY_SIZE * 2))
+    await _conn().commit()
 
-    async def init(self) -> None:
-        """Initialize database schema."""
-        if self._initialized:
-            return
+async def get_recent_group_messages(chat_id, limit=12):
+    cur = await _conn().execute("SELECT * FROM group_messages WHERE chat_id=? ORDER BY id DESC LIMIT ?", (chat_id, limit))
+    rows = await cur.fetchall()
+    return [dict(r) for r in reversed(rows)]
 
-        conn = await self._get_conn()
+async def get_active_group_chats(within_hours=24, limit=20):
+    cutoff = int(time.time()) - within_hours * 3600
+    cur = await _conn().execute("SELECT DISTINCT chat_id FROM group_messages WHERE ts > ? AND chat_id < 0 LIMIT ?", (cutoff, limit))
+    return [r["chat_id"] for r in await cur.fetchall()]
+
+async def last_bot_message_time(chat_id):
+    cur = await _conn().execute("SELECT ts FROM group_messages WHERE chat_id=? AND user_id=? ORDER BY id DESC LIMIT 1", (chat_id, config.BOT_ID))
+    row = await cur.fetchone()
+    return float(row["ts"]) if row else 0.0
+
+async def last_message_time(chat_id):
+    cur = await _conn().execute("SELECT ts FROM group_messages WHERE chat_id=? ORDER BY id DESC LIMIT 1", (chat_id,))
+    row = await cur.fetchone()
+    return float(row["ts"]) if row else 0.0
+
+# Group memory
+async def add_group_memory(chat_id, user_id, fact):
+    await _conn().execute("INSERT INTO group_memory(chat_id, user_id, fact, ts) VALUES(?,?,?,?)", (chat_id, user_id, fact, int(time.time())))
+    await _conn().commit()
+
+async def get_group_memory(chat_id, user_id=None, limit=8):
+    if user_id is not None:
+        cur = await _conn().execute("SELECT * FROM group_memory WHERE chat_id=? AND user_id=? ORDER BY id DESC LIMIT ?", (chat_id, user_id, limit))
+    else:
+        cur = await _conn().execute("SELECT * FROM group_memory WHERE chat_id=? ORDER BY id DESC LIMIT ?", (chat_id, limit))
+    return [dict(r) for r in await cur.fetchall()]
+
+# Users
+async def upsert_user(user_id, username="", first_name="", last_name="", is_bot=False, in_private=False, in_group=False):
+    now = int(time.time())
+    await _conn().execute("INSERT INTO users(user_id, username, first_name, last_name, is_bot, first_seen, last_seen, msg_count, private_msgs, group_msgs) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET username=excluded.username, first_name=excluded.first_name, last_name=excluded.last_name, last_seen=excluded.last_seen, msg_count=users.msg_count+1, private_msgs=users.private_msgs+?, group_msgs=users.group_msgs+?", (user_id, username, first_name, last_name, int(is_bot), now, now, 1, int(in_private), int(in_group), int(in_private), int(in_group)))
+    await _conn().commit()
+
+async def get_user(user_id):
+    cur = await _conn().execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+    row = await cur.fetchone()
+    return dict(row) if row else None
+
+async def add_user_fact(user_id, fact, source_chat=0):
+    await _conn().execute("INSERT INTO user_facts(user_id, fact, source_chat, ts) VALUES(?,?,?,?)", (user_id, fact, source_chat, int(time.time())))
+    await _conn().commit()
+
+async def get_user_facts(user_id, limit=12):
+    cur = await _conn().execute("SELECT fact FROM user_facts WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit))
+    return [dict(r) for r in await cur.fetchall()]
+
+async def has_user_fact(user_id, fact):
+    cur = await _conn().execute("SELECT 1 FROM user_facts WHERE user_id=? AND LOWER(fact)=LOWER(?) LIMIT 1", (user_id, fact))
+    return await cur.fetchone() is not None
+
+async def clear_user_facts(user_id):
+    cur = await _conn().execute("DELETE FROM user_facts WHERE user_id=?", (user_id,)); await _conn().commit(); return cur.rowcount or 0
+
+# Private messages
+async def add_private_message(user_id, role, content):
+    await _conn().execute("INSERT INTO private_messages(user_id, role, content, ts) VALUES(?,?,?,?)", (user_id, role, content, int(time.time())))
+    await _conn().commit()
+    await _conn().execute("DELETE FROM private_messages WHERE user_id=? AND id NOT IN (SELECT id FROM private_messages WHERE user_id=? ORDER BY id DESC LIMIT 80)", (user_id, user_id))
+    await _conn().commit()
+
+async def get_private_history(user_id, limit=16):
+    cur = await _conn().execute("SELECT role, content FROM private_messages WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit))
+    return [{"role": r["role"], "content": r["content"]} for r in reversed(await cur.fetchall())]
+
+async def clear_private_history(user_id):
+    cur = await _conn().execute("DELETE FROM private_messages WHERE user_id=?", (user_id,)); await _conn().commit(); return cur.rowcount or 0
+
+# Reaction dedup
+async def already_reacted(chat_id, message_id):
+    cur = await _conn().execute("SELECT 1 FROM reactions_dedup WHERE chat_id=? AND message_id=?", (chat_id, message_id))
+    return await cur.fetchone() is not None
+
+async def mark_reacted(chat_id, message_id):
+    await _conn().execute("INSERT OR IGNORE INTO reactions_dedup(chat_id, message_id, ts) VALUES(?,?,?)", (chat_id, message_id, int(time.time())))
+    await _conn().commit()
+
+# Chat summaries
+async def add_chat_summary(chat_id, summary, topics=""):
+    await _conn().execute("INSERT INTO chat_summaries(chat_id, summary, topics, ts) VALUES(?,?,?,?)", (chat_id, summary, topics, int(time.time())))
+    await _conn().commit()
+    await _conn().execute("DELETE FROM chat_summaries WHERE chat_id=? AND id NOT IN (SELECT id FROM chat_summaries WHERE chat_id=? ORDER BY id DESC LIMIT 3)", (chat_id, chat_id))
+    await _conn().commit()
+
+async def get_chat_summaries(chat_id, limit=2):
+    cur = await _conn().execute("SELECT summary, topics, ts FROM chat_summaries WHERE chat_id=? ORDER BY id DESC LIMIT ?", (chat_id, limit))
+    return [dict(r) for r in await cur.fetchall()]
+
+# Mood
+async def get_mood():
+    cur = await _conn().execute("SELECT mood, energy FROM moods WHERE id=1")
+    row = await cur.fetchone()
+    if row: return dict(row)
+    await _conn().execute("INSERT OR IGNORE INTO moods(id, mood, energy, ts) VALUES(1, 'спокойная', 0.5, ?)", (int(time.time()),))
+    await _conn().commit()
+    return {"mood": "спокойная", "energy": 0.5}
+
+async def set_mood(mood, energy):
+    await _conn().execute("INSERT INTO moods(id, mood, energy, ts) VALUES(1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET mood=excluded.mood, energy=excluded.energy, ts=excluded.ts", (mood, energy, int(time.time())))
+    await _conn().commit()
+
+# Cleanup
+async def run_periodic_cleanup():
+    import asyncio
+    while True:
+        await asyncio.sleep(600)
         try:
-            await conn.executescript(SCHEMA_SQL)
-
-            # Insert moods
-            async with conn.execute("SELECT COUNT(*) FROM nastya_moods") as cur:
-                count = (await cur.fetchone())[0]
-            if count == 0:
-                for mood, emoji, desc, prob in MOODS:
-                    await conn.execute(
-                        "INSERT INTO nastya_moods (mood, emoji, description, probability) VALUES (?,?,?,?)",
-                        (mood, emoji, desc, prob),
-                    )
-                await conn.commit()
-
-            # Migrations - add columns if not exist
-            for col_def in [
-                "ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'unknown'",
-                "ALTER TABLE users ADD COLUMN last_mood TEXT DEFAULT 'капризная'",
-                "ALTER TABLE users ADD COLUMN last_mood_change REAL DEFAULT 0",
-                "ALTER TABLE users ADD COLUMN subscribed_channel INTEGER DEFAULT 0",
-                "ALTER TABLE user_consultations ADD COLUMN blood_type TEXT DEFAULT ''",
-            ]:
-                try:
-                    await conn.execute(col_def)
-                    await conn.commit()
-                except Exception:
-                    pass  # Column already exists
-
-            self._initialized = True
-            logger.info(f"Database initialized: {self.db_path}")
+            cutoff = int(time.time()) - 3600
+            await _conn().execute("DELETE FROM reactions_dedup WHERE ts < ?", (cutoff,))
+            await _conn().commit()
         except Exception as e:
-            logger.error(f"DB init error: {e}")
-            raise
-
-    async def close(self) -> None:
-        """Close the shared connection."""
-        if self._conn:
-            try:
-                await self._conn.close()
-            except Exception:
-                pass
-            self._conn = None
-        self._initialized = False
-
-    # ── Users ────────────────────────────────────────────────
-
-    async def get_or_create_user(self, user_id: int, username: str = "",
-                                  first_name: str = "", language_code: str = "ru") -> Dict:
-        conn = await self._get_conn()
-        try:
-            async with conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cur:
-                row = await cur.fetchone()
-                if row:
-                    cols = [d[0] for d in cur.description]
-                    return dict(zip(cols, row))
-
-            now = time.time()
-            async with self._write_lock:
-                await conn.execute(
-                    """INSERT OR IGNORE INTO users
-                    (user_id, username, first_name, gender, language_code, created_at, total_messages, last_active, last_mood, last_mood_change)
-                    VALUES (?, ?, ?, 'unknown', ?, ?, 0, ?, 'капризная', 0)""",
-                    (user_id, username, first_name, language_code, now, now),
-                )
-                await conn.commit()
-            return {"user_id": user_id, "username": username, "first_name": first_name,
-                    "gender": "unknown", "total_messages": 0, "last_mood": "капризная",
-                    "subscribed_channel": 0}
-        except Exception as e:
-            logger.error(f"get_or_create_user error: {e}")
-            return {"user_id": user_id, "username": username, "first_name": first_name,
-                    "gender": "unknown", "total_messages": 0, "last_mood": "капризная",
-                    "subscribed_channel": 0}
-
-    async def set_gender(self, user_id: int, gender: str) -> None:
-        conn = await self._get_conn()
-        try:
-            async with self._write_lock:
-                await conn.execute("UPDATE users SET gender = ? WHERE user_id = ?", (gender, user_id))
-                await conn.commit()
-        except Exception as e:
-            logger.error(f"set_gender error: {e}")
-
-    async def get_gender(self, user_id: int) -> str:
-        conn = await self._get_conn()
-        try:
-            async with conn.execute("SELECT gender FROM users WHERE user_id = ?", (user_id,)) as cur:
-                row = await cur.fetchone()
-                return row[0] if row else "unknown"
-        except Exception:
-            return "unknown"
-
-    async def increment_messages(self, user_id: int) -> int:
-        conn = await self._get_conn()
-        try:
-            now = time.time()
-            async with self._write_lock:
-                await conn.execute(
-                    "UPDATE users SET total_messages = total_messages + 1, last_active = ? WHERE user_id = ?",
-                    (now, user_id),
-                )
-                await conn.commit()
-            async with conn.execute("SELECT total_messages FROM users WHERE user_id = ?", (user_id,)) as cur:
-                row = await cur.fetchone()
-                return row[0] if row else 0
-        except Exception as e:
-            logger.error(f"increment_messages error: {e}")
-            return 0
-
-    async def get_user_mood(self, user_id: int) -> str:
-        conn = await self._get_conn()
-        try:
-            async with conn.execute(
-                "SELECT last_mood, last_mood_change FROM users WHERE user_id = ?", (user_id,)
-            ) as cur:
-                row = await cur.fetchone()
-                if not row:
-                    return "капризная"
-                mood, last_change = row
-                if time.time() - (last_change or 0) > 900:
-                    new_mood = await self._pick_random_mood(conn)
-                    async with self._write_lock:
-                        await conn.execute(
-                            "UPDATE users SET last_mood = ?, last_mood_change = ? WHERE user_id = ?",
-                            (new_mood, time.time(), user_id),
-                        )
-                        await conn.commit()
-                    return new_mood
-                return mood or "капризная"
-        except Exception:
-            return "капризная"
-
-    async def _pick_random_mood(self, conn) -> str:
-        import random
-        moods = []
-        probs = []
-        try:
-            async with conn.execute("SELECT mood, probability FROM nastya_moods") as cur:
-                async for row in cur:
-                    moods.append(row[0])
-                    probs.append(row[1])
-        except Exception:
-            return "капризная"
-        if not moods:
-            return "капризная"
-        total = sum(probs)
-        probs = [p / total for p in probs]
-        return random.choices(moods, weights=probs, k=1)[0]
-
-    async def set_user_mood(self, user_id: int, mood: str) -> None:
-        conn = await self._get_conn()
-        try:
-            async with self._write_lock:
-                await conn.execute(
-                    "UPDATE users SET last_mood = ?, last_mood_change = ? WHERE user_id = ?",
-                    (mood, time.time(), user_id),
-                )
-                await conn.commit()
-        except Exception as e:
-            logger.error(f"set_user_mood error: {e}")
-
-    async def set_channel_subscribed(self, user_id: int, subscribed: bool = True) -> None:
-        conn = await self._get_conn()
-        try:
-            async with self._write_lock:
-                await conn.execute(
-                    "UPDATE users SET subscribed_channel = ? WHERE user_id = ?",
-                    (1 if subscribed else 0, user_id),
-                )
-                await conn.commit()
-        except Exception as e:
-            logger.error(f"set_channel_subscribed error: {e}")
-
-    async def get_active_users(self, min_messages: int = 5, limit: int = 100) -> List[Dict]:
-        """Get users who have chatted enough for proactive messages."""
-        conn = await self._get_conn()
-        try:
-            users = []
-            async with conn.execute(
-                "SELECT user_id, first_name, total_messages, last_active FROM users WHERE total_messages >= ? ORDER BY last_active DESC LIMIT ?",
-                (min_messages, limit),
-            ) as cur:
-                async for row in cur:
-                    users.append({
-                        "user_id": row[0], "first_name": row[1],
-                        "total_messages": row[2], "last_active": row[3],
-                    })
-            return users
-        except Exception:
-            return []
-
-    # ── Chat History ─────────────────────────────────────────
-
-    async def add_message(self, user_id: int, role: str, content: str) -> None:
-        conn = await self._get_conn()
-        try:
-            now = time.time()
-            async with self._write_lock:
-                await conn.execute(
-                    "INSERT INTO chat_history (user_id, role, content, created_at) VALUES (?,?,?,?)",
-                    (user_id, role, content, now),
-                )
-                await conn.commit()
-        except Exception as e:
-            logger.error(f"add_message error: {e}")
-
-    async def get_history(self, user_id: int, limit: int = 50, max_age_hours: int = 720) -> List[Dict[str, str]]:
-        conn = await self._get_conn()
-        try:
-            cutoff = time.time() - (max_age_hours * 3600)
-            messages = []
-            async with conn.execute(
-                "SELECT role, content FROM chat_history WHERE user_id = ? AND created_at > ? ORDER BY created_at DESC LIMIT ?",
-                (user_id, cutoff, limit),
-            ) as cur:
-                async for row in cur:
-                    messages.append({"role": row[0], "content": row[1]})
-            messages.reverse()
-            return messages
-        except Exception as e:
-            logger.error(f"get_history error: {e}")
-            return []
-
-    async def clear_history(self, user_id: int) -> None:
-        conn = await self._get_conn()
-        try:
-            async with self._write_lock:
-                await conn.execute("DELETE FROM chat_history WHERE user_id = ?", (user_id,))
-                await conn.commit()
-        except Exception as e:
-            logger.error(f"clear_history error: {e}")
-
-    async def cleanup_old_history(self, max_age_hours: int = 720) -> int:
-        conn = await self._get_conn()
-        try:
-            cutoff = time.time() - (max_age_hours * 3600)
-            async with self._write_lock:
-                cursor = await conn.execute(
-                    "DELETE FROM chat_history WHERE created_at < ?", (cutoff,)
-                )
-                await conn.commit()
-                return cursor.rowcount
-        except Exception as e:
-            logger.error(f"cleanup_old_history error: {e}")
-            return 0
-
-    # ── v4.3 Chat topic detection (group theming) ──────────────────────────
-
-    async def get_chat_topic(self, chat_id: int) -> str:
-        """Get the detected topic for a chat ('auto', 'shopping', 'travel',
-        'fashion', 'general', ...). Returns 'general' if unknown."""
-        conn = await self._get_conn()
-        try:
-            async with conn.execute(
-                "SELECT topic FROM chat_topics WHERE chat_id = ?", (chat_id,)
-            ) as cur:
-                row = await cur.fetchone()
-                if row:
-                    return row[0] or "general"
-        except Exception as e:
-            logger.debug(f"get_chat_topic error: {e}")
-        return "general"
-
-    async def set_chat_topic(
-        self, chat_id: int, topic: str, confidence: float = 1.0
-    ) -> None:
-        """Upsert the detected topic for a chat."""
-        conn = await self._get_conn()
-        try:
-            now = time.time()
-            async with self._write_lock:
-                await conn.execute(
-                    "INSERT INTO chat_topics (chat_id, topic, confidence, detected_at) "
-                    "VALUES (?,?,?,?) "
-                    "ON CONFLICT(chat_id) DO UPDATE SET topic=excluded.topic, "
-                    "confidence=excluded.confidence, detected_at=excluded.detected_at",
-                    (chat_id, topic, confidence, now),
-                )
-                await conn.commit()
-        except Exception as e:
-            logger.debug(f"set_chat_topic error: {e}")
-
-    # ── Donations ────────────────────────────────────────────
-
-    async def record_donation(self, user_id: int, stars: int, charge_id: str) -> int:
-        conn = await self._get_conn()
-        try:
-            now = time.time()
-            async with self._write_lock:
-                cur = await conn.execute(
-                    "INSERT INTO donations (user_id, stars_amount, telegram_charge_id, created_at) VALUES (?,?,?,?)",
-                    (user_id, stars, charge_id, now),
-                )
-                await conn.commit()
-                return cur.lastrowid
-        except Exception as e:
-            logger.error(f"record_donation error: {e}")
-            return 0
-
-    async def get_total_donated(self, user_id: int) -> int:
-        conn = await self._get_conn()
-        try:
-            async with conn.execute(
-                "SELECT COALESCE(SUM(stars_amount),0) FROM donations WHERE user_id = ?", (user_id,)
-            ) as cur:
-                return (await cur.fetchone())[0]
-        except Exception:
-            return 0
-
-    async def get_donation_count(self, user_id: int) -> int:
-        conn = await self._get_conn()
-        try:
-            async with conn.execute("SELECT COUNT(*) FROM donations WHERE user_id = ?", (user_id,)) as cur:
-                return (await cur.fetchone())[0]
-        except Exception:
-            return 0
-
-    # ── News Items ───────────────────────────────────────────
-
-    async def add_news_item(self, source: str, title: str, link: str,
-                             summary: str = "", category: str = "general") -> bool:
-        """Add a news item. Returns True if new, False if duplicate."""
-        conn = await self._get_conn()
-        try:
-            now = time.time()
-            async with self._write_lock:
-                try:
-                    await conn.execute(
-                        """INSERT INTO news_items (source, title, link, summary, category, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?)""",
-                        (source, title, link, summary, category, now),
-                    )
-                    await conn.commit()
-                    return True
-                except Exception:
-                    # Duplicate link - skip
-                    return False
-        except Exception as e:
-            logger.error(f"add_news_item error: {e}")
-            return False
-
-    async def update_news_comment(self, news_id: int, comment: str) -> None:
-        conn = await self._get_conn()
-        try:
-            async with self._write_lock:
-                await conn.execute(
-                    "UPDATE news_items SET nastya_comment = ? WHERE id = ?",
-                    (comment, news_id),
-                )
-                await conn.commit()
-        except Exception as e:
-            logger.error(f"update_news_comment error: {e}")
-
-    async def mark_news_posted(self, news_id: int) -> None:
-        conn = await self._get_conn()
-        try:
-            async with self._write_lock:
-                await conn.execute(
-                    "UPDATE news_items SET posted_to_channel = 1 WHERE id = ?",
-                    (news_id,),
-                )
-                await conn.commit()
-        except Exception as e:
-            logger.error(f"mark_news_posted error: {e}")
-
-    async def get_unposted_news(self, limit: int = 5) -> List[Dict]:
-        """Get news items not yet posted to channel."""
-        conn = await self._get_conn()
-        try:
-            items = []
-            async with conn.execute(
-                """SELECT id, source, title, link, summary, nastya_comment, category, created_at
-                FROM news_items WHERE posted_to_channel = 0 AND nastya_comment IS NOT NULL
-                ORDER BY created_at DESC LIMIT ?""",
-                (limit,),
-            ) as cur:
-                async for row in cur:
-                    items.append({
-                        "id": row[0], "source": row[1], "title": row[2],
-                        "link": row[3], "summary": row[4], "nastya_comment": row[5],
-                        "category": row[6], "created_at": row[7],
-                    })
-            return items
-        except Exception:
-            return []
-
-    async def get_recent_news(self, limit: int = 5, max_age_hours: int = 24) -> List[Dict]:
-        """Get recent news for conversation context."""
-        conn = await self._get_conn()
-        try:
-            cutoff = time.time() - (max_age_hours * 3600)
-            items = []
-            async with conn.execute(
-                """SELECT id, source, title, summary, nastya_comment, category
-                FROM news_items WHERE created_at > ?
-                ORDER BY created_at DESC LIMIT ?""",
-                (cutoff, limit),
-            ) as cur:
-                async for row in cur:
-                    items.append({
-                        "id": row[0], "source": row[1], "title": row[2],
-                        "summary": row[3], "nastya_comment": row[4], "category": row[5],
-                    })
-            return items
-        except Exception:
-            return []
-
-    async def get_recent_news_with_links(self, limit: int = 5, max_age_hours: int = 24) -> List[Dict]:
-        """Get recent news for conversation context WITH LINKS for referencing."""
-        conn = await self._get_conn()
-        try:
-            cutoff = time.time() - (max_age_hours * 3600)
-            items = []
-            async with conn.execute(
-                """SELECT id, source, title, link, summary, nastya_comment, category
-                FROM news_items WHERE created_at > ?
-                ORDER BY created_at DESC LIMIT ?""",
-                (cutoff, limit),
-            ) as cur:
-                async for row in cur:
-                    items.append({
-                        "id": row[0], "source": row[1], "title": row[2],
-                        "link": row[3], "summary": row[4], "nastya_comment": row[5],
-                        "category": row[6],
-                    })
-            return items
-        except Exception:
-            return []
-
-    async def cleanup_old_news(self, max_items: int = 200) -> int:
-        """Remove old news items to keep DB manageable."""
-        conn = await self._get_conn()
-        try:
-            async with self._write_lock:
-                cursor = await conn.execute(
-                    """DELETE FROM news_items WHERE id NOT IN (
-                        SELECT id FROM news_items ORDER BY created_at DESC LIMIT ?
-                    )""",
-                    (max_items,),
-                )
-                await conn.commit()
-                return cursor.rowcount
-        except Exception as e:
-            logger.error(f"cleanup_old_news error: {e}")
-            return 0
-
-    # ── Channel Posts ────────────────────────────────────────
-
-    async def add_channel_post(self, news_id: int, post_text: str, post_type: str = "news") -> int:
-        conn = await self._get_conn()
-        try:
-            now = time.time()
-            async with self._write_lock:
-                cur = await conn.execute(
-                    """INSERT INTO channel_posts (news_id, post_text, post_type, created_at)
-                    VALUES (?, ?, ?, ?)""",
-                    (news_id, post_text, post_type, now),
-                )
-                await conn.commit()
-                return cur.lastrowid
-        except Exception as e:
-            logger.error(f"add_channel_post error: {e}")
-            return 0
-
-    async def get_recent_channel_posts(self, limit: int = 5) -> List[Dict]:
-        conn = await self._get_conn()
-        try:
-            posts = []
-            async with conn.execute(
-                "SELECT id, news_id, post_text, post_type, created_at FROM channel_posts ORDER BY created_at DESC LIMIT ?",
-                (limit,),
-            ) as cur:
-                async for row in cur:
-                    posts.append({
-                        "id": row[0], "news_id": row[1], "post_text": row[2],
-                        "post_type": row[3], "created_at": row[4],
-                    })
-            return posts
-        except Exception:
-            return []
-
-    # ── v29: Deep link "Обсудить с Настей" ──
-
-    async def get_news_by_id(self, news_id: int) -> Optional[Dict]:
-        """Получить новость по ID для deep link 'Обсудить'."""
-        conn = await self._get_conn()
-        try:
-            async with conn.execute(
-                """SELECT id, source, title, link, summary, nastya_comment, category
-                FROM news_items WHERE id = ?""",
-                (news_id,),
-            ) as cur:
-                row = await cur.fetchone()
-                if row:
-                    return {
-                        "id": row[0], "source": row[1], "title": row[2],
-                        "link": row[3], "summary": row[4], "nastya_comment": row[5],
-                        "category": row[6],
-                    }
-            return None
-        except Exception:
-            return None
-
-    async def get_channel_post_by_news_id(self, news_id: int) -> Optional[Dict]:
-        """Получить канал-пост по news_id для deep link 'Обсудить'."""
-        conn = await self._get_conn()
-        try:
-            async with conn.execute(
-                """SELECT id, news_id, post_text, post_type, created_at
-                FROM channel_posts WHERE news_id = ? ORDER BY created_at DESC LIMIT 1""",
-                (news_id,),
-            ) as cur:
-                row = await cur.fetchone()
-                if row:
-                    return {
-                        "id": row[0], "news_id": row[1], "post_text": row[2],
-                        "post_type": row[3], "created_at": row[4],
-                    }
-            return None
-        except Exception:
-            return None
-
-    # ── AI Cache ─────────────────────────────────────────────
-
-    async def cache_get(self, key: str, max_age: int = 3600) -> Optional[Dict]:
-        """Get cached AI response. Returns None if not found or expired."""
-        conn = await self._get_conn()
-        try:
-            async with conn.execute(
-                "SELECT response_data, created_at FROM ai_cache WHERE cache_key = ?",
-                (key,),
-            ) as cur:
-                row = await cur.fetchone()
-                if row and time.time() - row[1] < max_age:
-                    return json.loads(row[0])
-                return None
-        except Exception:
-            return None
-
-    async def cache_put(self, key: str, task_type: str, data: Dict) -> None:
-        """Store AI response in cache."""
-        conn = await self._get_conn()
-        try:
-            now = time.time()
-            async with self._write_lock:
-                await conn.execute(
-                    """INSERT OR REPLACE INTO ai_cache (cache_key, task_type, response_data, created_at)
-                    VALUES (?, ?, ?, ?)""",
-                    (key, task_type, json.dumps(data, default=str), now),
-                )
-                await conn.commit()
-        except Exception as e:
-            logger.debug(f"cache_put error: {e}")
-
-    async def cache_cleanup(self, max_age: int = 7200) -> int:
-        """Remove expired cache entries."""
-        conn = await self._get_conn()
-        try:
-            cutoff = time.time() - max_age
-            async with self._write_lock:
-                cursor = await conn.execute(
-                    "DELETE FROM ai_cache WHERE created_at < ?", (cutoff,)
-                )
-                await conn.commit()
-                return cursor.rowcount
-        except Exception:
-            return 0
-
-    # ── User Consultations ──────────────────────────────────
-
-    async def save_user_birth_data(self, user_id: int, day: int, month: int, year: int,
-                                    birth_time: str = "", birth_place: str = "",
-                                    consultation_type: str = "", blood_type: str = "") -> None:
-        """Save or update user birth data for consultations. Nastya remembers!"""
-        conn = await self._get_conn()
-        try:
-            now = time.time()
-            async with self._write_lock:
-                # Check if record exists
-                async with conn.execute(
-                    "SELECT user_id FROM user_consultations WHERE user_id = ?", (user_id,)
-                ) as cur:
-                    exists = await cur.fetchone()
-
-                if exists:
-                    updates = ["updated_at = ?"]
-                    values = [now]
-                    if day:
-                        updates.append("birth_day = ?")
-                        values.append(day)
-                    if month:
-                        updates.append("birth_month = ?")
-                        values.append(month)
-                    if year:
-                        updates.append("birth_year = ?")
-                        values.append(year)
-                    if birth_time:
-                        updates.append("birth_time = ?")
-                        values.append(birth_time)
-                    if birth_place:
-                        updates.append("birth_place = ?")
-                        values.append(birth_place)
-                    if consultation_type:
-                        updates.append("last_consultation = ?")
-                        values.append(consultation_type)
-                        updates.append("consultation_count = consultation_count + 1")
-                    if blood_type:
-                        updates.append("blood_type = ?")
-                        values.append(blood_type)
-                    values.append(user_id)
-                    await conn.execute(
-                        f"UPDATE user_consultations SET {', '.join(updates)} WHERE user_id = ?",
-                        values,
-                    )
-                else:
-                    await conn.execute(
-                        """INSERT INTO user_consultations 
-                        (user_id, birth_day, birth_month, birth_year, birth_time, birth_place, 
-                         blood_type, last_consultation, consultation_count, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
-                        (user_id, day, month, year, birth_time, birth_place,
-                         blood_type, consultation_type, now),
-                    )
-                await conn.commit()
-        except Exception as e:
-            logger.error(f"save_user_birth_data error: {e}")
-
-    async def get_user_birth_data(self, user_id: int) -> Optional[Dict]:
-        """Get stored birth data for a user. Returns None if not found."""
-        conn = await self._get_conn()
-        try:
-            async with conn.execute(
-                """SELECT birth_day, birth_month, birth_year, birth_time, birth_place, 
-                          blood_type, last_consultation, consultation_count
-                FROM user_consultations WHERE user_id = ?""",
-                (user_id,),
-            ) as cur:
-                row = await cur.fetchone()
-                if row and row[0]:  # Has birth_day
-                    return {
-                        "birth_day": row[0], "birth_month": row[1], "birth_year": row[2],
-                        "birth_time": row[3] or "", "birth_place": row[4] or "",
-                        "blood_type": row[5] or "", "last_consultation": row[6] or "",
-                        "consultation_count": row[7] or 0,
-                    }
-            return None
-        except Exception as e:
-            logger.error(f"get_user_birth_data error: {e}")
-            return None
-
-    # ── Stats ───────────────────────────────────────────────
-
-    async def get_stats(self) -> Dict:
-        conn = await self._get_conn()
-        try:
-            async with conn.execute("SELECT COUNT(*) FROM users") as cur:
-                total_users = (await cur.fetchone())[0]
-            async with conn.execute("SELECT COALESCE(SUM(stars_amount),0) FROM donations") as cur:
-                total_stars = (await cur.fetchone())[0]
-            async with conn.execute("SELECT COUNT(*) FROM donations") as cur:
-                total_donations = (await cur.fetchone())[0]
-            async with conn.execute("SELECT COUNT(*) FROM news_items") as cur:
-                total_news = (await cur.fetchone())[0]
-            async with conn.execute("SELECT COUNT(*) FROM channel_posts") as cur:
-                total_posts = (await cur.fetchone())[0]
-            return {
-                "total_users": total_users, "total_stars": total_stars,
-                "total_donations": total_donations, "total_news": total_news,
-                "total_channel_posts": total_posts,
-            }
-        except Exception:
-            return {"total_users": 0, "total_stars": 0, "total_donations": 0,
-                    "total_news": 0, "total_channel_posts": 0}
+            logger.debug(f"cleanup error: {e}")
