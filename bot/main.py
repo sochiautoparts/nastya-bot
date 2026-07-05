@@ -141,28 +141,93 @@ class NastyaBot:
         except: pass
 
     async def _channel_scheduler(self):
-        """Background task: periodically post to @chasnastya channel."""
+        """Background task: search news on the web and post to @chasnastya channel.
+        Настя ищет актуальные новости (мода, тренды, лайфстайл, кино) и пишет
+        живые посты на их основе. Также иногда постит факты и AI-посты.
+        """
         from bot.persona import CHANNEL_POST_PROMPT, NASTYA_FACTS
+        from bot.web_search import search_ddg_html, search_searxng, fetch_article
         await asyncio.sleep(120)  # wait for startup
         post_interval = 1200  # 20 min
+        # Search topics for news (Настя's interests)
+        search_topics = [
+            "мода тренды 2026",
+            "новинки кино Netflix 2026",
+            "лайфстайл тренды",
+            "шопинг скидки новости",
+            "психология отношений статьи",
+            "тренды соцсетей 2026",
+            "путешествия Стамбул советы",
+            "технологии гаджеты 2026",
+            "красота косметика новинки",
+            "астрология гороскоп новости",
+        ]
         while True:
             try:
                 channel_id = int(config.CHANNEL_ID)
                 mood = await current_mood_descriptor()
-                # Alternate: personality post / fact / AI-generated post
-                post_type = random.choice(["personality", "fact", "ai_post"])
+                # 60% news from web, 20% facts, 20% AI posts
+                post_type = random.choices(["news", "fact", "ai_post"], weights=[6, 2, 2])[0]
+                
                 if post_type == "fact":
                     fact = random.choice(NASTYA_FACTS)
                     await self.bot.send_message(channel_id, f"🎀 Факт от Насти:\n\n{fact}")
                     logger.info(f"Channel: posted fact")
-                else:
+                
+                elif post_type == "news":
+                    # Search news on the web
+                    topic = random.choice(search_topics)
+                    results = []
+                    try:
+                        results = await search_ddg_html(topic, max_results=3)
+                    except: pass
+                    if not results:
+                        try:
+                            results = await search_searxng(topic, max_results=3)
+                        except: pass
+                    
+                    if results:
+                        # Pick a random result
+                        result = random.choice(results)
+                        # Fetch article for more context
+                        article_text = ""
+                        try:
+                            article_text = await fetch_article(result.url, max_chars=800)
+                        except: pass
+                        
+                        prompt = (
+                            f"Напиши пост для канала @chasnastya на основе этой новости.\n\n"
+                            f"Заголовок: {result.title}\n"
+                            f"Источник: {result.source}\n"
+                            f"Краткое содержание: {result.snippet[:300]}\n"
+                            f"Детали: {article_text[:400]}\n\n"
+                            f"Настроение: {mood}. Напиши 3-5 предложений, живо, с эмодзи, как Настя. "
+                            f"Перескажи своими словами, добавь мнение. Без политики/войны. По-русски."
+                        )
+                        post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=400, allow_static_fallback=False, prefer_pollinations=True)
+                        if post:
+                            await self.bot.send_message(channel_id, post[:4000])
+                            logger.info(f"Channel: posted NEWS post ({len(post)} chars) — {result.title[:40]}")
+                        else:
+                            logger.warning("News AI post empty — skip")
+                    else:
+                        # No search results — fallback to AI post
+                        logger.info(f"No search results for '{topic}' — fallback to AI post")
+                        prompt = f"Напиши пост для канала @chasnastya на тему: {topic}. Настроение: {mood}. 3-5 предложений, живо, с эмодзи."
+                        post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=300, allow_static_fallback=False, prefer_pollinations=True)
+                        if post:
+                            await self.bot.send_message(channel_id, post[:4000])
+                            logger.info(f"Channel: posted AI fallback post ({len(post)} chars)")
+                
+                else:  # ai_post
                     topics = ["мода и тренды этого сезона", "новый фильм на Netflix", "астрология и знаки зодиака", "шопинг и скидки", "BMW M3 — лучшая тачка", "психология отношений", "тренды в соцсетях", "кофе и лайфстайл", "путешествия и Стамбул", "что нового в мире технологий"]
                     topic = random.choice(topics)
                     prompt = f"Напиши пост для канала @chasnastya на тему: {topic}. Настроение: {mood}. 3-5 предложений, живо, с эмодзи."
-                    post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, fast=True, max_tokens=300, allow_static_fallback=False)
+                    post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=300, allow_static_fallback=False, prefer_pollinations=True)
                     if post:
                         await self.bot.send_message(channel_id, post[:4000])
                         logger.info(f"Channel: posted AI post ({len(post)} chars)")
+                        
             except asyncio.CancelledError: break
             except Exception as e:
                 logger.error(f"Channel scheduler error: {e}")
