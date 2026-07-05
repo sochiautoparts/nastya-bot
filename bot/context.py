@@ -3,6 +3,28 @@ import re, time
 from typing import List
 from aiogram.types import Message
 from bot.config import config
+
+# Known bot siblings — bots recognize each other and don't keep "introducing" themselves
+KNOWN_BOTS = {
+    "asiaexp_bot": "Ася — автоэксперт, @sochiautoparts",
+    "asluba_bot": "Люба — копирайтер из Сочи",
+    "asnastya_bot": "Настя — блогер, астрология",
+    "asmasha_bot": "Маша — BMW M-эксперт, @bmw_mpower_club",
+    "asdasha_bot": "Даша — дизайнер мебели, Абакан",
+    "aimega_bot": "Василий — парень из Сочи",
+}
+
+
+def is_known_bot(username: str) -> bool:
+    if not username:
+        return False
+    return username.lstrip("@").lower() in KNOWN_BOTS
+
+
+def get_bot_description(username: str) -> str:
+    if not username:
+        return ""
+    return KNOWN_BOTS.get(username.lstrip("@").lower(), "")
 from bot import database as db
 
 def user_descriptor(message):

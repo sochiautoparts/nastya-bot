@@ -23,7 +23,7 @@ async def handle_inline_query(inline_query):
     except: answer = "Что-то пошло не так. Попробуй переформулировать."
     if not answer: answer = "Не уловила мысль. Давай иначе?"
     answer = answer[:3900]
-    results = [InlineQueryResultArticle(id="lyuba_answer", title=f"Настя: {query[:60]}", description=answer[:100] + ("..." if len(answer) > 100 else ""), input_message_content=InputTextMessageContent(message_text=f"❓ {query}\n\nНастя: {answer}"), thumbnail_url="https://emojiapi.dev/api/v1/girl.png")]
+    results = [InlineQueryResultArticle(id="bot_answer", title=f"Настя: {query[:60]}", description=answer[:100] + ("..." if len(answer) > 100 else ""), input_message_content=InputTextMessageContent(message_text=f"❓ {query}\n\nНастя: {answer}"), thumbnail_url="https://emojiapi.dev/api/v1/girl.png")]
     try: await inline_query.answer(results, cache_time=5, is_personal=False)
     except TelegramRetryAfter as e:
         await asyncio.sleep(e.retry_after)

@@ -54,7 +54,7 @@ def _should_skip_duplicate(text, chat_id):
     return False
 
 _reply_chain_tracker: dict = {}
-_MAX_BOT_REPLIES_PER_THREAD = 3
+_MAX_BOT_REPLIES_PER_THREAD = 2
 _THREAD_TTL = 1800
 
 def _is_in_bot_loop(message):
