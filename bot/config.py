@@ -81,3 +81,35 @@ class BotConfig:
     def providers_status(self): return f"active={self.active_providers()}"
 
 config = BotConfig()
+
+# RSS News Sources for channel posting (restored from pre-OpenClaw)
+NEWS_SOURCES = [
+    {"name": "СочиАвтоЗапчасти", "url": "https://sochiautoparts.ru/rss.xml", "category": "auto"},
+    {"name": "Колёса.ру", "url": "https://kolesa.ru/rss", "category": "auto"},
+    {"name": "Авто.Mail.ru", "url": "https://auto.mail.ru/rss/", "category": "auto"},
+    {"name": "Хабр", "url": "https://habr.com/ru/rss/articles/top/", "category": "tech"},
+    {"name": "iXBT", "url": "https://www.ixbt.com/export/news.rss", "category": "tech"},
+    {"name": "VC.ru", "url": "https://vc.ru/rss", "category": "tech"},
+    {"name": "N+1", "url": "https://nplus1.ru/rss", "category": "science"},
+    {"name": "Naked Science", "url": "https://naked-science.ru/feed", "category": "science"},
+    {"name": "DTF", "url": "https://dtf.ru/rss", "category": "gaming"},
+    {"name": "ТАСС", "url": "https://tass.ru/rss/v2.xml", "category": "general"},
+    {"name": "РИА Новости", "url": "https://ria.ru/export/rss2/archive/index.xml", "category": "general"},
+    {"name": "Лента.ру", "url": "https://lenta.ru/rss", "category": "general"},
+    {"name": "РБК", "url": "https://rssexport.rbc.ru/rbcnews/news/30/full.rss", "category": "general"},
+    {"name": "Известия", "url": "https://iz.ru/rss", "category": "general"},
+    {"name": "Повар.ру", "url": "https://povar.ru/rss/", "category": "food"},
+    {"name": "Гастрономъ", "url": "https://www.gastronom.ru/rss", "category": "food"},
+    {"name": "Евро-Футбол", "url": "https://euro-football.ru/rss/", "category": "sports"},
+    {"name": "Woman.ru", "url": "https://www.woman.ru/rss/", "category": "lifestyle"},
+]
+
+# Political filter keywords (restored from pre-OpenClaw)
+POLITICAL_KEYWORDS = [
+    "путин", "кремл", "госдум", "санкци", "мобилиз", "война", "сво ",
+    "зеленск", "байден", "трамп", "выборы", "парламент", "ракетн", "обстрел",
+    "минобор", "днр", "лнр", "ввп", "спецопераци", "вооружен",
+    "армия россии", "мо рф", "боевые действия", "конфликт",
+    "нацизм", "фашизм", "террор", "взрыв", "погибш",
+    "ранен", "жертвы", "беженц", "оккупаци",
+]

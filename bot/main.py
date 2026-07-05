@@ -145,100 +145,129 @@ class NastyaBot:
         except: pass
 
     async def _channel_scheduler(self):
-        """Background task: search news on the web and post to @chasnastya channel.
-        Настя ищет актуальные новости (мода, тренды, лайфстайл, кино) и пишет
-        живые посты на их основе. Также иногда постит факты и AI-посты.
+        """Background task: post to @chasnastya channel.
+        50% RSS news, 20% web search news, 20% facts, 10% AI posts.
+        Includes political filter and dedup.
         """
         from bot.persona import CHANNEL_POST_PROMPT, NASTYA_FACTS
-        from bot.web_search import search_ddg_html, search_searxng, fetch_article
-        await asyncio.sleep(120)  # wait for startup
+        from bot.config import NEWS_SOURCES, POLITICAL_KEYWORDS
+        from bot.web_search import search_ddg_html, fetch_article
+        import feedparser
+        await asyncio.sleep(120)
         post_interval = 1200  # 20 min
-        # Search topics for news (Настя's interests)
-        search_topics = [
-            "мода тренды 2026",
-            "новинки кино Netflix 2026",
-            "лайфстайл тренды",
-            "шопинг скидки новости",
-            "психология отношений статьи",
-            "тренды соцсетей 2026",
-            "путешествия Стамбул советы",
-            "технологии гаджеты 2026",
-            "красота косметика новинки",
-            "астрология гороскоп новости",
-        ]
+        
+        def _is_political(text):
+            t = (text or "").lower()
+            return any(kw in t for kw in POLITICAL_KEYWORDS)
+        
+        async def _fetch_rss_news():
+            """Fetch news from RSS sources."""
+            import httpx
+            results = []
+            headers = {"User-Agent": "Mozilla/5.0 (compatible; NastyaBot/3.0; RSS Reader)"}
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=headers) as client:
+                for source in NEWS_SOURCES:
+                    try:
+                        resp = await client.get(source["url"])
+                        if resp.status_code == 200:
+                            feed = feedparser.parse(resp.text)
+                            for entry in feed.entries[:3]:
+                                title = entry.get("title", "")
+                                link = entry.get("link", "")
+                                summary = entry.get("summary", "") or entry.get("description", "")
+                                # Strip HTML
+                                import re
+                                summary = re.sub(r"<[^>]+>", "", summary)[:300]
+                                if title and link and not _is_political(title) and not _is_political(summary):
+                                    results.append({
+                                        "title": title,
+                                        "url": link,
+                                        "summary": summary,
+                                        "source": source["name"],
+                                        "category": source["category"],
+                                    })
+                    except: pass
+            return results
+        
         while True:
             try:
                 channel_id = int(config.CHANNEL_ID)
                 mood = await current_mood_descriptor()
-                # 60% news from web, 20% facts, 20% AI posts
-                post_type = random.choices(["news", "fact", "ai_post"], weights=[6, 2, 2])[0]
+                post_type = random.choices(["rss_news", "web_news", "fact", "ai_post"], weights=[5, 2, 2, 1])[0]
                 
                 if post_type == "fact":
                     fact = random.choice(NASTYA_FACTS)
                     await self.bot.send_message(channel_id, f"🎀 Факт от Насти:\n\n{fact}")
                     logger.info(f"Channel: posted fact")
                 
-                elif post_type == "news":
-                    # Search news on the web
-                    topic = random.choice(search_topics)
-                    results = []
-                    try:
-                        results = await search_ddg_html(topic, max_results=3)
-                    except: pass
-                    if not results:
-                        try:
-                            results = await search_searxng(topic, max_results=3)
-                        except: pass
+                elif post_type == "rss_news":
+                    # Fetch RSS news
+                    news_items = await _fetch_rss_news()
+                    # Dedup by URL
+                    unposted = []
+                    for item in news_items:
+                        url_key = item["url"].split("?")[0].split("#")[0].rstrip("/").lower()
+                        if not await db.is_news_posted(url_key):
+                            unposted.append(item)
                     
-                    if results:
-                        # Dedup: filter out already posted URLs
-                        unposted = []
-                        for r in results:
-                            url_key = r.url.split("?")[0].split("#")[0].rstrip("/").lower()
-                            if not await db.is_news_posted(url_key):
-                                unposted.append(r)
-                        if not unposted:
-                            logger.info("All search results already posted — fallback to AI post")
-                            # Fallback to AI post
-                            prompt = f"Напиши пост для канала @chasnastya на тему: {topic}. Настроение: {mood}. 3-5 предложений, живо, с эмодзи."
-                            post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=300, allow_static_fallback=False, prefer_pollinations=True)
-                            if post:
-                                await self.bot.send_message(channel_id, post[:4000])
-                                logger.info(f"Channel: posted AI fallback post ({len(post)} chars)")
-                        else:
-                            result = random.choice(unposted)
-                        # Fetch article for more context
-                        article_text = ""
-                        try:
-                            article_text = await fetch_article(result.url, max_chars=800)
-                        except: pass
-                        
+                    if unposted:
+                        item = random.choice(unposted)
                         prompt = (
                             f"Напиши пост для канала @chasnastya на основе этой новости.\n\n"
-                            f"Заголовок: {result.title}\n"
-                            f"Источник: {result.source}\n"
-                            f"Краткое содержание: {result.snippet[:300]}\n"
-                            f"Детали: {article_text[:400]}\n\n"
+                            f"Заголовок: {item['title']}\n"
+                            f"Источник: {item['source']}\n"
+                            f"Краткое содержание: {item['summary'][:300]}\n\n"
                             f"Настроение: {mood}. Напиши 3-5 предложений, живо, с эмодзи, как Настя. "
                             f"Перескажи своими словами, добавь мнение. Без политики/войны. По-русски."
                         )
                         post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=400, allow_static_fallback=False, prefer_pollinations=True)
                         if post:
                             await self.bot.send_message(channel_id, post[:4000])
-                            # Mark URL as posted
-                            url_key = result.url.split("?")[0].split("#")[0].rstrip("/").lower()
-                            await db.mark_news_posted(url_key, result.title)
-                            logger.info(f"Channel: posted NEWS post ({len(post)} chars) — {result.title[:40]}")
+                            url_key = item["url"].split("?")[0].split("#")[0].rstrip("/").lower()
+                            await db.mark_news_posted(url_key, item["title"])
+                            logger.info(f"Channel: posted RSS news ({len(post)} chars) — {item['title'][:40]}")
                         else:
-                            logger.warning("News AI post empty — skip")
+                            logger.warning("RSS news AI post empty — skip")
                     else:
-                        # No search results — fallback to AI post
-                        logger.info(f"No search results for '{topic}' — fallback to AI post")
+                        logger.info("No unposted RSS news — fallback to AI post")
+                        topics = ["мода и тренды", "новый фильм", "астрология", "шопинг", "BMW M3", "психология", "кофе", "путешествия"]
+                        topic = random.choice(topics)
                         prompt = f"Напиши пост для канала @chasnastya на тему: {topic}. Настроение: {mood}. 3-5 предложений, живо, с эмодзи."
                         post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=300, allow_static_fallback=False, prefer_pollinations=True)
                         if post:
                             await self.bot.send_message(channel_id, post[:4000])
                             logger.info(f"Channel: posted AI fallback post ({len(post)} chars)")
+                
+                elif post_type == "web_news":
+                    # Web search news
+                    topics = ["мода тренды 2026", "новинки кино", "лайфстайл тренды", "технологии гаджеты", "красота новинки"]
+                    topic = random.choice(topics)
+                    results = []
+                    try:
+                        results = await search_ddg_html(topic, max_results=3)
+                    except: pass
+                    
+                    if results:
+                        unposted = []
+                        for r in results:
+                            url_key = r.url.split("?")[0].split("#")[0].rstrip("/").lower()
+                            if not await db.is_news_posted(url_key):
+                                unposted.append(r)
+                        if unposted:
+                            result = random.choice(unposted)
+                            prompt = (
+                                f"Напиши пост для канала @chasnastya на основе этой новости.\n\n"
+                                f"Заголовок: {result.title}\n"
+                                f"Источник: {result.source}\n"
+                                f"Краткое содержание: {result.snippet[:300]}\n\n"
+                                f"Настроение: {mood}. 3-5 предложений, живо, с эмодзи. Без политики/войны. По-русски."
+                            )
+                            post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=400, allow_static_fallback=False, prefer_pollinations=True)
+                            if post:
+                                await self.bot.send_message(channel_id, post[:4000])
+                                url_key = result.url.split("?")[0].split("#")[0].rstrip("/").lower()
+                                await db.mark_news_posted(url_key, result.title)
+                                logger.info(f"Channel: posted web news ({len(post)} chars) — {result.title[:40]}")
                 
                 else:  # ai_post
                     topics = ["мода и тренды этого сезона", "новый фильм на Netflix", "астрология и знаки зодиака", "шопинг и скидки", "BMW M3 — лучшая тачка", "психология отношений", "тренды в соцсетях", "кофе и лайфстайл", "путешествия и Стамбул", "что нового в мире технологий"]
