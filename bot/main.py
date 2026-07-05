@@ -104,6 +104,10 @@ class NastyaBot:
         await db.init_db()
         logger.info("DB initialized")
         try:
+            await db.load_posted_news_from_file()
+        except Exception as e:
+            logger.warning(f"load_posted_news_from_file failed: {e}")
+        try:
             await partner_manager.load()
             logger.info(f"Partners loaded: {len(partner_manager.campaigns)} campaigns")
         except: pass
@@ -187,8 +191,22 @@ class NastyaBot:
                         except: pass
                     
                     if results:
-                        # Pick a random result
-                        result = random.choice(results)
+                        # Dedup: filter out already posted URLs
+                        unposted = []
+                        for r in results:
+                            url_key = r.url.split("?")[0].split("#")[0].rstrip("/").lower()
+                            if not await db.is_news_posted(url_key):
+                                unposted.append(r)
+                        if not unposted:
+                            logger.info("All search results already posted — fallback to AI post")
+                            # Fallback to AI post
+                            prompt = f"Напиши пост для канала @chasnastya на тему: {topic}. Настроение: {mood}. 3-5 предложений, живо, с эмодзи."
+                            post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=300, allow_static_fallback=False, prefer_pollinations=True)
+                            if post:
+                                await self.bot.send_message(channel_id, post[:4000])
+                                logger.info(f"Channel: posted AI fallback post ({len(post)} chars)")
+                        else:
+                            result = random.choice(unposted)
                         # Fetch article for more context
                         article_text = ""
                         try:
@@ -207,6 +225,9 @@ class NastyaBot:
                         post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=400, allow_static_fallback=False, prefer_pollinations=True)
                         if post:
                             await self.bot.send_message(channel_id, post[:4000])
+                            # Mark URL as posted
+                            url_key = result.url.split("?")[0].split("#")[0].rstrip("/").lower()
+                            await db.mark_news_posted(url_key, result.title)
                             logger.info(f"Channel: posted NEWS post ({len(post)} chars) — {result.title[:40]}")
                         else:
                             logger.warning("News AI post empty — skip")

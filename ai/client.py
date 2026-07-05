@@ -1,5 +1,5 @@
-"""Настя AI Client — routes all AI through OpenClaw Gateway + Pollinations direct."""
-import asyncio, logging, random, time
+"""Ася AI Client — routes all AI through OpenClaw Gateway + Pollinations direct."""
+import asyncio, logging, os, random, time
 from typing import List, Optional
 import httpx
 from bot.config import config
@@ -10,6 +10,63 @@ _ENDPOINT = f"{config.OPENCLAW_URL}/v1/chat/completions"
 _MODEL = "openclaw"
 _POLLINATIONS_URL = "https://text.pollinations.ai/openai/chat/completions"
 _POLLINATIONS_MODEL = "openai"
+
+# Load up to 3 Pollinations API keys from environment (for rotation)
+_POLLINATIONS_KEYS = []
+for _i in range(1, 4):
+    _k = os.getenv(f"POLLINATIONS_API_KEY_{_i}", "")
+    if _k: _POLLINATIONS_KEYS.append(_k)
+if not _POLLINATIONS_KEYS:
+    # Fallback to single key
+    _k = os.getenv("POLLINATIONS_API_KEY", "")
+    if _k: _POLLINATIONS_KEYS.append(_k)
+_POLLINATIONS_KEY_IDX = 0  # round-robin index
+
+# Cloudflare Workers AI (Tier-2 fallback — more reliable, no rate limits)
+_CF_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
+_CF_ACCOUNTS = []
+for _i in range(1, 3):
+    _aid = os.getenv(f"CF_ACCOUNT_ID_{_i}", "")
+    _tok = os.getenv(f"CF_API_TOKEN_{_i}", "")
+    if _aid and _tok:
+        _CF_ACCOUNTS.append((_aid, _tok))
+_CF_ACCOUNT_IDX = 0
+
+def _get_cf_account():
+    """Get next Cloudflare account (round-robin). Returns (account_id, token) or None."""
+    global _CF_ACCOUNT_IDX
+    if not _CF_ACCOUNTS:
+        return None
+    acct = _CF_ACCOUNTS[_CF_ACCOUNT_IDX % len(_CF_ACCOUNTS)]
+    _CF_ACCOUNT_IDX += 1
+    return acct
+
+def _strip_pollinations_ads(text):
+    """Strip Pollinations ad suffix from response."""
+    if not text:
+        return text
+    # Remove ad suffix
+    for marker in ["---\n\n**Support Pollinations", "**Support Pollinations", "🌸 **Ad** 🌸"]:
+        idx = text.find(marker)
+        if idx > 0:
+            text = text[:idx].rstrip()
+    return text
+
+def _get_pollinations_key():
+    """Get next API key (round-robin). Returns empty string if none."""
+    global _POLLINATIONS_KEY_IDX
+    if not _POLLINATIONS_KEYS:
+        return ""
+    key = _POLLINATIONS_KEYS[_POLLINATIONS_KEY_IDX % len(_POLLINATIONS_KEYS)]
+    _POLLINATIONS_KEY_IDX += 1
+    return key
+
+def _pollinations_headers():
+    """Build Authorization header if API key available."""
+    key = _get_pollinations_key()
+    if key:
+        return {"Authorization": f"Bearer {key}"}
+    return {}
 
 _client: Optional[httpx.AsyncClient] = None
 _pollinations_sem: asyncio.Semaphore | None = None
@@ -79,26 +136,41 @@ async def _call_openclaw(messages, max_tokens, temperature, timeout=25.0):
             return ""
     return ""
 
-async def _call_pollinations_direct(messages, max_tokens, timeout=30.0):
+async def _call_pollinations_direct(messages, max_tokens, timeout=30.0, retries=2):
     if _client is None: await initialize()
-    payload = {"model": _POLLINATIONS_MODEL, "messages": messages, "temperature": 0.9, "max_tokens": max_tokens, "stream": False, "referrer": "asnastya-bot"}
+    payload = {"model": _POLLINATIONS_MODEL, "messages": messages, "temperature": 0.9, "max_tokens": max_tokens, "stream": False, "referrer": "nastya-bot", "reasoning_effort": "low"}
     sem = _get_pollinations_sem()
-    try:
-        async with sem:
-            r = await _client.post(_POLLINATIONS_URL, json=payload, timeout=timeout)
-        if r.status_code == 200:
-            data = r.json()
-            choices = data.get("choices") or []
-            if choices:
-                msg = choices[0].get("message", {}) or {}
-                content = (msg.get("content", "") or "").strip()
-                if content: return content
-                reasoning = (msg.get("reasoning", "") or "").strip()
-                if reasoning:
-                    parts = reasoning.split(".")
-                    return ".".join(parts[-3:]).strip()[:500]
-        return ""
-    except: return ""
+    for attempt in range(retries + 1):
+        try:
+            t_start = time.time()
+            headers = _pollinations_headers()
+            headers["Referer"] = "nastya-bot"
+            async with sem:
+                r = await _client.post(_POLLINATIONS_URL, json=payload, timeout=timeout, headers=headers)
+            elapsed = time.time() - t_start
+            if r.status_code == 200:
+                data = r.json()
+                choices = data.get("choices") or []
+                if choices:
+                    msg = choices[0].get("message", {}) or {}
+                    content = (msg.get("content", "") or "").strip()
+                    if content:
+                        return _strip_pollinations_ads(content)
+                    reasoning = (msg.get("reasoning", "") or "").strip()
+                    if reasoning:
+                        parts = reasoning.split(".")
+                        return ".".join(parts[-3:]).strip()[:500]
+            # If got response but empty content in <5s, retry (Pollinations quick refusal)
+            if elapsed < 5.0 and attempt < retries:
+                await asyncio.sleep(2.0)
+                continue
+            return ""
+        except:
+            if attempt < retries:
+                await asyncio.sleep(2.0)
+                continue
+            return ""
+    return ""
 
 async def _call_pollinations_get(prompt, timeout=12.0):
     if _client is None: await initialize()
@@ -106,8 +178,10 @@ async def _call_pollinations_get(prompt, timeout=12.0):
     url = f"https://text.pollinations.ai/{quote(prompt)}"
     sem = _get_pollinations_sem()
     try:
+        headers = {"Accept": "text/plain"}
+        headers.update(_pollinations_headers())
         async with sem:
-            r = await _client.get(url, timeout=timeout, headers={"Accept": "text/plain"})
+            r = await _client.get(url, timeout=timeout, headers=headers)
         if r.status_code == 200:
             text = r.text.strip()
             if text and len(text) > 2: return text[:2000]
@@ -115,7 +189,7 @@ async def _call_pollinations_get(prompt, timeout=12.0):
     except: return ""
 
 _STATIC_FALLBACKS = {
-    "greeting": ["Привет! Я Настя 😊", "Привет-привет! ☕", "Хей! Как настроение?"],
+    "greeting": ["Привет! Я Ася 😊", "Привет-привет! ☕", "Хей! Как настроение?"],
     "howareyou": ["Да нормально, спасибо ☕", "Всё ок, а у тебя?", "Живу-здравствую 😊"],
     "default": ["Хм, давай по-другому", "Интересно, расскажи подробнее?", "Поняла тебя. И что дальше?", "Окей, я с тобой. Продолжай."],
 }
@@ -126,7 +200,7 @@ def _static_fallback(prompt):
     if any(w in t for w in ["как дела", "как ты", "как жизнь", "что нового"]): return random.choice(_STATIC_FALLBACKS["howareyou"])
     return random.choice(_STATIC_FALLBACKS["default"])
 
-async def chat(prompt, system="", extra_context="", dialog_history=None, max_tokens=600, temperature=0.9, allow_static_fallback=True, fast=False):
+async def chat(prompt, system="", extra_context="", dialog_history=None, max_tokens=600, temperature=0.9, allow_static_fallback=True, fast=False, prefer_pollinations=False):
     global _stats
     _stats["requests"] += 1
     t0 = time.time()
@@ -140,14 +214,14 @@ async def chat(prompt, system="", extra_context="", dialog_history=None, max_tok
     if fast:
         use_get = (not extra_context) and (not dialog_history) and len(prompt) < 400
         if use_get:
-            short_persona = "Ты Настя, девушка из Сочи. Женский род всегда. Отвечай живо, кратко (2-4 предложения). По-русски. Без выдуманных фактов. Не начинай с имени."
+            short_persona = "Ты Настя, девушка из Москвы. Женский род всегда. Отвечай живо, кратко (2-4 предложения). По-русски. Без выдуманных фактов. Не начинай с имени."
             embedded = f"{short_persona}\n\nВопрос: {prompt}\n\nОтвет:"
             out = await _call_pollinations_get(embedded, 12.0)
             if out:
                 _stats["success"] += 1; _stats["pollinations_backup"] += 1
                 logger.info(f"AI fast=pollinations-GET ({time.time()-t0:.1f}s) len={len(out)}")
                 return _strip_name_prefix(out)
-        out = await _call_pollinations_direct(messages, max_tokens, 30.0)
+        out = await _call_pollinations_direct(messages, max_tokens, 45.0)
         if out:
             _stats["success"] += 1; _stats["pollinations_backup"] += 1
             logger.info(f"AI fast=pollinations-POST ({time.time()-t0:.1f}s) len={len(out)}")
@@ -157,26 +231,96 @@ async def chat(prompt, system="", extra_context="", dialog_history=None, max_tok
             _stats["success"] += 1; _stats["openclaw_ok"] += 1
             return _strip_name_prefix(out)
     else:
+        # If prefer_pollinations, try Pollinations POST first (more reliable for long prompts)
+        if prefer_pollinations:
+            out = await _call_pollinations_direct(messages, max_tokens, 45.0)
+            logger.info(f"AI Pollinations-POST: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
+            if out:
+                _stats["success"] += 1; _stats["pollinations_backup"] += 1
+                return _strip_name_prefix(out)
         out = await _call_openclaw(messages, max_tokens, temperature, 25.0)
+        logger.info(f"AI OpenClaw: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
         if out:
             _stats["success"] += 1; _stats["openclaw_ok"] += 1
             return _strip_name_prefix(out)
-        out = await _call_pollinations_direct(messages, max_tokens, 20.0)
+        if not prefer_pollinations:
+            out = await _call_pollinations_direct(messages, max_tokens, 45.0)
+            logger.info(f"AI Pollinations-POST: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
+            if out:
+                _stats["success"] += 1; _stats["pollinations_backup"] += 1
+                return _strip_name_prefix(out)
+        # GET fallback: build a combined prompt and use GET (more reliable for long prompts)
+        combined = ""
+        if system: combined += system + "\n\n"
+        combined += prompt
+        if len(combined) > 3500:
+            combined = combined[:3500]
+        out = await _call_pollinations_get(combined, 60.0)
+        logger.info(f"AI Pollinations-GET: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
         if out:
+            out = _strip_pollinations_ads(out)
             _stats["success"] += 1; _stats["pollinations_backup"] += 1
+            logger.info(f"AI fallback=pollinations-GET ({time.time()-t0:.1f}s) len={len(out)}")
+            return _strip_name_prefix(out)
+        # Tier-2: Cloudflare Workers AI (more reliable, no rate limits)
+        out = await _call_cloudflare(messages, max_tokens, 30.0)
+        logger.info(f"AI Cloudflare: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
+        if out:
+            _stats["success"] += 1
+            logger.info(f"AI fallback=cloudflare ({time.time()-t0:.1f}s) len={len(out)}")
             return _strip_name_prefix(out)
 
     _stats["fail"] += 1
+    _stats["last_error"] = "all providers returned empty"
     if allow_static_fallback:
         fb = _static_fallback(prompt)
         _stats["static_fallback"] += 1
         return fb
     return ""
 
+async def _call_cloudflare(messages, max_tokens, timeout=30.0):
+    """Call Cloudflare Workers AI (Tier-2 fallback). Returns content or empty string."""
+    if _client is None: await initialize()
+    acct = _get_cf_account()
+    if not acct:
+        return ""
+    account_id, token = acct
+    url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions"
+    payload = {
+        "model": _CF_MODEL,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.85,
+    }
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    try:
+        r = await _client.post(url, json=payload, timeout=timeout, headers=headers)
+        if r.status_code == 200:
+            data = r.json()
+            # Cloudflare returns either OpenAI format or {result: {response: ...}}
+            choices = data.get("choices") or []
+            if choices:
+                content = (choices[0].get("message", {}).get("content", "") or "").strip()
+                if content:
+                    return content
+            result = data.get("result", {})
+            if isinstance(result, dict):
+                content = (result.get("response", "") or "").strip()
+                if content:
+                    return content
+        return ""
+    except Exception as e:
+        _stats["last_error"] = f"Cloudflare: {type(e).__name__}: {e}"
+        return ""
+
+
 def _strip_name_prefix(text):
     if not text: return text
     import re
-    stripped = re.sub(r'^\s*Настя\s*[:,\-—]\s*', '', text, flags=re.IGNORECASE)
+    stripped = re.sub(r'^\s*Ася\s*[:,\-—]\s*', '', text, flags=re.IGNORECASE)
     stripped = re.sub(r'^\s*Ответ\s*[:,\-—]\s*', '', stripped, flags=re.IGNORECASE)
     return stripped
 
