@@ -218,7 +218,7 @@ async def handle_group_photo(message):
     if u.id == config.BOT_ID: return
     caption = extract_caption(message)
     await _log_group_message(message, content=caption, is_media=True, media_caption=caption)
-    update_mood_from_message(caption)
+    await update_mood_from_message(caption)
     if _is_politics_or_war(caption): return
     directed = is_directed_at_bot(message)
     if message.media_group_id:
@@ -326,7 +326,7 @@ async def handle_group_text(message):
     if not text: return
     directed_early = is_directed_at_bot(message)
     await _log_group_message(message, content=text, is_media=False, is_bot=False)
-    update_mood_from_message(text)
+    await update_mood_from_message(text)
     asyncio.create_task(maybe_react(message.bot, message.chat.id, message.message_id, text))
     if text.startswith("/") and not directed_early: return
     if _is_politics_or_war(text) and not directed_early: return
