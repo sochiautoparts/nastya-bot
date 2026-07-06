@@ -295,8 +295,8 @@ class NastyaBot:
             from aiogram.types import ReactionTypeEmoji
             # Pick 3 different positive emojis
             pool = ["👍", "❤️", "🔥", "😄", "👏", "🎉", "💪", "✨", "🤝", "🙏"]
-            emojis = random.sample(pool, 1)  # Telegram limit: 1 reaction per user on channel posts
-            reaction_types = [ReactionTypeEmoji(type="emoji", emoji=emojis[0])]  # 1 reaction only
+            emojis = random.sample(pool, 3)
+            reaction_types = [ReactionTypeEmoji(type="emoji", emoji=e) for e in emojis]
             await self.bot.set_message_reaction(channel_id, message_id, reaction_types)
             logger.info(f"Reacted to own post: {channel_id}/{message_id} with {emojis}")
         except Exception as e:
