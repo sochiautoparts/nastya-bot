@@ -289,14 +289,16 @@ class NastyaBot:
             await asyncio.sleep(post_interval)
 
     async def _react_to_own_post(self, channel_id: int, message_id: int, text: str = ""):
-        """Set 3 positive reactions on own channel post."""
+        """Set 3 positive reactions on own channel post (direct, bypasses dedup)."""
         try:
-            from bot.reactions import maybe_react
-            await maybe_react(
-                self.bot, channel_id, message_id, text,
-                prob=1.0, force=True, count=3,
-            )
-            logger.info(f"Reacted to own post: {channel_id}/{message_id}")
+            import random
+            from aiogram.types import ReactionTypeEmoji
+            # Pick 3 different positive emojis
+            pool = ["👍", "❤️", "🔥", "😄", "👏", "🎉", "💪", "✨", "👌", "🙌"]
+            emojis = random.sample(pool, 3)
+            reaction_types = [ReactionTypeEmoji(type="emoji", emoji=e) for e in emojis]
+            await self.bot.set_message_reaction(channel_id, message_id, reaction_types)
+            logger.info(f"Reacted to own post: {channel_id}/{message_id} with {emojis}")
         except Exception as e:
             logger.warning(f"React to own post failed: {e}")
 
