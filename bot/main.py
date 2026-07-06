@@ -197,7 +197,8 @@ class NastyaBot:
                 
                 if post_type == "fact":
                     fact = random.choice(NASTYA_FACTS)
-                    await self.bot.send_message(channel_id, f"🎀 Факт от Насти:\n\n{fact}")
+                    msg = await self.bot.send_message(channel_id, f"🎀 Факт от Насти:\n\n{fact}")
+                    await self._react_to_own_post(channel_id, msg.message_id, fact[:200])
                     logger.info(f"Channel: posted fact")
                 
                 elif post_type == "rss_news":
@@ -222,7 +223,8 @@ class NastyaBot:
                         )
                         post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=400, allow_static_fallback=False, prefer_pollinations=True)
                         if post:
-                            await self.bot.send_message(channel_id, post[:4000])
+                            msg = await self.bot.send_message(channel_id, post[:4000])
+                            await self._react_to_own_post(channel_id, msg.message_id, post[:200])
                             url_key = item["url"].split("?")[0].split("#")[0].rstrip("/").lower()
                             await db.mark_news_posted(url_key, item["title"])
                             logger.info(f"Channel: posted RSS news ({len(post)} chars) — {item['title'][:40]}")
@@ -235,7 +237,8 @@ class NastyaBot:
                         prompt = f"Напиши пост для канала @chasnastya на тему: {topic}. Настроение: {mood}. 3-5 предложений, живо, с эмодзи."
                         post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=300, allow_static_fallback=False, prefer_pollinations=True)
                         if post:
-                            await self.bot.send_message(channel_id, post[:4000])
+                            msg = await self.bot.send_message(channel_id, post[:4000])
+                            await self._react_to_own_post(channel_id, msg.message_id, post[:200])
                             logger.info(f"Channel: posted AI fallback post ({len(post)} chars)")
                 
                 elif post_type == "web_news":
@@ -264,7 +267,8 @@ class NastyaBot:
                             )
                             post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=400, allow_static_fallback=False, prefer_pollinations=True)
                             if post:
-                                await self.bot.send_message(channel_id, post[:4000])
+                                msg = await self.bot.send_message(channel_id, post[:4000])
+                                await self._react_to_own_post(channel_id, msg.message_id, post[:200])
                                 url_key = result.url.split("?")[0].split("#")[0].rstrip("/").lower()
                                 await db.mark_news_posted(url_key, result.title)
                                 logger.info(f"Channel: posted web news ({len(post)} chars) — {result.title[:40]}")
@@ -275,13 +279,26 @@ class NastyaBot:
                     prompt = f"Напиши пост для канала @chasnastya на тему: {topic}. Настроение: {mood}. 3-5 предложений, живо, с эмодзи."
                     post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=300, allow_static_fallback=False, prefer_pollinations=True)
                     if post:
-                        await self.bot.send_message(channel_id, post[:4000])
+                        msg = await self.bot.send_message(channel_id, post[:4000])
+                        await self._react_to_own_post(channel_id, msg.message_id, post[:200])
                         logger.info(f"Channel: posted AI post ({len(post)} chars)")
                         
             except asyncio.CancelledError: break
             except Exception as e:
                 logger.error(f"Channel scheduler error: {e}")
             await asyncio.sleep(post_interval)
+
+    async def _react_to_own_post(self, channel_id: int, message_id: int, text: str = ""):
+        """Set 3 positive reactions on own channel post."""
+        try:
+            from bot.reactions import maybe_react
+            await maybe_react(
+                self.bot, channel_id, message_id, text,
+                prob=1.0, force=True, count=3,
+            )
+            logger.info(f"Reacted to own post: {channel_id}/{message_id}")
+        except Exception as e:
+            logger.warning(f"React to own post failed: {e}")
 
     async def _notify_owner(self):
         mood = await current_mood_descriptor()
