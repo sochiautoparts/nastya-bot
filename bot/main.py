@@ -127,7 +127,7 @@ class NastyaBot:
             asyncio.create_task(self._channel_scheduler(), name="channel_scheduler")
             logger.info(f"Channel scheduler enabled (@{config.CHANNEL_USERNAME})")
         await self._notify_owner()
-        try: await self.bot.delete_webhook(drop_pending_updates=False)
+        try: await self.bot.delete_webhook(drop_pending_updates=True)
         except: pass
         allowed = ["message", "edited_message", "channel_post", "edited_channel_post", "inline_query", "chosen_inline_result", "pre_checkout_query"]
         logger.info("=== Настя в сети — слушаю сообщения ===")
