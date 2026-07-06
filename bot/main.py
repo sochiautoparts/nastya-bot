@@ -294,7 +294,7 @@ class NastyaBot:
             import random
             from aiogram.types import ReactionTypeEmoji
             # Pick 3 different positive emojis
-            pool = ["👍", "❤️", "🔥", "😄", "👏", "🎉", "💪", "✨", "👌", "🙌"]
+            pool = ["👍", "❤️", "🔥", "😄", "👏", "🎉", "💪", "✨", "🤝", "🙏"]
             emojis = random.sample(pool, 3)
             reaction_types = [ReactionTypeEmoji(type="emoji", emoji=e) for e in emojis]
             await self.bot.set_message_reaction(channel_id, message_id, reaction_types)
