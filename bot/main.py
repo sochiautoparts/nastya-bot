@@ -289,17 +289,28 @@ class NastyaBot:
             await asyncio.sleep(post_interval)
 
     async def _react_to_own_post(self, channel_id: int, message_id: int, text: str = ""):
-        """Set 3 positive reactions on own channel post (direct, bypasses dedup)."""
+        """Set 3 positive reactions on own channel post with fallback to 1."""
         try:
             import random
             from aiogram.types import ReactionTypeEmoji
-            # Pick 3 different positive emojis
-            pool = ["👍", "❤️", "🔥", "😄", "👏", "🎉", "💪", "✨", "🤝", "🙏"]
+            # Only guaranteed Telegram-supported reaction emojis (no ❤️ variation selector)
+            pool = ["👍", "❤", "🔥", "😄", "👏", "🎉"]
             emojis = random.sample(pool, 3)
             reaction_types = [ReactionTypeEmoji(type="emoji", emoji=e) for e in emojis]
             await self.bot.set_message_reaction(channel_id, message_id, reaction_types)
-            logger.info(f"Reacted to own post: {channel_id}/{message_id} with {emojis}")
+            logger.info(f"Reacted to own post (3): {channel_id}/{message_id} with {emojis}")
         except Exception as e:
+            msg = str(e)
+            if "REACTIONS_TOO_MANY" in msg or "REACTION_INVALID" in msg:
+                try:
+                    import random as _r
+                    single_emoji = _r.choice(["👍", "❤", "🔥"])
+                    single = [ReactionTypeEmoji(type="emoji", emoji=single_emoji)]
+                    await self.bot.set_message_reaction(channel_id, message_id, single)
+                    logger.info(f"Reacted to own post (1 fallback): {channel_id}/{message_id} with {single_emoji}")
+                    return
+                except Exception as e2:
+                    logger.warning(f"React to own post fallback failed: {e2}")
             logger.warning(f"React to own post failed: {e}")
 
     async def _notify_owner(self):
