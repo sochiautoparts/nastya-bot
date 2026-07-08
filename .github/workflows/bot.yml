@@ -2,7 +2,7 @@ name: Run Nastya Bot 24/7 (OpenClaw)
 
 on:
   schedule:
-    - cron: '0 */2 * * *'
+    - cron: '0 */4 * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -11,7 +11,7 @@ on:
 
 concurrency:
   group: nastya-bot-single
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
