@@ -4,14 +4,9 @@ on:
   schedule:
     - cron: '0 */4 * * *'
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-
 concurrency:
   group: nastya-bot-single
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
