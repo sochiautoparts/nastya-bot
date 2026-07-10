@@ -218,7 +218,7 @@ class NastyaBot:
                             f"Заголовок: {item['title']}\n"
                             f"Источник: {item['source']}\n"
                             f"Краткое содержание: {item['summary'][:300]}\n\n"
-                            f"Настроение: {mood}. Напиши 3-5 предложений, живо, с эмодзи, как Настя. "
+                            f"SEO: ключевые слова в начале, 1-2 хештега, вопрос в конце. Настроение: {mood}. Напиши 3-5 предложений, живо, с эмодзи, как Настя. "
                             f"Перескажи своими словами, добавь мнение. Без политики/войны. По-русски."
                         )
                         post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=400, allow_static_fallback=False, prefer_pollinations=True)
