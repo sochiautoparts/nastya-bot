@@ -155,7 +155,8 @@ class NastyaBot:
         from bot.post_quality import (POST_STYLE, STRUCTURED_POST_RULES,
             ANTI_HALLUCINATION_RULES, RETRY_CRITIQUE_TMPL, build_hook_avoid,
             parse_structured_post, quality_gate, smart_hashtags,
-            assemble_html_post, send_channel_post, prime_time_interval, notify_owner)
+            assemble_html_post, send_channel_post, prime_time_interval, notify_owner,
+            sanitize_text)
         import feedparser
         await asyncio.sleep(120)
         post_interval = 1200  # 20 min day / 40 min night (prime-time cadence)
@@ -217,8 +218,8 @@ class NastyaBot:
             if not parsed or not ok:
                 logger.warning(f"Nastya quality pipeline failed ({reason})")
                 return False
-            body = " ".join(parsed["body"].split())
-            headline = parsed["headline"][:110]
+            body = " ".join(sanitize_text(parsed["body"]).split())
+            headline = sanitize_text(parsed["headline"])[:110]
             question = parsed.get("question") or style.default_question
             hashtags = parsed.get("hashtags") or smart_hashtags(
                 f"{headline} {body}", style.hashtag_map, style.default_hashtags)

@@ -39,6 +39,8 @@ STRUCTURED_POST_RULES = """СТРУКТУРА ПОСТА (верни ответ 
 - Затем — экспертный разбор: что это значит для рынка/владельцев
 - Финал — короткий вывод позицией редакции
 - Пиши абзацами, разделяй пустой строкой
+- Пиши только кириллицей (и латиницей для названий брендов) — никаких иероглифов и слов из других алфавитов
+- Не смешивай латиницу внутри русских слов
 - Без ссылок и без слова «Источник»"""
 
 ANTI_HALLUCINATION_RULES = """ФАКТЫ И ТОЧНОСТЬ (критично):
@@ -141,6 +143,39 @@ def quality_gate(parsed: dict, min_body: int = 280, max_body: int = 1150) -> tup
             return False, f"leakage:{bad[:20]}"
 
     return True, "ok"
+
+# ─── Санитайзер текста (глюки моделей) ──────────────────────────────────────
+
+_CJK_RE = re.compile(r"[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]+")
+_WORD_RE = re.compile(r"[А-Яа-яЁёA-Za-z]+")
+
+
+def sanitize_text(text: str) -> str:
+    """Remove CJK glitches, fix mixed-alphabet words (деcentным → decent), tidy spaces.
+
+    Для слов, где смешаны кириллица и латиница, оставляем более длинный фрагмент.
+    """
+    if not text:
+        return ""
+    text = _CJK_RE.sub("", text)
+
+    def _fix(m):
+        w = m.group(0)
+        has_cyr = re.search(r"[А-Яа-яЁё]", w)
+        has_lat = re.search(r"[A-Za-z]", w)
+        if has_cyr and has_lat:
+            cyr_runs = re.findall(r"[А-Яа-яЁё]+", w)
+            lat_runs = re.findall(r"[A-Za-z]+", w)
+            best_cyr = max(cyr_runs, key=len) if cyr_runs else ""
+            best_lat = max(lat_runs, key=len) if lat_runs else ""
+            return best_cyr if len(best_cyr) >= len(best_lat) else best_lat
+        return w
+
+    text = _WORD_RE.sub(_fix, text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r" +([,.;:!?])", r"\1", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 # ─── Хештеги ────────────────────────────────────────────────────────────────
