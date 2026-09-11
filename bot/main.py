@@ -152,9 +152,92 @@ class NastyaBot:
         from bot.persona import CHANNEL_POST_PROMPT, NASTYA_FACTS
         from bot.config import NEWS_SOURCES, POLITICAL_KEYWORDS
         from bot.web_search import search_ddg_html, fetch_article
+        from bot.post_quality import (POST_STYLE, STRUCTURED_POST_RULES,
+            ANTI_HALLUCINATION_RULES, RETRY_CRITIQUE_TMPL, build_hook_avoid,
+            parse_structured_post, quality_gate, smart_hashtags,
+            assemble_html_post, send_channel_post, prime_time_interval, notify_owner)
         import feedparser
         await asyncio.sleep(120)
-        post_interval = 1200  # 20 min
+        post_interval = 1200  # 20 min day / 40 min night (prime-time cadence)
+        failure_streak = 0
+
+        async def _quality_channel_post(self_ref, channel_id: int, context_prompt: str, mood: str):
+            """Shared quality pipeline for Nastya's channel posts (v2).
+            Structured generation → gate → retry → HTML assembly → send → hooks.
+            Returns True if posted."""
+            try:
+                hooks = await db.get_recent_hooks(8)
+            except Exception:
+                hooks = []
+            hook_note = build_hook_avoid(hooks)
+            style = POST_STYLE
+            prompt = (
+                f"Напиши пост для канала {style.channel}.\n\n"
+                f"Контекст: настроение: {mood}\n\n"
+                f"{context_prompt}\n\n"
+                f"{STRUCTURED_POST_RULES}\n\n"
+                f"{ANTI_HALLUCINATION_RULES}\n\n"
+                f"{hook_note}\n\n"
+                f"СТИЛЬ: живо, как настоящая Настя, эмодзи умеренно, женский род, по-русски. "
+                f"НЕ начинай с 'Настя:'."
+            )
+            raw = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT,
+                                       max_tokens=700, temperature=0.8,
+                                       allow_static_fallback=False, prefer_pollinations=True)
+            parsed = parse_structured_post(raw)
+            if parsed:
+                ok, reason = quality_gate(parsed, min_body=180)
+            else:
+                ok, reason = False, "unparseable"
+            if not ok and raw:
+                retry_prompt = (RETRY_CRITIQUE_TMPL.format(reason=reason, prev=raw[:1000])
+                                + "\n\nИсходное задание:\n" + prompt)
+                raw2 = await ai_client.chat(retry_prompt, system=CHANNEL_POST_PROMPT,
+                                            max_tokens=700, temperature=0.75,
+                                            allow_static_fallback=False, prefer_pollinations=True)
+                parsed2 = parse_structured_post(raw2)
+                if parsed2:
+                    ok2, _ = quality_gate(parsed2, min_body=180)
+                    if ok2:
+                        parsed, ok = parsed2, True
+            if parsed and not ok and reason == "no_question":
+                parsed["question"] = ""
+                ok, reason = True, "fixed_no_question"
+            if not parsed and raw:
+                import re as _re
+                fallback_body = " ".join(raw.split())
+                fallback_body = fallback_body.split("ХЭШТЕГИ")[0].strip()
+                for marker in ("ЗАГОЛОВОК:", "ТЕКСТ:", "ВОПРОС:"):
+                    fallback_body = fallback_body.replace(marker, "")
+                if len(fallback_body) >= 180:
+                    first_sent = _re.split(r"(?<=[.!?])" + chr(92) + "s+", fallback_body)[0][:110].strip()
+                    parsed = {"headline": first_sent or "Новости от Насти", "body": fallback_body,
+                              "question": "", "hashtags": []}
+                    ok, reason = True, "fallback_plain"
+            if not parsed or not ok:
+                logger.warning(f"Nastya quality pipeline failed ({reason})")
+                return False
+            body = " ".join(parsed["body"].split())
+            headline = parsed["headline"][:110]
+            question = parsed.get("question") or style.default_question
+            hashtags = parsed.get("hashtags") or smart_hashtags(
+                f"{headline} {body}", style.hashtag_map, style.default_hashtags)
+            if "#chasnastya" not in hashtags:
+                hashtags = (hashtags + ["#chasnastya"])[:4]
+            html_post, plain_post = assemble_html_post(
+                headline, body, question, hashtags,
+                footer=style.footer, headline_emoji=style.headline_emoji)
+            sent = await send_channel_post(self_ref.bot, int(channel_id),
+                                           html_post, plain_post, [], log=logger)
+            if sent:
+                try:
+                    await self_ref._react_to_own_post(int(channel_id),
+                                                      sent.message_id, plain_post[:200])
+                except Exception:
+                    pass
+                await db.save_hook(plain_post[:70])
+                return True
+            return False
         
         def _is_political(text):
             t = (text or "").lower()
@@ -191,16 +274,27 @@ class NastyaBot:
         
         while True:
             try:
+                ok_cycle = False
                 channel_id = int(config.CHANNEL_ID)
                 mood = await current_mood_descriptor()
                 post_type = random.choices(["rss_news", "web_news", "fact", "ai_post"], weights=[5, 2, 2, 1])[0]
                 
                 if post_type == "fact":
                     fact = random.choice(NASTYA_FACTS)
-                    msg = await self.bot.send_message(channel_id, f"🎀 Факт от Насти:\n\n{fact}")
-                    await self._react_to_own_post(channel_id, msg.message_id, fact[:200])
-                    logger.info(f"Channel: posted fact")
-                
+                    html_post, plain_post = assemble_html_post(
+                        "Факт от Насти", fact, "", ["#chasnastya"],
+                        footer=POST_STYLE.footer, headline_emoji="🎀")
+                    msg = await send_channel_post(self.bot, channel_id, html_post, plain_post,
+                                                  [], log=logger)
+                    if msg:
+                        try:
+                            await self._react_to_own_post(channel_id, msg.message_id, plain_post[:200])
+                        except Exception:
+                            pass
+                        await db.save_hook(plain_post[:70])
+                        ok_cycle = True
+                        logger.info("Channel: posted fact (HTML)")
+
                 elif post_type == "rss_news":
                     # Fetch RSS news
                     news_items = await _fetch_rss_news()
@@ -213,34 +307,30 @@ class NastyaBot:
                     
                     if unposted:
                         item = random.choice(unposted)
-                        prompt = (
-                            f"Напиши пост для канала @chasnastya на основе этой новости.\n\n"
+                        context_prompt = (
+                            f"Основа — свежая новость:\n"
                             f"Заголовок: {item['title']}\n"
                             f"Источник: {item['source']}\n"
-                            f"Краткое содержание: {item['summary'][:300]}\n\n"
-                            f"SEO: ключевые слова в начале, 1-2 хештега, вопрос в конце. Настроение: {mood}. Напиши 3-5 предложений, живо, с эмодзи, как Настя. "
-                            f"Перескажи своими словами, добавь мнение. Без политики/войны. По-русски."
+                            f"Краткое содержание: {item['summary'][:600]}\n\n"
+                            f"Перескажи своими словами от лица Насти, добавь своё мнение "
+                            f"и полезный контекст. Не копируй заголовок."
                         )
-                        post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=400, allow_static_fallback=False, prefer_pollinations=True)
-                        if post:
-                            msg = await self.bot.send_message(channel_id, post[:4000])
-                            await self._react_to_own_post(channel_id, msg.message_id, post[:200])
+                        if await _quality_channel_post(self, channel_id, context_prompt, mood):
+                            ok_cycle = True
                             url_key = item["url"].split("?")[0].split("#")[0].rstrip("/").lower()
                             await db.mark_news_posted(url_key, item["title"])
-                            logger.info(f"Channel: posted RSS news ({len(post)} chars) — {item['title'][:40]}")
+                            logger.info(f"Channel: posted RSS news (quality) — {item['title'][:40]}")
                         else:
-                            logger.warning("RSS news AI post empty — skip")
+                            logger.warning("RSS news quality post failed — skip")
                     else:
                         logger.info("No unposted RSS news — fallback to AI post")
-                        topics = ["мода и тренды", "новый фильм", "астрология", "шопинг", "BMW M3", "психология", "кофе", "путешествия"]
+                        topics = ["мода и тренды", "новый фильм", "астрология", "шопинг",
+                                  "BMW M3", "психология", "кофе", "путешествия"]
                         topic = random.choice(topics)
-                        prompt = f"Напиши пост для канала @chasnastya на тему: {topic}. Настроение: {mood}. 3-5 предложений, живо, с эмодзи."
-                        post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=300, allow_static_fallback=False, prefer_pollinations=True)
-                        if post:
-                            msg = await self.bot.send_message(channel_id, post[:4000])
-                            await self._react_to_own_post(channel_id, msg.message_id, post[:200])
-                            logger.info(f"Channel: posted AI fallback post ({len(post)} chars)")
-                
+                        if await _quality_channel_post(self, channel_id, f"Тема поста: {topic}.", mood):
+                            ok_cycle = True
+                            logger.info(f"Channel: posted AI fallback post (quality) — {topic}")
+
                 elif post_type == "web_news":
                     # Web search news
                     topics = ["мода тренды 2026", "новинки кино", "лайфстайл тренды", "технологии гаджеты", "красота новинки"]
@@ -258,34 +348,48 @@ class NastyaBot:
                                 unposted.append(r)
                         if unposted:
                             result = random.choice(unposted)
-                            prompt = (
-                                f"Напиши пост для канала @chasnastya на основе этой новости.\n\n"
+                            context_prompt = (
+                                f"Основа — находка из интернета:\n"
                                 f"Заголовок: {result.title}\n"
                                 f"Источник: {result.source}\n"
-                                f"Краткое содержание: {result.snippet[:300]}\n\n"
-                                f"Настроение: {mood}. 3-5 предложений, живо, с эмодзи. Без политики/войны. По-русски."
+                                f"Краткое содержание: {result.snippet[:600]}\n\n"
+                                f"Расскажи об этом от лица Насти — почему это интересно сейчас, "
+                                f"добавь своё мнение и деталь из трендов."
                             )
-                            post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=400, allow_static_fallback=False, prefer_pollinations=True)
-                            if post:
-                                msg = await self.bot.send_message(channel_id, post[:4000])
-                                await self._react_to_own_post(channel_id, msg.message_id, post[:200])
+                            if await _quality_channel_post(self, channel_id, context_prompt, mood):
+                                ok_cycle = True
                                 url_key = result.url.split("?")[0].split("#")[0].rstrip("/").lower()
                                 await db.mark_news_posted(url_key, result.title)
-                                logger.info(f"Channel: posted web news ({len(post)} chars) — {result.title[:40]}")
-                
+                                logger.info(f"Channel: posted web news (quality) — {result.title[:40]}")
+
                 else:  # ai_post
                     topics = ["мода и тренды этого сезона", "новый фильм на Netflix", "астрология и знаки зодиака", "шопинг и скидки", "BMW M3 — лучшая тачка", "психология отношений", "тренды в соцсетях", "кофе и лайфстайл", "путешествия и Стамбул", "что нового в мире технологий"]
                     topic = random.choice(topics)
-                    prompt = f"Напиши пост для канала @chasnastya на тему: {topic}. Настроение: {mood}. 3-5 предложений, живо, с эмодзи."
-                    post = await ai_client.chat(prompt, system=CHANNEL_POST_PROMPT, max_tokens=300, allow_static_fallback=False, prefer_pollinations=True)
-                    if post:
-                        msg = await self.bot.send_message(channel_id, post[:4000])
-                        await self._react_to_own_post(channel_id, msg.message_id, post[:200])
-                        logger.info(f"Channel: posted AI post ({len(post)} chars)")
-                        
+                    if await _quality_channel_post(self, channel_id, f"Тема поста: {topic}.", mood):
+                        ok_cycle = True
+                        logger.info(f"Channel: posted AI post (quality) — {topic}")
+
             except asyncio.CancelledError: break
             except Exception as e:
                 logger.error(f"Channel scheduler error: {e}")
+
+            # Failure streak → alert owner (rate-limited)
+            try:
+                if not ok_cycle:
+                    failure_streak += 1
+                    if failure_streak >= 3:
+                        await notify_owner(
+                            self.bot,
+                            "Настя: 3 цикла подряд без постов в канал @chasnastya. "
+                            "Проверь логи GitHub Actions.", min_gap_s=7200)
+                        failure_streak = 0
+                else:
+                    failure_streak = 0
+            except Exception:
+                pass
+
+            # Prime-time cadence: 20 min day / 40 min night (01:00-08:00 MSK)
+            post_interval = prime_time_interval(day_s=1200, night_s=2400)
             await asyncio.sleep(post_interval)
 
     async def _react_to_own_post(self, channel_id: int, message_id: int, text: str = ""):

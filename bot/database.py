@@ -36,6 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_donations_user ON donations(user_id);
 CREATE TABLE IF NOT EXISTS chat_summaries (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, summary TEXT NOT NULL, topics TEXT DEFAULT '', ts INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_cs_chat ON chat_summaries(chat_id, id DESC);
 CREATE TABLE IF NOT EXISTS moods (id INTEGER PRIMARY KEY DEFAULT 1, mood TEXT DEFAULT 'спокойная', energy REAL DEFAULT 0.5, ts INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS post_meta (key TEXT PRIMARY KEY, value TEXT DEFAULT '', ts INTEGER DEFAULT 0);
 """
 
 _db: Optional[aiosqlite.Connection] = None
@@ -249,3 +250,35 @@ async def run_periodic_cleanup():
             await _conn().commit()
         except Exception as e:
             logger.debug(f"cleanup error: {e}")
+
+async def save_hook(text: str) -> None:
+    """Save recent post opening (hook) for anti-repetition. Keeps last 12."""
+    t = (text or "").strip()
+    if not t:
+        return
+    try:
+        ts = time.time_ns()  # unique key even for posts in the same second
+        await _conn().execute(
+            "INSERT OR REPLACE INTO post_meta(key, value, ts) VALUES(?,?,?)",
+            (f"hook:{ts}", t[:80], ts)
+        )
+        await _conn().execute(
+            """DELETE FROM post_meta WHERE key LIKE 'hook:%' AND key NOT IN (
+                SELECT key FROM post_meta WHERE key LIKE 'hook:%' ORDER BY ts DESC LIMIT 12)"""
+        )
+        await _conn().commit()
+    except Exception as e:
+        logger.debug(f"save_hook error: {e}")
+
+async def get_recent_hooks(limit: int = 8) -> list:
+    """Return up to `limit` recent post openings (newest first)."""
+    try:
+        cur = await _conn().execute(
+            "SELECT value FROM post_meta WHERE key LIKE 'hook:%' ORDER BY ts DESC LIMIT ?",
+            (limit,)
+        )
+        rows = await cur.fetchall()
+        return [r[0] for r in rows if r and r[0]]
+    except Exception as e:
+        logger.debug(f"get_recent_hooks error: {e}")
+        return []
