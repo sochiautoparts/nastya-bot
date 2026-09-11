@@ -52,6 +52,39 @@ def _strip_pollinations_ads(text):
             text = text[:idx].rstrip()
     return text
 
+# ─── Garbage detection: static placeholders / ads / quota notices ───
+# 2026-09-11: Pollinations began returning a static ~344-char notice with HTTP 200
+# on exhausted keys, which poisoned the whole post pipeline (all posts skipped).
+_GARBAGE_MARKERS = [
+    "pollinations.ai/keys", "api key is required", "invalid api key",
+    "rate limit", "rate_limit", "too many requests", "payment required",
+    "quota exceeded", "unauthorized", "support pollinations", "get one at",
+    "out of pollen", "need pollen", "subscribe to", "access denied",
+]
+_recent_resp_hashes: list = []
+
+def _looks_garbage(text, expect_russian=True):
+    """Reject static placeholder/ad/quota responses that are not real content."""
+    import hashlib as _hl
+    if not text: return True
+    t = text.strip()
+    if len(t) < 3: return True
+    tl = t.lower()
+    for m in _GARBAGE_MARKERS:
+        if m in tl: return True
+    # Identical response repeated across different prompts → static placeholder
+    h = _hl.md5(t.encode()).hexdigest()
+    if h in _recent_resp_hashes: return True
+    _recent_resp_hashes.append(h)
+    if len(_recent_resp_hashes) > 6: _recent_resp_hashes.pop(0)
+    # Generated posts must be mostly Cyrillic (bots post in Russian)
+    if expect_russian:
+        letters = [c for c in t if c.isalpha()]
+        if letters:
+            cyr = sum(1 for c in letters if ('а' <= c.lower() <= 'я') or c.lower() == 'ё')
+            if cyr / len(letters) < 0.2: return True
+    return False
+
 def _get_pollinations_key():
     """Get next API key (round-robin). Returns empty string if none."""
     global _POLLINATIONS_KEY_IDX
@@ -155,7 +188,8 @@ async def _call_pollinations_direct(messages, max_tokens, timeout=30.0, retries=
                     msg = choices[0].get("message", {}) or {}
                     content = (msg.get("content", "") or "").strip()
                     if content:
-                        return _strip_pollinations_ads(content)
+                        clean = _strip_pollinations_ads(content)
+                        return clean if not _looks_garbage(clean) else ""
                     reasoning = (msg.get("reasoning", "") or "").strip()
                     if reasoning:
                         parts = reasoning.split(".")
@@ -184,12 +218,14 @@ async def _call_pollinations_get(prompt, timeout=12.0):
             r = await _client.get(url, timeout=timeout, headers=headers)
         if r.status_code == 200:
             text = r.text.strip()
-            if text and len(text) > 2: return text[:2000]
+            if text and len(text) > 2:
+                clean = _strip_pollinations_ads(text[:2000])
+                return "" if _looks_garbage(clean) else clean
         return ""
     except: return ""
 
 _STATIC_FALLBACKS = {
-    "greeting": ["Привет! Я Ася 😊", "Привет-привет! ☕", "Хей! Как настроение?"],
+    "greeting": ["Привет! Я Настя 😊", "Привет-привет! ☕", "Хей! Как настроение?"],
     "howareyou": ["Да нормально, спасибо ☕", "Всё ок, а у тебя?", "Живу-здравствую 😊"],
     "default": ["Хм, давай по-другому", "Интересно, расскажи подробнее?", "Поняла тебя. И что дальше?", "Окей, я с тобой. Продолжай."],
 }
@@ -231,7 +267,14 @@ async def chat(prompt, system="", extra_context="", dialog_history=None, max_tok
             _stats["success"] += 1; _stats["openclaw_ok"] += 1
             return _strip_name_prefix(out)
     else:
-        # If prefer_pollinations, try Pollinations POST first (more reliable for long prompts)
+        # Cloudflare FIRST (most reliable in 2026-09, real content, both accounts)
+        out = await _call_cloudflare(messages, max_tokens, 60.0)
+        logger.info(f"AI Cloudflare: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
+        if out:
+            _stats["success"] += 1
+            logger.info(f"AI primary=cloudflare ({time.time()-t0:.1f}s) len={len(out)}")
+            return _strip_name_prefix(out)
+        # If prefer_pollinations, try Pollinations POST second
         if prefer_pollinations:
             out = await _call_pollinations_direct(messages, max_tokens, 45.0)
             logger.info(f"AI Pollinations-POST: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
@@ -258,16 +301,8 @@ async def chat(prompt, system="", extra_context="", dialog_history=None, max_tok
         out = await _call_pollinations_get(combined, 60.0)
         logger.info(f"AI Pollinations-GET: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
         if out:
-            out = _strip_pollinations_ads(out)
             _stats["success"] += 1; _stats["pollinations_backup"] += 1
             logger.info(f"AI fallback=pollinations-GET ({time.time()-t0:.1f}s) len={len(out)}")
-            return _strip_name_prefix(out)
-        # Tier-2: Cloudflare Workers AI (more reliable, no rate limits)
-        out = await _call_cloudflare(messages, max_tokens, 30.0)
-        logger.info(f"AI Cloudflare: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
-        if out:
-            _stats["success"] += 1
-            logger.info(f"AI fallback=cloudflare ({time.time()-t0:.1f}s) len={len(out)}")
             return _strip_name_prefix(out)
 
     _stats["fail"] += 1
@@ -278,43 +313,43 @@ async def chat(prompt, system="", extra_context="", dialog_history=None, max_tok
         return fb
     return ""
 
-async def _call_cloudflare(messages, max_tokens, timeout=30.0):
-    """Call Cloudflare Workers AI (Tier-2 fallback). Returns content or empty string."""
+async def _call_cloudflare(messages, max_tokens, timeout=60.0):
+    """Call Cloudflare Workers AI (reliable fallback). Tries BOTH accounts before giving up."""
     if _client is None: await initialize()
-    acct = _get_cf_account()
-    if not acct:
-        return ""
-    account_id, token = acct
-    url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions"
-    payload = {
-        "model": _CF_MODEL,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": 0.85,
-    }
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
-    try:
-        r = await _client.post(url, json=payload, timeout=timeout, headers=headers)
-        if r.status_code == 200:
-            data = r.json()
-            # Cloudflare returns either OpenAI format or {result: {response: ...}}
-            choices = data.get("choices") or []
-            if choices:
-                content = (choices[0].get("message", {}).get("content", "") or "").strip()
-                if content:
-                    return content
-            result = data.get("result", {})
-            if isinstance(result, dict):
-                content = (result.get("response", "") or "").strip()
-                if content:
-                    return content
-        return ""
-    except Exception as e:
-        _stats["last_error"] = f"Cloudflare: {type(e).__name__}: {e}"
-        return ""
+    for _ in range(2):
+        acct = _get_cf_account()
+        if not acct:
+            return ""
+        account_id, token = acct
+        url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions"
+        payload = {
+            "model": _CF_MODEL,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": 0.85,
+        }
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        try:
+            r = await _client.post(url, json=payload, timeout=timeout, headers=headers)
+            if r.status_code == 200:
+                data = r.json()
+                # Cloudflare returns either OpenAI format or {result: {response: ...}}
+                choices = data.get("choices") or []
+                if choices:
+                    content = (choices[0].get("message", {}).get("content", "") or "").strip()
+                    if content and not _looks_garbage(content):
+                        return content
+                result = data.get("result", {})
+                if isinstance(result, dict):
+                    content = (result.get("response", "") or "").strip()
+                    if content and not _looks_garbage(content):
+                        return content
+        except Exception as e:
+            _stats["last_error"] = f"Cloudflare: {type(e).__name__}: {e}"
+    return ""
 
 
 def _strip_name_prefix(text):
