@@ -1,15 +1,37 @@
-"""Ася AI Client — routes all AI through OpenClaw Gateway + Pollinations direct."""
+"""Настя AI Client — routes all AI through OpenClaw Gateway + Pollinations direct.
+Local Qwen2.5-7B (GGUF) как основной генератор постов (LOCAL_MODEL_PRIMARY=1)
+и как last-resort fallback для всех остальных вызовов."""
 import asyncio, logging, os, random, time
 from typing import List, Optional
 import httpx
 from bot.config import config
+from ai.local_model import call_local
 
 logger = logging.getLogger("nastya.ai")
 
 _ENDPOINT = f"{config.OPENCLAW_URL}/v1/chat/completions"
 _MODEL = "openclaw"
-_POLLINATIONS_URL = "https://text.pollinations.ai/openai/chat/completions"
-_POLLINATIONS_MODEL = "openai"
+# Pollinations: new gen.pollinations.ai API (works with and without keys)
+# Tested working models (2026-07-24):
+#   WITH KEY: openai, openai-large, gpt-oss, mistral, mistral-large, llama, llama-scout,
+#             deepseek, grok, kimi, qwen-coder, gemma, nova-fast, glm
+#   WITHOUT KEY (anonymous): openai, gpt-oss, mistral, llama, deepseek
+#   402 (need pollen): gemini, claude, mercury
+#   empty (0 chars): openai-fast
+_POLLINATIONS_URL = "https://gen.pollinations.ai/v1/chat/completions"
+_POLLINATIONS_URL_LEGACY = "https://text.pollinations.ai/openai/chat/completions"
+# Pool of working models for round-robin (best Russian quality, tested)
+_POLLINATIONS_MODELS = [
+    "openai",        # gpt-5.4-nano, fast + clean Russian (1-3s)
+    "mistral",       # mistral-small, good Russian (4s)
+    "llama",         # Llama-3.3-70B, excellent Russian (5s)
+    "gpt-oss",       # gpt-oss-20b, good Russian (4s)
+    "grok",          # grok-4.20, good Russian (2s)
+    "gemma",         # gemma-4-26b, good Russian (3s)
+    "qwen-coder",    # Qwen3-Coder-30B, good Russian (5s)
+    "nova-fast",     # Amazon Nova Micro, fast (2s)
+]
+_POLLINATIONS_MODEL_IDX = 0  # round-robin index
 
 # Load up to 3 Pollinations API keys from environment (for rotation)
 _POLLINATIONS_KEYS = []
@@ -170,16 +192,69 @@ async def _call_openclaw(messages, max_tokens, temperature, timeout=25.0):
     return ""
 
 async def _call_pollinations_direct(messages, max_tokens, timeout=30.0, retries=2):
+    """Call Pollinations via gen.pollinations.ai API.
+    Uses round-robin across multiple working models for diversity.
+    Works with AND without API keys (anonymous access for some models).
+    Falls back to legacy text.pollinations.ai if all fail."""
+    global _POLLINATIONS_MODEL_IDX
     if _client is None: await initialize()
-    payload = {"model": _POLLINATIONS_MODEL, "messages": messages, "temperature": 0.9, "max_tokens": max_tokens, "stream": False, "referrer": "nastya-bot", "reasoning_effort": "low"}
     sem = _get_pollinations_sem()
+
+    # Try gen.pollinations.ai with round-robin models
+    # Try up to 3 different models before giving up
+    models_to_try = []
+    for _ in range(3):
+        model = _POLLINATIONS_MODELS[_POLLINATIONS_MODEL_IDX % len(_POLLINATIONS_MODELS)]
+        _POLLINATIONS_MODEL_IDX += 1
+        if model not in models_to_try:
+            models_to_try.append(model)
+
+    for model in models_to_try:
+        payload = {"model": model, "messages": messages, "temperature": 0.9, "max_tokens": max_tokens, "stream": False}
+        for attempt in range(retries + 1):
+            try:
+                t_start = time.time()
+                headers = _pollinations_headers()
+                async with sem:
+                    r = await _client.post(_POLLINATIONS_URL, json=payload, timeout=timeout, headers=headers)
+                elapsed = time.time() - t_start
+                if r.status_code == 200:
+                    data = r.json()
+                    choices = data.get("choices") or []
+                    if choices:
+                        msg = choices[0].get("message", {}) or {}
+                        content = (msg.get("content", "") or "").strip()
+                        if content:
+                            logger.info(f"Pollinations model={model} → {data.get('model','?')} ({elapsed:.1f}s)")
+                            clean = _strip_pollinations_ads(content)
+                            if not _looks_garbage(clean):
+                                return clean
+                            logger.info(f"Pollinations model={model} returned static/garbage — try next")
+                            break  # try next model
+                # 402/403 = model needs payment/forbidden, try next model
+                if r.status_code in (402, 403, 404):
+                    logger.info(f"Pollinations model={model} HTTP {r.status_code} — try next")
+                    break  # try next model
+                # Transient error, retry
+                if elapsed < 5.0 and attempt < retries:
+                    await asyncio.sleep(2.0)
+                    continue
+                break  # try next model
+            except:
+                if attempt < retries:
+                    await asyncio.sleep(2.0)
+                    continue
+                break  # try next model
+
+    # Fallback: legacy text.pollinations.ai (deprecated, short prompts only)
+    payload_legacy = {"model": "openai", "messages": messages, "temperature": 0.9, "max_tokens": max_tokens, "stream": False, "referrer": "nastya-bot", "reasoning_effort": "low"}
     for attempt in range(retries + 1):
         try:
             t_start = time.time()
             headers = _pollinations_headers()
             headers["Referer"] = "nastya-bot"
             async with sem:
-                r = await _client.post(_POLLINATIONS_URL, json=payload, timeout=timeout, headers=headers)
+                r = await _client.post(_POLLINATIONS_URL_LEGACY, json=payload_legacy, timeout=timeout, headers=headers)
             elapsed = time.time() - t_start
             if r.status_code == 200:
                 data = r.json()
@@ -194,7 +269,6 @@ async def _call_pollinations_direct(messages, max_tokens, timeout=30.0, retries=
                     if reasoning:
                         parts = reasoning.split(".")
                         return ".".join(parts[-3:]).strip()[:500]
-            # If got response but empty content in <5s, retry (Pollinations quick refusal)
             if elapsed < 5.0 and attempt < retries:
                 await asyncio.sleep(2.0)
                 continue
@@ -236,7 +310,7 @@ def _static_fallback(prompt):
     if any(w in t for w in ["как дела", "как ты", "как жизнь", "что нового"]): return random.choice(_STATIC_FALLBACKS["howareyou"])
     return random.choice(_STATIC_FALLBACKS["default"])
 
-async def chat(prompt, system="", extra_context="", dialog_history=None, max_tokens=600, temperature=0.9, allow_static_fallback=True, fast=False, prefer_pollinations=False):
+async def chat(prompt, system="", extra_context="", dialog_history=None, max_tokens=600, temperature=0.9, allow_static_fallback=True, fast=False, prefer_pollinations=False, prefer_local=False):
     global _stats
     _stats["requests"] += 1
     t0 = time.time()
@@ -247,7 +321,19 @@ async def chat(prompt, system="", extra_context="", dialog_history=None, max_tok
     user_content = f"{extra_context}\n\n---\n\n{prompt}" if extra_context else prompt
     messages.append({"role": "user", "content": user_content})
 
+    # Локальная модель ПЕРВОЙ для постов канала (LOCAL_MODEL_PRIMARY):
+    # автономность без сетевых лимитов; качество обеспечивает quality gate
+    # в bot/post_quality.py, а облако остаётся страховкой ниже.
+    if prefer_local:
+        out = await call_local(messages, max_tokens, None, mode="post")
+        if out:
+            _stats["success"] += 1
+            logger.info(f"AI primary=local-7B ({time.time()-t0:.1f}s) len={len(out)}")
+            return _strip_name_prefix(out)
+        logger.info("Local 7B unavailable/empty — falling back to cloud cascade")
+
     if fast:
+        # Fast mode: Pollinations first (quick), then cloud, then local last resort
         use_get = (not extra_context) and (not dialog_history) and len(prompt) < 400
         if use_get:
             short_persona = "Ты Настя, девушка из Москвы. Женский род всегда. Отвечай живо, кратко (2-4 предложения). По-русски. Без выдуманных фактов. Не начинай с имени."
@@ -257,42 +343,46 @@ async def chat(prompt, system="", extra_context="", dialog_history=None, max_tok
                 _stats["success"] += 1; _stats["pollinations_backup"] += 1
                 logger.info(f"AI fast=pollinations-GET ({time.time()-t0:.1f}s) len={len(out)}")
                 return _strip_name_prefix(out)
-        out = await _call_pollinations_direct(messages, max_tokens, 45.0)
+        out = await _call_pollinations_direct(messages, max_tokens, 30.0)
         if out:
             _stats["success"] += 1; _stats["pollinations_backup"] += 1
-            logger.info(f"AI fast=pollinations-POST ({time.time()-t0:.1f}s) len={len(out)}")
+            logger.info(f"AI fast=pollinations ({time.time()-t0:.1f}s) len={len(out)}")
+            return _strip_name_prefix(out)
+        out = await _call_cloudflare(messages, max_tokens, 20.0)
+        if out:
+            _stats["success"] += 1
+            logger.info(f"AI fast=cloudflare ({time.time()-t0:.1f}s) len={len(out)}")
             return _strip_name_prefix(out)
         out = await _call_openclaw(messages, max_tokens, temperature, 15.0)
         if out:
             _stats["success"] += 1; _stats["openclaw_ok"] += 1
             return _strip_name_prefix(out)
+        out = await call_local(messages, max_tokens, temperature)
+        if out:
+            _stats["success"] += 1
+            logger.info(f"AI fast=local-7B ({time.time()-t0:.1f}s) len={len(out)}")
+            return _strip_name_prefix(out)
     else:
-        # Cloudflare FIRST (most reliable in 2026-09, real content, both accounts)
+        # Channel posts: Cloudflare FIRST (most reliable in 2026-09, real content),
+        # Pollinations second (garbage filter protects against static placeholders)
         out = await _call_cloudflare(messages, max_tokens, 60.0)
         logger.info(f"AI Cloudflare: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
         if out:
             _stats["success"] += 1
             logger.info(f"AI primary=cloudflare ({time.time()-t0:.1f}s) len={len(out)}")
             return _strip_name_prefix(out)
-        # If prefer_pollinations, try Pollinations POST second
-        if prefer_pollinations:
-            out = await _call_pollinations_direct(messages, max_tokens, 45.0)
-            logger.info(f"AI Pollinations-POST: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
-            if out:
-                _stats["success"] += 1; _stats["pollinations_backup"] += 1
-                return _strip_name_prefix(out)
+        out = await _call_pollinations_direct(messages, max_tokens, 45.0)
+        logger.info(f"AI Pollinations: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
+        if out:
+            _stats["success"] += 1; _stats["pollinations_backup"] += 1
+            logger.info(f"AI fallback=pollinations ({time.time()-t0:.1f}s) len={len(out)}")
+            return _strip_name_prefix(out)
         out = await _call_openclaw(messages, max_tokens, temperature, 25.0)
         logger.info(f"AI OpenClaw: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
         if out:
             _stats["success"] += 1; _stats["openclaw_ok"] += 1
             return _strip_name_prefix(out)
-        if not prefer_pollinations:
-            out = await _call_pollinations_direct(messages, max_tokens, 45.0)
-            logger.info(f"AI Pollinations-POST: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
-            if out:
-                _stats["success"] += 1; _stats["pollinations_backup"] += 1
-                return _strip_name_prefix(out)
-        # GET fallback: build a combined prompt and use GET (more reliable for long prompts)
+        # GET fallback (legacy, short prompts only)
         combined = ""
         if system: combined += system + "\n\n"
         combined += prompt
@@ -301,10 +391,19 @@ async def chat(prompt, system="", extra_context="", dialog_history=None, max_tok
         out = await _call_pollinations_get(combined, 60.0)
         logger.info(f"AI Pollinations-GET: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
         if out:
+            out = _strip_pollinations_ads(out)
             _stats["success"] += 1; _stats["pollinations_backup"] += 1
             logger.info(f"AI fallback=pollinations-GET ({time.time()-t0:.1f}s) len={len(out)}")
             return _strip_name_prefix(out)
+        # LOCAL 7B as LAST resort (always available, no network needed)
+        out = await call_local(messages, max_tokens, temperature)
+        logger.info(f"AI Local-7B: {len(out) if out else 0} chars ({time.time()-t0:.1f}s)")
+        if out:
+            _stats["success"] += 1
+            logger.info(f"AI fallback=local-7B ({time.time()-t0:.1f}s) len={len(out)}")
+            return _strip_name_prefix(out)
 
+    # Static fallback (last resort)
     _stats["fail"] += 1
     _stats["last_error"] = "all providers returned empty"
     if allow_static_fallback:
@@ -355,7 +454,7 @@ async def _call_cloudflare(messages, max_tokens, timeout=60.0):
 def _strip_name_prefix(text):
     if not text: return text
     import re
-    stripped = re.sub(r'^\s*Ася\s*[:,\-—]\s*', '', text, flags=re.IGNORECASE)
+    stripped = re.sub(r'^\s*Настя\s*[:,\-—]\s*', '', text, flags=re.IGNORECASE)
     stripped = re.sub(r'^\s*Ответ\s*[:,\-—]\s*', '', stripped, flags=re.IGNORECASE)
     return stripped
 
@@ -408,4 +507,11 @@ async def transcribe_audio(audio_data_uri, timeout=30.0):
     except: _stats["fail"] += 1
     return ""
 
-def stats(): return dict(_stats)
+def stats():
+    s = dict(_stats)
+    try:
+        from ai.local_model import stats as _local_stats
+        s["local"] = _local_stats()
+    except Exception:
+        pass
+    return s

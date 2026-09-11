@@ -18,7 +18,16 @@ def _is_admin(message):
 async def cmd_stats(message):
     if not _is_admin(message): return
     s = ai_client.stats()
-    await message.reply(f"📊 Статистика AI:\nЗапросов: {s.get('requests',0)}\nOpenClaw: {s.get('openclaw_ok',0)}\nPollinations: {s.get('pollinations_backup',0)}\nStatic: {s.get('static_fallback',0)}\nОшибок: {s.get('fail',0)}\nПоследняя: {s.get('last_error','—')[:80]}")
+    loc = s.get("local") or {}
+    loc_line = ""
+    if loc:
+        loc_line = (f"\n\n🧠 Локальная 7B:\nЗагружена: {'да' if loc.get('loaded') else 'нет'}\n"
+                    f"Генераций: {loc.get('ok',0)}/{loc.get('gens',0)}\n"
+                    f"Скорость: {loc.get('avg_tok_per_s',0)} tok/s\n"
+                    f"Токенов: {loc.get('total_tokens',0)}")
+        if loc.get("last_error"):
+            loc_line += f"\nОшибка: {loc['last_error'][:60]}"
+    await message.reply(f"📊 Статистика AI:\nЗапросов: {s.get('requests',0)}\nOpenClaw: {s.get('openclaw_ok',0)}\nPollinations: {s.get('pollinations_backup',0)}\nStatic: {s.get('static_fallback',0)}\nОшибок: {s.get('fail',0)}\nПоследняя: {s.get('last_error','—')[:80]}{loc_line}")
 
 @admin_router.message(Command("providers"))
 async def cmd_providers(message):
