@@ -131,6 +131,9 @@ def parse_structured_post(raw: str) -> Optional[dict]:
 
 # ─── Quality gate (детерминированные проверки) ─────────────────────────────
 
+# Латинские слова, допустимые в русских заголовках в lowercase (марки/термины)
+_LATIN_HEADLINE_ALLOW = {"e-tron", "q4", "q6", "q8", "ok", "gt", "rs"}
+
 def quality_gate(parsed: dict, min_body: int = 280, max_body: int = 1150) -> tuple:
     """Deterministic quality checks. Returns (ok, reason)."""
     if not parsed or not parsed.get("body"):
@@ -147,6 +150,14 @@ def quality_gate(parsed: dict, min_body: int = 280, max_body: int = 1150) -> tup
         words = len(headline.split())
         if words < 3 or words > 14:
             return False, f"headline_words({words})"
+        # Латинские слова-артефакты: lowercase латиница >2 символов в заголовке —
+        # почти всегда мусор вида «гоночного programu» (RU/EN-гибрид от модели).
+        # Бренды (Porsche, BMW) и марки (GT, RS) — passes: капитализация/короткие.
+        for w in re.findall(r"[A-Za-z][A-Za-z\-']+", headline):
+            wl = w.lower().strip("-'")
+            if len(wl) <= 2 or wl in _LATIN_HEADLINE_ALLOW or w[0].isupper():
+                continue
+            return False, f"headline_latin_garbage:{w[:16]}"
     else:
         return False, "no_headline"
 

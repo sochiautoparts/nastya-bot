@@ -35,7 +35,7 @@ jobs:
               curl -s -X POST -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$REPO/actions/runs/$run_id/cancel" || true
             done
           done
-          sleep 60
+          sleep 120
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -174,9 +174,12 @@ jobs:
           if [ -f data/nastya.db ]; then
             git config user.name "Nastya Bot"
             git config user.email "nastya-bot@users.noreply.github.com"
+            # Бэкап state-файлов: checkout на origin/main может конфликтовать с изменёнными
+            cp data/posted_news.json /tmp/pn.json 2>/dev/null || true
             git fetch origin main || true
-            git checkout -B db-update origin/main
-            git add -f data/nastya.db || true
+            git checkout -B db-update origin/main || true
+            cp /tmp/pn.json data/posted_news.json 2>/dev/null || true
+            git add -f data/nastya.db data/posted_news.json || true
             git diff --staged --quiet || git commit -m "db: update $(date +%Y-%m-%d_%H:%M)" || true
             git push origin db-update:main 2>&1 || echo "DB push skipped (newer commits — OK, cached via actions/cache)"
           fi
