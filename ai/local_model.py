@@ -54,7 +54,7 @@ async def _get_llm():
             from llama_cpp import Llama
             # Qwen2.5-7B-Instruct Q5_K_M (sharded into 2 files)
             # llama-cpp-python auto-loads shards from the first file
-            model_path = os.getenv("LOCAL_MODEL_PATH", "data/qwen2.5-7b-q5_k_m-00001.gguf")
+            model_path = os.getenv("LOCAL_MODEL_PATH", "data/qwen2.5-7b-instruct-q5_k_m-00001-of-00002.gguf")
             if not os.path.exists(model_path):
                 logger.warning(f"Local model file not found: {model_path}")
                 _init_failed = True
