@@ -49,9 +49,14 @@ except ImportError:
 
 GATE_SIZE = 5.625  # 360 / 64
 
+# Каноническое смещение колеса ворот: ворота 41 начинаются на 302° эклиптики
+# (2° Водолея), а не на 0° Овна. GATE_SEQUENCE начинается с ворот 41,
+# поэтому индекс сектора считается от 302°.
+GATE_WHEEL_OFFSET = 302.0
+
 # Последовательность 64 ворот Дизайна Человека по зодиаку,
-# начиная с 0° Овна. Каждый сектор = 5.625°.
-# Позиция i: долгота i*5.625 ... (i+1)*5.625
+# начиная с ворот 41 (302° эклиптики, 2° Водолея). Каждый сектор = 5.625°.
+# Позиция i: долгота (302° + i*5.625) ... (302° + (i+1)*5.625)
 GATE_SEQUENCE = [
     41, 19, 13, 49, 30, 55, 37, 63,   # 0° – 45° (Овен)
     22, 36, 25, 17, 21, 51, 42,  3,   # 45° – 90° (Овен-Телец-Близнецы)
@@ -741,11 +746,12 @@ def longitude_to_gate_line(lon: float) -> Tuple[int, int, float]:
     position_in_gate: 0.0-5.625 (градусы внутри ворот)
     """
     lon = lon % 360.0
-    sector = int(lon / GATE_SIZE)  # 0..63
+    rel = (lon - GATE_WHEEL_OFFSET) % 360.0  # отсчёт от начала ворот 41 (302°)
+    sector = int(rel / GATE_SIZE)  # 0..63
     if sector >= 64:
         sector = 63
     gate = GATE_SEQUENCE[sector]
-    position_in_gate = lon - sector * GATE_SIZE
+    position_in_gate = rel - sector * GATE_SIZE
     # Линия: каждая = 0.9375° (5.625 / 6)
     line = int(position_in_gate / (GATE_SIZE / 6.0)) + 1
     if line > 6:
@@ -1045,11 +1051,12 @@ def longitude_to_color_tone(lon: float) -> Tuple[int, int, int, int]:
         tone: 1-6
     """
     lon = lon % 360.0
-    sector = int(lon / GATE_SIZE)  # 0..63
+    rel = (lon - GATE_WHEEL_OFFSET) % 360.0  # отсчёт от начала ворот 41 (302°)
+    sector = int(rel / GATE_SIZE)  # 0..63
     if sector >= 64:
         sector = 63
     gate = GATE_SEQUENCE[sector]
-    position_in_gate = lon - sector * GATE_SIZE
+    position_in_gate = rel - sector * GATE_SIZE
 
     # Линия: каждая = 0.9375°
     line = int(position_in_gate / LINE_WIDTH) + 1

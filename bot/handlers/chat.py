@@ -70,7 +70,7 @@ async def handle_private_text(message):
     text = (message.text or "").strip()
     if not text or text.startswith("/"): return
     await db.upsert_user(u.id, u.username or "", u.first_name or "", u.last_name or "", u.is_bot, in_private=True)
-    update_mood_from_message(text)
+    await update_mood_from_message(text)
     mood = await current_mood_descriptor()
     name = u.first_name or u.username or ""
     try:
@@ -133,7 +133,7 @@ async def handle_private_voice(message):
     if not transcribed:
         await message.reply("Не разобрала голосовое 🙈 Повтори текстом?")
         return
-    update_mood_from_message(transcribed)
+    await update_mood_from_message(transcribed)
     mood = await current_mood_descriptor()
     history = await db.get_private_history(u.id, 16)
     await db.add_private_message(u.id, "user", f"[голосовое]: {transcribed}")
@@ -230,20 +230,16 @@ async def _run_consultation(message: Message, consult_type: str):
     await db.upsert_user(u.id, u.username or "", u.first_name or "", u.last_name or "", u.is_bot, in_private=True)
 
     try:
-        from bot.consultations import parse_birth_date, calculate_matrix_of_destiny, get_zodiac_sign, calculate_life_path_number
+        from bot.consultations import parse_birth_date_full, calculate_matrix_of_destiny, get_zodiac_sign, calculate_life_path_number
         from bot.consultations import build_numerology_context, build_astrology_context, get_matrix_prompt_params
         from bot.persona import PERSONA_PROMPT
 
-        parsed = parse_birth_date(birth_text)
+        parsed = parse_birth_date_full(birth_text)
         if not parsed:
             await message.reply("Не поняла дату! Напиши в формате: 15.03.2000")
             return
 
-        day, month, year = parsed[:3]
-        birth_time = ""
-        birth_place = ""
-        if len(parsed) > 3: birth_time = parsed[3] or ""
-        if len(parsed) > 4: birth_place = parsed[4] or ""
+        day, month, year, birth_time, birth_place = parsed
 
         mood = await current_mood_descriptor()
 
@@ -261,21 +257,48 @@ async def _run_consultation(message: Message, consult_type: str):
             prompt = f"Сделай астрологический разбор для {day}.{month}.{year} (знак: {zodiac}).\n\n{context}\n\nОпиши знак, планеты, дома, аспекты. Дай рекомендации. Живо, как Настя."
 
         elif consult_type == "jyotish":
-            zodiac = get_zodiac_sign(day, month, year)
+            zodiac = get_zodiac_sign(day, month)
+            calc_ctx = ""
+            try:
+                from bot.jyotish_calc import build_jyotish_calc_context
+                calc_ctx = (build_jyotish_calc_context(day, month, year, birth_time, birth_place) or "")[:3000]
+            except Exception as e:
+                logger.warning(f"jyotish_calc engine failed: {e}")
             from bot.consultations import get_jyotish_rashi_approx
             rashi = get_jyotish_rashi_approx(zodiac)
             system = PERSONA_PROMPT + f"\n\nТы Настя. Настроение: {mood}. Делаешь Джйотиш разбор (ведическая астрология). Женский род."
-            prompt = f"Сделай Джйотиш разбор для {day}.{month}.{year}.\nЗнак (ведический): {rashi}\n\nОпиши Лагну, Грахи, Раши, Накшатры, Даши. Живо, как Настя."
+            prompt = f"Сделай Джйотиш разбор для {day}.{month}.{year}.\nЗнак (ведический): {rashi}\n\n"
+            if calc_ctx:
+                prompt += f"РЕАЛЬНЫЙ РАСЧЁТ КУНДАЛИ (интерпретируй ЭТИ данные, не придумывай):\n{calc_ctx}\n\n"
+            prompt += "Опиши Лагну, Грахи, Раши, Накшатры, Даши. Живо, как Настя."
 
         elif consult_type == "humandesign":
-            zodiac = get_zodiac_sign(day, month, year)
+            zodiac = get_zodiac_sign(day, month)
+            calc_ctx = ""
+            try:
+                from bot.hd_calc import build_hd_calculated_context
+                calc_ctx = (build_hd_calculated_context(day, month, year, birth_time, birth_place) or "")[:3000]
+            except Exception as e:
+                logger.warning(f"hd_calc engine failed: {e}")
             system = PERSONA_PROMPT + f"\n\nТы Настя. Настроение: {mood}. Делаешь разбор Дизайна Человека. Женский род."
-            prompt = f"Сделай разбор Дизайна Человека для {day}.{month}.{year} (знак: {zodiac}).\n\nОпиши Тип, Стратегию, Авторитет, Профиль, Центры. Живо, как Настя."
+            prompt = f"Сделай разбор Дизайна Человека для {day}.{month}.{year} (знак: {zodiac}).\n\n"
+            if calc_ctx:
+                prompt += f"РЕАЛЬНЫЙ РАСЧЁТ БОДИГРАФА (интерпретируй ЭТИ данные, не придумывай):\n{calc_ctx}\n\n"
+            prompt += "Опиши Тип, Стратегию, Авторитет, Профиль, Центры. Живо, как Настя."
 
         elif consult_type == "health":
             lp = calculate_life_path_number(day, month, year)
+            calc_ctx = ""
+            try:
+                from bot.consultations import build_health_context
+                calc_ctx = (build_health_context(day=day, month=month, year=year) or "")[:3000]
+            except Exception as e:
+                logger.warning(f"health engine failed: {e}")
             system = PERSONA_PROMPT + f"\n\nТы Настя. Настроение: {mood}. Делаешь разбор здоровья (Аюрведа, психосоматика). Женский род."
-            prompt = f"Сделай разбор здоровья для даты {day}.{month}.{year} (число судьбы: {lp}).\n\nОпиши Пракрити (Вата/Питта/Капха), чакры, психосоматику. Дай рекомендации. Живо, как Настя."
+            prompt = f"Сделай разбор здоровья для даты {day}.{month}.{year} (число судьбы: {lp}).\n\n"
+            if calc_ctx:
+                prompt += f"РАСЧЁТНЫЕ ДАННЫЕ ЗДОРОВЬЯ (интерпретируй ЭТИ данные):\n{calc_ctx}\n\n"
+            prompt += "Опиши Пракрити (Вата/Питта/Капха), чакры, психосоматику. Дай рекомендации. Живо, как Настя."
         else:
             await message.reply("Не знаю такую консультацию!")
             return

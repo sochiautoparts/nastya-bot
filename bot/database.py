@@ -55,7 +55,14 @@ async def init_db():
 
 async def close_db():
     global _db
-    if _db: await _db.close(); _db = None
+    if _db:
+        try:
+            # Персистим WAL в основной файл БД перед закрытием
+            await _db.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            await _db.commit()
+        except Exception as e:
+            logger.warning(f"WAL checkpoint on close failed: {e}")
+        await _db.close(); _db = None
 
 def _conn():
     if _db is None: raise RuntimeError("DB not initialised")

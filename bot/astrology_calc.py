@@ -1760,11 +1760,11 @@ def calculate_all_astrology(
     latitude, longitude = _get_city_coordinates(birth_place)
 
     # ─── Юлианский день ───
-    # Создаём datetime в UTC
-    ut_hour = hour - tz_offset
+    # Создаём datetime в UTC: сначала локальное время, затем вычитаем пояс
+    # (timedelta корректно обрабатывает переход через полночь — в отличие от
+    # ручного вычитания часов, которое даёт ut_hour < 0 или > 23 → ValueError)
     try:
-        birth_dt = datetime(year, month, day, int(ut_hour), int((ut_hour % 1) * 60),
-                            tzinfo=timezone.utc)
+        birth_dt = datetime(year, month, day, hour, minute, tzinfo=timezone.utc) - timedelta(hours=tz_offset)
     except (ValueError, OverflowError):
         # Некорректная дата/время — корректируем
         birth_dt = datetime(year, month, day, 12, 0, tzinfo=timezone.utc)

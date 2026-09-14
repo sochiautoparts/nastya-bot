@@ -139,7 +139,7 @@ class NastyaBot:
         await self._notify_owner()
         try: await self.bot.delete_webhook(drop_pending_updates=True)
         except: pass
-        allowed = ["message", "edited_message", "channel_post", "edited_channel_post", "inline_query", "chosen_inline_result", "pre_checkout_query"]
+        allowed = ["message", "edited_message", "channel_post", "edited_channel_post", "inline_query", "chosen_inline_result", "callback_query", "pre_checkout_query"]
         logger.info("=== Настя в сети — слушаю сообщения ===")
         polling_retries = 0
         while True:
@@ -472,7 +472,10 @@ async def main():
         try: asyncio.get_running_loop().add_signal_handler(sig, _sig)
         except: pass
     try: await bot.start()
-    finally: _stop_openclaw_gateway()
+    finally:
+        try: await db.close_db()
+        except Exception as e: logger.warning(f"DB close failed: {e}")
+        _stop_openclaw_gateway()
 
 if __name__ == "__main__":
     try: asyncio.run(main())

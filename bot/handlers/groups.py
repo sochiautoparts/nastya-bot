@@ -62,8 +62,12 @@ def _is_in_bot_loop(message):
     chat_id = message.chat.id
     thread_key = message.reply_to_message.message_id
     now = time.time()
-    tracker = _reply_chain_tracker.get(chat_id, {})
-    tracker = {k: v for k, v in tracker.items() if now - v[1] < _THREAD_TTL}
+    tracker = {k: v for k, v in _reply_chain_tracker.get(chat_id, {}).items() if now - v[1] < _THREAD_TTL}
+    # записываем отфильтрованный dict обратно, чтобы трекер не рос бесконечно
+    if tracker:
+        _reply_chain_tracker[chat_id] = tracker
+    else:
+        _reply_chain_tracker.pop(chat_id, None)
     count, _ = tracker.get(thread_key, (0, now))
     return count >= _MAX_BOT_REPLIES_PER_THREAD
 
@@ -76,10 +80,19 @@ def _track_bot_reply(message):
     count, _ = tracker.get(thread_key, (0, now))
     tracker[thread_key] = (count + 1, now)
 
-async def _log_group_message(message, content="", is_media=False, media_caption="", is_bot=False):
+async def _log_group_message(message, content="", is_media=False, media_caption="", is_bot=False, user_id=None, username=None, first_name=None):
     u = message.from_user
     if not is_bot and u and (u.id == config.BOT_ID or u.is_bot): is_bot = True
-    await db.add_group_message(message.chat.id, u.id if u else 0, (u.username or "") if u else "", (u.first_name or "") if u else "", content or (message.text or ""), is_media, media_caption, is_bot)
+    if is_bot:
+        # ответы бота логируем от имени бота, а не человека — иначе портится память/контекст
+        user_id = config.BOT_ID
+        username = (config.BOT_USERNAME or "").lstrip("@")
+        first_name = "Настя"
+    else:
+        user_id = user_id if user_id is not None else (u.id if u else 0)
+        username = username if username is not None else ((u.username or "") if u else "")
+        first_name = first_name if first_name is not None else ((u.first_name or "") if u else "")
+    await db.add_group_message(message.chat.id, user_id, username, first_name, content or (message.text or ""), is_media, media_caption, is_bot)
 
 async def _should_respond(message):
     u = message.from_user
@@ -124,29 +137,13 @@ async def _generate_group_response(message, text, directed):
     # Partner links
     try:
         await partner_manager.refresh_if_needed()
-        links = partner_manager.get_all_partner_links_for_dialog(text, max_programs=2)
+        links = partner_manager.get_relevant_partners(text, max_programs=2)
         if links:
             extra_ctx += "\n\nПартнёрские ссылки (вставь ОДНУ если к месту, естественно, не в каждом ответе):\n"
-            for pl in links: extra_ctx += f"- {pl['name']} ({pl.get('label','')}): {pl['url']}\n"
+            for pl in links: extra_ctx += f"- {pl}\n"
     except: pass
 
     extra_ctx += "\n\nМожешь иногда (1 из 6 сообщений, если к месту) посоветовать каналы @sochiautoparts (авто-новости) или @bmw_mpower_club (BMW клуб), или магазин sochiautoparts.ru/shop."
-
-    # Site content (products/posts)
-    try:
-        t_lower = (text or "").lower()
-        is_shopping = any(k in t_lower for k in ["купить", "магазин", "цена", "стоим", "заказ", "товар", "запчаст", "детал", "артикул", "подобрать", "найти", "выбор", "рекоменд"])
-        product_prob = 0.5 if is_shopping else 0.25
-        post_prob = 0.25 if is_shopping else 0.12
-        if random.random() < product_prob:
-            from bot import site_content as sc
-            prod = await sc.relevant_product(text) if text else await sc.random_product()
-            if prod: extra_ctx += "\n\nТовар из магазина sochiautoparts.ru/shop (упомяни если к месту):\n" + sc.format_product_for_context(prod)
-        if random.random() < post_prob:
-            from bot import site_content as sc
-            post = await sc.random_post()
-            if post: extra_ctx += "\n\nСвежий пост на сайте (можешь поделиться): " + sc.format_post_for_context(post)
-    except: pass
 
     # Web search
     is_event = _is_event_or_news(text)

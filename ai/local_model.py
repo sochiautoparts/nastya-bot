@@ -27,6 +27,8 @@ logger = logging.getLogger("nastya.local")
 _llm = None
 _init_lock = asyncio.Lock()
 _init_failed = False
+# llama.cpp instance не потокобезопасна — генерации сериализуем
+_gen_lock = asyncio.Lock()
 
 # ─── Статистика локальной модели (видна в /stats админки) ───────────────────
 _stats = {"gens": 0, "ok": 0, "fail": 0, "total_gen_s": 0.0, "total_tokens": 0, "last_error": ""}
@@ -167,7 +169,8 @@ async def call_local(messages, max_tokens=400, temperature=0.8, mode="chat"):
             )
 
         t0 = time.time()
-        response = await loop.run_in_executor(None, _generate)
+        async with _gen_lock:
+            response = await loop.run_in_executor(None, _generate)
         gen_s = time.time() - t0
         content = (response["choices"][0]["message"]["content"] or "").strip()
         n_tokens = (response.get("usage") or {}).get("completion_tokens", 0) or 0

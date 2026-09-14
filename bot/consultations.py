@@ -537,6 +537,62 @@ def parse_birth_date(text: str) -> Optional[Tuple[int, int, int]]:
     return None
 
 
+# Время рождения: HH:MM, 14h30, 14.30
+_TIME_PATTERN = re.compile(r'\b(\d{1,2})[:h.](\d{2})\b')
+
+# Служебные слова, которые не являются местом рождения
+_PLACE_STOP_WORDS = {"в", "во", "родился", "родилась", "род.", "р.", "г.", "город",
+                     "около", "примерно", "время", "место", "утра", "дня", "вечера", "ночи"}
+
+
+def parse_birth_date_full(text: str) -> Optional[Tuple[int, int, int, str, str]]:
+    """Parse birth date + optional birth time (HH:MM) and birth place (rest of string).
+
+    Returns (day, month, year, time_str, place_str) or None if no date found.
+    Examples:
+        "15.03.2000"                  -> (15, 3, 2000, "", "")
+        "15.03.2000 14:30 Москва"     -> (15, 3, 2000, "14:30", "Москва")
+        "15.03.2000, Санкт-Петербург" -> (15, 3, 2000, "", "Санкт-Петербург")
+    """
+    if not text or not text.strip():
+        return None
+
+    date_part = None
+    date_span = None
+    for pattern in _DATE_PATTERNS:
+        m = pattern.search(text)
+        if m:
+            g1, g2, g3 = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            if g1 > 1900:
+                date_part = (g3, g2, g1)
+            elif 1 <= g1 <= 31 and 1 <= g2 <= 12 and g3 > 1900:
+                date_part = (g1, g2, g3)
+            if date_part:
+                date_span = m.span()
+                break
+    if not date_part:
+        return None
+    day, month, year = date_part
+
+    # Остаток строки без даты
+    rest = (text[:date_span[0]] + " " + text[date_span[1]:]).strip()
+
+    # Время рождения (ищем только ПОСЛЕ удаления даты, чтобы не спутать с ней)
+    time_str = ""
+    tm = _TIME_PATTERN.search(rest)
+    if tm:
+        h, mi = int(tm.group(1)), int(tm.group(2))
+        if 0 <= h <= 23 and 0 <= mi <= 59:
+            time_str = f"{h:02d}:{mi:02d}"
+            rest = (rest[:tm.start()] + " " + rest[tm.end():]).strip()
+
+    # Место рождения — остальная строка без служебных слов
+    tokens = [t for t in re.split(r"[,;()\s]+", rest) if t and t.lower() not in _PLACE_STOP_WORDS]
+    place_str = " ".join(tokens)[:80]
+
+    return (day, month, year, time_str, place_str)
+
+
 # ════════════════════════════════════════════════════════════════
 #  AI ПРОМПТЫ ДЛЯ ПРОФЕССИОНАЛЬНЫХ КОНСУЛЬТАЦИЙ
 # ════════════════════════════════════════════════════════════════
