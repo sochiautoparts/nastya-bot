@@ -1366,5 +1366,21 @@
   "https://www.ixbt.com/news/2026/09/23/437680-u-dilerov-lada-mozno-budet-zakazat-bronevik-za-16-mln-rublei.html": {
     "title": "У дилеров Lada можно будет заказать броневик — за 16 млн рублей",
     "ts": 1790136264
+  },
+  "https://habr.com/ru/articles/1080304": {
+    "title": "Переделка радиоприемника «Электроника 26–01»",
+    "ts": 1790142939
+  },
+  "https://auto.mail.ru/article/131161-avtoekspert-arhipov-nazval-rashodniki-kotoryie-stoit-menyat-dva-raza-v-god": {
+    "title": "Автоэксперт назвал расходники, которые стоит менять два раза в год",
+    "ts": 1790146867
+  },
+  "https://tass.ru/nedvizhimost/28142079": {
+    "title": "В Москве число сделок с ипотекой на жилье уменьшилось за год на 35%",
+    "ts": 1790149073
+  },
+  "https://lenta.ru/news/2026/09/23/aliev-pomiloval-rossiyanina": {
+    "title": "Алиев помиловал россиянина",
+    "ts": 1790158448
   }
 }
