@@ -213,6 +213,12 @@ def sanitize_text(text: str) -> str:
     text = _WORD_RE.sub(_fix, text)
     text = re.sub(r"[ \t]{2,}", " ", text)
     text = re.sub(r" +([,.;:!?])", r"\1", text)
+    # Пунктуационные артефакты моделей: "? ?", "! !", "??", "!!", "....", "……", "?." и т.п.
+    text = re.sub(r"([?!.,:;…])[ \t]+\1+", r"\1", text)   # "? ?" / "! !" → одиночный
+    text = re.sub(r"([?!])\1+", r"\1", text)               # "??"/"!!" → одиночный
+    text = re.sub(r"\.{2,}", "…", text)                    # ".."/"...." → "…"
+    text = re.sub(r"…+", "…", text)                         # повторные "…"
+    text = re.sub(r"([?!…])\.(?=\s|$)", r"\1", text)       # "?.", "!.", "…." в конце
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
@@ -254,20 +260,27 @@ def bold_numbers(escaped_body: str) -> str:
 
 
 def _truncate_plain(text: str, limit: int) -> str:
-    """Sentence/word-boundary truncate for plain text (caption limits)."""
+    """Sentence/word-boundary truncate for plain text (caption limits).
+
+    Если обрезка попала точно на конец предложения — многоточие НЕ добавляется:
+    пост выглядит завершённым ("...особенно остро." вместо "...остро. …").
+    """
     if len(text) <= limit:
         return text
     cut = limit - 1
     for i in range(cut, max(cut - 220, 0), -1):
         if i < len(text) and text[i] in ".!?" and (i + 1 >= len(text) or text[i + 1] in " \n\t"):
-            return text[:i + 1] + " …"
+            return text[:i + 1].rstrip()
+    for i in range(cut, max(cut - 220, 0), -1):
+        if i < len(text) and text[i] == "…":
+            return text[:i + 1].rstrip()
     for i in range(cut, max(cut - 120, 0), -1):
         if i < len(text) and text[i] == "\n":
-            return text[:i].rstrip() + " …"
+            return text[:i].rstrip() + "…"
     for i in range(cut, max(cut - 60, 0), -1):
         if i < len(text) and text[i] == " ":
-            return text[:i].rstrip() + " …"
-    return text[:cut].rstrip() + " …"
+            return text[:i].rstrip() + "…"
+    return text[:cut].rstrip() + "…"
 
 
 def assemble_html_post(headline: str, body: str, question: str,
@@ -460,9 +473,14 @@ async def send_channel_post(bot, channel_id: int, html_text: str, plain_text: st
         if len(text) <= limit:
             return text
         cut = text[:limit]
+        # Конец предложения → чистый финал без многоточия (пост выглядит завершённым)
         for i in range(len(cut) - 1, max(len(cut) - 300, 0), -1):
-            if cut[i] in ".!?\n" and (i + 1 >= len(cut) or cut[i + 1] in " \n\t"):
-                return cut[:i + 1].rstrip() + "…"
+            if cut[i] in ".!?" and (i + 1 >= len(cut) or cut[i + 1] in " \n\t"):
+                return cut[:i + 1].rstrip()
+            if cut[i] == "…" and (i + 1 >= len(cut) or cut[i + 1] in " \n\t"):
+                return cut[:i + 1].rstrip()
+            if cut[i] == "\n" and (i + 1 >= len(cut) or cut[i + 1] in " \n\t"):
+                return cut[:i].rstrip() + "…"
         for i in range(len(cut) - 1, max(len(cut) - 100, 0), -1):
             if cut[i] in " \n\t":
                 return cut[:i].rstrip() + "…"
