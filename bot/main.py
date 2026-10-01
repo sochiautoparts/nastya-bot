@@ -255,7 +255,11 @@ class NastyaBot:
                 return False
             body = " ".join(sanitize_text(parsed["body"]).split())
             headline = sanitize_text(parsed["headline"])[:110]
-            question = parsed.get("question") or style.default_question
+            # Санитайзер вопроса: убирает пунктуационные артефакты моделей ("? ?", "!!", "….")
+            # + согласован с Машей/Асей: одна строка, максимум 140 символов
+            question = sanitize_text(
+                (parsed.get("question") or style.default_question).split("\n")[0]
+            )[:140]
             hashtags = parsed.get("hashtags") or smart_hashtags(
                 f"{headline} {body}", style.hashtag_map, style.default_hashtags)
             if "#chasnastya" not in hashtags:
