@@ -55,7 +55,7 @@ jobs:
 
       - name: Install OpenClaw
         run: |
-          npm install -g openclaw@latest
+          npm install -g openclaw@2026.9.7 # pinned: 2026.9.7 отвергает maxBodyBytes в конфиге (config invalid). НЕ обновлять на @latest без теста: gen_openclaw_config.py должен совпадать с новой схемой
           openclaw --version
 
       - name: Restore local model cache

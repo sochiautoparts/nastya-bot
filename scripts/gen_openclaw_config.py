@@ -49,7 +49,7 @@ def build_config():
     ordered=[pid for pid in PRIORITY if pid in active] or ["pollinations"]
     primary=f"{ordered[0]}/{PROVIDERS[_idx(ordered[0])]['models'][0]['id']}"
     fallbacks=[f"{pid}/{PROVIDERS[_idx(pid)]['models'][0]['id']}" for pid in ordered[1:]]
-    return {"$schema":"https://docs.openclaw.ai/schema/openclaw.json","gateway":{"port":int(os.getenv("OPENCLAW_PORT","18789")),"bind":"loopback","auth":{"mode":"none"},"http":{"endpoints":{"chatCompletions":{"enabled":True,"maxBodyBytes":8388608}}},"controlUi":{"enabled":False}},"agents":{"defaults":{"model":{"primary":primary,"fallbacks":fallbacks},"params":{"temperature":0.9},"skipBootstrap":True,"workspace":"."}},"models":{"mode":"merge","providers":provs}}
+    return {"$schema":"https://docs.openclaw.ai/schema/openclaw.json","gateway":{"port":int(os.getenv("OPENCLAW_PORT","18789")),"bind":"loopback","auth":{"mode":"none"},"http":{"endpoints":{"chatCompletions":{"enabled":True}}},"controlUi":{"enabled":False}},"agents":{"defaults":{"model":{"primary":primary,"fallbacks":fallbacks},"params":{"temperature":0.9},"skipBootstrap":True,"workspace":"."}},"models":{"mode":"merge","providers":provs}}
 
 def main():
     out_arg=None; state_dir=os.getenv("OPENCLAW_STATE_DIR") or os.path.expanduser("~/.openclaw"); args=sys.argv[1:]; i=0

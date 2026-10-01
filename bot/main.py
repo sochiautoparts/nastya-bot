@@ -166,7 +166,8 @@ class NastyaBot:
             ANTI_HALLUCINATION_RULES, RETRY_CRITIQUE_TMPL, build_hook_avoid,
             parse_structured_post, quality_gate, smart_hashtags,
             assemble_html_post, send_channel_post, prime_time_interval, notify_owner,
-            sanitize_text, LOCAL_EXAMPLE, LOCAL_TASK_REMINDER)
+            sanitize_text, LOCAL_EXAMPLE, LOCAL_TASK_REMINDER,
+            text_fingerprint, title_fingerprint, UNIQUIFICATION_RULES)
         import feedparser
         await asyncio.sleep(120)
         post_interval = 1200  # 20 min day / 40 min night (prime-time cadence)
@@ -188,6 +189,7 @@ class NastyaBot:
                 f"{context_prompt}\n\n"
                 f"{STRUCTURED_POST_RULES}\n\n"
                 f"{ANTI_HALLUCINATION_RULES}\n\n"
+                f"{UNIQUIFICATION_RULES}\n\n"
                 f"{hook_note}\n\n"
                 f"СТИЛЬ: живо, как настоящая Настя, эмодзи умеренно, женский род, по-русски. "
                 f"НЕ начинай с 'Настя:'."
@@ -261,12 +263,24 @@ class NastyaBot:
             html_post, plain_post = assemble_html_post(
                 headline, body, question, hashtags,
                 footer=style.footer, headline_emoji=style.headline_emoji)
+            # Уникальность: не постим текст, который уже был в канале (даже с другим URL)
+            fp_key = f"fp:{text_fingerprint(plain_post)}"
+            try:
+                if await db.is_news_posted(fp_key):
+                    logger.warning("Duplicate post text detected (fingerprint) — regenerate")
+                    return False
+            except Exception:
+                pass
             sent = await send_channel_post(self_ref.bot, int(channel_id),
                                            html_post, plain_post, [], log=logger)
             if sent:
                 try:
                     await self_ref._react_to_own_post(int(channel_id),
                                                       sent.message_id, plain_post[:200])
+                except Exception:
+                    pass
+                try:
+                    await db.mark_news_posted(fp_key, headline)
                 except Exception:
                     pass
                 await db.save_hook(plain_post[:70])
@@ -303,7 +317,8 @@ class NastyaBot:
                                         "source": source["name"],
                                         "category": source["category"],
                                     })
-                    except: pass
+                    except Exception as e:
+                        logger.debug(f"RSS source failed: {source['name']}: {e}")
             return results
         
         while True:
@@ -336,7 +351,12 @@ class NastyaBot:
                     unposted = []
                     for item in news_items:
                         url_key = item["url"].split("?")[0].split("#")[0].rstrip("/").lower()
-                        if not await db.is_news_posted(url_key):
+                        tf_key = f"tf:{title_fingerprint(item['title'])}"
+                        try:
+                            dup = await db.is_news_posted(url_key) or await db.is_news_posted(tf_key)
+                        except Exception:
+                            dup = False
+                        if not dup:
                             unposted.append(item)
                     
                     if unposted:
@@ -353,6 +373,10 @@ class NastyaBot:
                             ok_cycle = True
                             url_key = item["url"].split("?")[0].split("#")[0].rstrip("/").lower()
                             await db.mark_news_posted(url_key, item["title"])
+                            try:
+                                await db.mark_news_posted(f"tf:{title_fingerprint(item['title'])}", item["title"])
+                            except Exception:
+                                pass
                             logger.info(f"Channel: posted RSS news (quality) — {item['title'][:40]}")
                         else:
                             logger.warning("RSS news quality post failed — skip")
@@ -378,7 +402,12 @@ class NastyaBot:
                         unposted = []
                         for r in results:
                             url_key = r.url.split("?")[0].split("#")[0].rstrip("/").lower()
-                            if not await db.is_news_posted(url_key):
+                            tf_key = f"tf:{title_fingerprint(r.title)}"
+                            try:
+                                dup = await db.is_news_posted(url_key) or await db.is_news_posted(tf_key)
+                            except Exception:
+                                dup = False
+                            if not dup:
                                 unposted.append(r)
                         if unposted:
                             result = random.choice(unposted)
@@ -394,6 +423,10 @@ class NastyaBot:
                                 ok_cycle = True
                                 url_key = result.url.split("?")[0].split("#")[0].rstrip("/").lower()
                                 await db.mark_news_posted(url_key, result.title)
+                                try:
+                                    await db.mark_news_posted(f"tf:{title_fingerprint(result.title)}", result.title)
+                                except Exception:
+                                    pass
                                 logger.info(f"Channel: posted web news (quality) — {result.title[:40]}")
 
                 else:  # ai_post
@@ -427,28 +460,18 @@ class NastyaBot:
             await asyncio.sleep(post_interval)
 
     async def _react_to_own_post(self, channel_id: int, message_id: int, text: str = ""):
-        """Set 3 positive reactions on own channel post with fallback to 1."""
+        """Set a positive reaction on own channel post.
+        Telegram Bot API: non-premium bots can set EXACTLY ONE reaction per message
+        (a 3-reaction list always fails with REACTIONS_TOO_MANY) — so we set 1 directly."""
         try:
             import random
             from aiogram.types import ReactionTypeEmoji
             # Only guaranteed Telegram-supported reaction emojis (no ❤️ variation selector)
-            pool = ["👍", "❤", "🔥", "😁", "👏", "🎉"]
-            emojis = random.sample(pool, 3)
-            reaction_types = [ReactionTypeEmoji(type="emoji", emoji=e) for e in emojis]
-            await self.bot.set_message_reaction(channel_id, message_id, reaction_types)
-            logger.info(f"Reacted to own post (3): {channel_id}/{message_id} with {emojis}")
+            single_emoji = random.choice(["👍", "❤", "🔥", "👏", "🎉"])
+            single = [ReactionTypeEmoji(type="emoji", emoji=single_emoji)]
+            await self.bot.set_message_reaction(channel_id, message_id, single)
+            logger.info(f"Reacted to own post: {channel_id}/{message_id} with {single_emoji}")
         except Exception as e:
-            msg = str(e)
-            if "REACTIONS_TOO_MANY" in msg or "REACTION_INVALID" in msg:
-                try:
-                    import random as _r
-                    single_emoji = _r.choice(["👍", "❤", "🔥"])
-                    single = [ReactionTypeEmoji(type="emoji", emoji=single_emoji)]
-                    await self.bot.set_message_reaction(channel_id, message_id, single)
-                    logger.info(f"Reacted to own post (1 fallback): {channel_id}/{message_id} with {single_emoji}")
-                    return
-                except Exception as e2:
-                    logger.warning(f"React to own post fallback failed: {e2}")
             logger.warning(f"React to own post failed: {e}")
 
     async def _notify_owner(self):
