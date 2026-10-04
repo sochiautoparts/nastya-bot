@@ -1,148 +1,4 @@
 {
-  "https://habr.com/ru/companies/ods/articles/1078778": {
-    "title": "Обнаружены секретные форумы Роя агентов OpenAI по всему интернету: почему это плохая новость",
-    "ts": 1789204026
-  },
-  "https://naked-science.ru/article/astronomy/video-dzheta-somnenie-o-ego-ustroistve": {
-    "title": "Самое детальное видео джета черной дыры поставило под сомнение представления о его устройстве",
-    "ts": 1789205890
-  },
-  "https://www.kolesa.ru/article/razmer-ne-imeet-znaceniia-test-na-znanie-osobennostei-mercedes-benz-190": {
-    "title": "Размер не имеет значения: тест на знание особенностей Mercedes-Benz 190",
-    "ts": 1789207745
-  },
-  "https://www.euro-football.ru/article/29/1006309221_ledyahov_spartak_ostaetsya_v_chisle_favoritov_na_pobedu_v_rpl": {
-    "title": "Ледяхов: «Спартак» остаётся в числе фаворитов на победу в РПЛ»",
-    "ts": 1789213730
-  },
-  "https://www.euro-football.ru/article/35/1006309253_roman_rotenberg_rasskazal_kakoy_futbolist_zaslujil_zolotoy_myach": {
-    "title": "Роман Ротенберг рассказал, какой футболист заслужил «Золотой мяч»",
-    "ts": 1789217203
-  },
-  "https://lenta.ru/news/2026/09/12/ssha-vynudili-strany-briks-otkazatsya-ot-dollara": {
-    "title": "США вынудили страны БРИКС отказаться от доллара",
-    "ts": 1789218697
-  },
-  "https://tass.ru/mezhdunarodnaya-panorama/28106497": {
-    "title": "Колумнист Хендерсон назвала Вэнса сильным кандидатом в президенты США",
-    "ts": 1789220196
-  },
-  "https://www.rbc.ru/sport/12/09/2026/6aa2fcce9a79473a9085ecbf": {
-    "title": "«Спартак» побил рекорд КХЛ, забросив три шайбы за первые две минуты матча",
-    "ts": 1789224085
-  },
-  "https://vc.ru/marketing/3133430-samsung-reklama-galaxy-z-fold-8-tim-kuk": {
-    "title": "«Можете цитировать меня»: Samsung нашла в Новой Зеландии полного тёзку Тима Кука и выпустила с ним рекламу складного смартфона Galaxy Z Fold 8",
-    "ts": 1789226412
-  },
-  "https://www.euro-football.ru/article/29/1006309418_nazvan_luchshiy_futbolist_matcha_zenit_-_lokomotiv": {
-    "title": "Назван лучший футболист матча «Зенит» - «Локомотив»",
-    "ts": 1789227550
-  },
-  "https://nplus1.ru/news/2026/09/11/swiftiephylus-taylorae": {
-    "title": "Новый род австралийских клопов назвали в честь Тейлор Свифт",
-    "ts": 1789231820
-  },
-  "https://dtf.ru/games/5295440-anonsirovana-igra-diablo-v-novaya-era-v-mire-diablo": {
-    "title": "Представлена Diablo V — игра выйдет весной 2029 года",
-    "ts": 1789238573
-  },
-  "https://povar.ru/recipes/zapekanka_iz_kabachkov-4321.html": {
-    "title": "Запеканка из кабачков",
-    "ts": 1789239367
-  },
-  "https://naked-science.ru/article/medicine/svet-gubit-serdca": {
-    "title": "Искусственное освещение в ночное время перестроило структуру и снизило эффективность работы сердца",
-    "ts": 1789240454
-  },
-  "https://tass.ru/politika/28107055": {
-    "title": "Дмитриев назвал повышение цены газа в Европе платой за идеологию глобализма",
-    "ts": 1789252218
-  },
-  "https://habr.com/ru/articles/1080778": {
-    "title": "Я попал к психиатру из‑за кодинга с AI",
-    "ts": 1789252870
-  },
-  "https://auto.mail.ru/article/130578-gazprombank-avtolizing-brendyi-rf-zanyali-bolee-40-ryinka-novyih-avto": {
-    "title": "«Газпромбанк автолизинг»: бренды РФ заняли более 40% рынка новых авто",
-    "ts": 1789256500
-  },
-  "https://lenta.ru/news/2026/09/13/ushel-iz-zhizni-sovetskiy-kinooperator-timkovskiy": {
-    "title": "Ушел из жизни советский кинооператор Тимковский",
-    "ts": 1789258942
-  },
-  "https://www.rbc.ru/society/24/08/2026/6a8c398409e1411b7b8ffa87": {
-    "title": "На детской площадке в Нью-Йорке застрелили двоих мужчин",
-    "ts": 1789261503
-  },
-  "https://ria.ru/20260913/aeroport-2117364642.html": {
-    "title": "В аэропорту Сочи сняли временные ограничения",
-    "ts": 1789261929
-  },
-  "https://nplus1.ru/blog/2026/09/11/book-digest-19": {
-    "title": "Гены, запахи и ложь",
-    "ts": 1789265163
-  },
-  "https://povar.ru/recipes/adjika_s_yablokami_na_zimu-20805.html": {
-    "title": "Аджика с яблоками на зиму",
-    "ts": 1789266323
-  },
-  "https://lenta.ru/news/2026/09/13/nazvano-osnovnoe-lekarstvo": {
-    "title": "Названо основное «лекарство» ВСУ в волчанском котле",
-    "ts": 1789270464
-  },
-  "https://dtf.ru/games/5295271-tseremoniya-otkrytiya-blizzcon": {
-    "title": "Новая кампания для Warcraft III, «вечная» версия WoW, шутер по StarCraft и Diablo V: что показали на открытии BlizzCon 2026",
-    "ts": 1789273337
-  },
-  "https://www.ixbt.com/news/2026/09/13/435429-venera-d-vyxodit-na-novyi-etap-eskiznyi-proekt-rossiiskoi-missii-zaversat-v-2028-godu.html": {
-    "title": "«Венера-Д» выходит на новый этап: эскизный проект российской миссии завершат в 2028 году",
-    "ts": 1789278794
-  },
-  "https://auto.mail.ru/article/130576-nazvanyi-avtomobili-s-probegom-kotoryie-slozhnee-vsego-prodat-v-rossii": {
-    "title": "Названы автомобили с пробегом, которые сложнее всего продать в России",
-    "ts": 1789283660
-  },
-  "https://www.woman.ru/stars/kak-menyalis-sobchak-i-bogomolov-posle-svadby-s-katafalkom-30-foto-pary-id908929": {
-    "title": "Как менялись Собчак и Богомолов после свадьбы с катафалком — 30 фото пары",
-    "ts": 1789285037
-  },
-  "https://www.euro-football.ru/article/29/1006309924_ponomarev__o_povedenii_reysa_bezobrazie_i_vsedozvolennost_inostrancev": {
-    "title": "Пономарёв – о поведении Рейса: «Безобразие и вседозволенность иностранцев»",
-    "ts": 1789290497
-  },
-  "https://naked-science.ru/article/medicine/ozhirenie-pri-cancere": {
-    "title": "Ученые впервые показали, как ожирение ослабляет естественную защиту молочной железы от рака",
-    "ts": 1789292423
-  },
-  "https://habr.com/ru/companies/ruvds/articles/1078914": {
-    "title": "Как я сделал ремастер «Том и Джерри» в 4K за два года: дубль два",
-    "ts": 1789295837
-  },
-  "https://vc.ru/services/3132830-zapusk-5g-v-16-gorodah-rossii-dlya-polzovatelej-android": {
-    "title": "Минцифры объявило о запуске первых коммерческих сетей 5G в 16 российских городах — подключиться к ним могут только пользователи Android",
-    "ts": 1789297866
-  },
-  "https://tass.ru/obschestvo/28108039": {
-    "title": "Эксперт Федоров: ИИ предстоит обучаться на квантовых данных для понимания мира",
-    "ts": 1789298971
-  },
-  "https://www.gastronom.ru/recipe/66738/bitye-kabachki": {
-    "title": "Битые кабачки, пошаговый рецепт с фото на 138 ккал",
-    "ts": 1789300786
-  },
-  "https://www.rbc.ru/rbcfreenews/6a8087079a7947651f6f2581": {
-    "title": "Сборы фильма «Последний богатырь. Колобок» превысили ₽1 млрд",
-    "ts": 1789310325
-  },
-  "https://www.woman.ru/news/im-obeshali-chto-ikh-brak-ne-prozhivet-i-goda-a-oni-7-let-schastlivy-godovshina-svadby-bogomolova-i-sobchak-id7292116": {
-    "title": "Им обещали, что их брак не проживет и года, а они 7 лет счастливы: годовщина свадьбы Богомолова и Собчак",
-    "ts": 1789311280
-  },
-  "https://www.gastronom.ru/recipe/9328/sok-iz-chernoplodnoj-ryabiny": {
-    "title": "Сок из черноплодной рябины, пошаговый рецепт с фото от автора she is на 366 ккал",
-    "ts": 1789312861
-  },
   "https://ria.ru/20260913/futbol-2117462079.html": {
     "title": "\"Арсенал\" сыграл вничью со \"СКА-Хабаровском\" в матче Первой лиги",
     "ts": 1789316227
@@ -3998,5 +3854,149 @@
   "fp:d6e138ba0e21c1101b7364e696faeef7": {
     "title": "BMW M5 — новый рекорд в мире электромобилей?",
     "ts": 1791131531
+  },
+  "fp:471efdc2831181e632b4b0b89ee7ab2f": {
+    "title": "Молдавия под угрозой: десятки населенных пунктов без воды",
+    "ts": 1791133298
+  },
+  "https://ria.ru/20261004/moldavija-2122179944.html": {
+    "title": "В Молдавии более десяти населенных пунктов могут остаться без воды",
+    "ts": 1791133298
+  },
+  "tf:молдавии более десяти населенных пунктов": {
+    "title": "В Молдавии более десяти населенных пунктов могут остаться без воды",
+    "ts": 1791133298
+  },
+  "fp:da7386f827be18dc7205056c7c13c5d1": {
+    "title": "Маск готовит революцию в космической отрасли",
+    "ts": 1791133858
+  },
+  "https://ria.ru/20261004/mask-2122181074.html": {
+    "title": "Маск заявил о переименовании SpaceXAI",
+    "ts": 1791133858
+  },
+  "tf:маск заявил переименовании spacexai": {
+    "title": "Маск заявил о переименовании SpaceXAI",
+    "ts": 1791133858
+  },
+  "fp:f588639faa5aaddbc352ed40002d0c1e": {
+    "title": "Последний трепет звезды российской гимнастики",
+    "ts": 1791134488
+  },
+  "https://tass.ru/sport/28180731": {
+    "title": "Чемпионка России по художественной гимнастике Попова завершила карьеру",
+    "ts": 1791134488
+  },
+  "tf:чемпионка россии художественной гимнастике попова": {
+    "title": "Чемпионка России по художественной гимнастике Попова завершила карьеру",
+    "ts": 1791134488
+  },
+  "fp:9e325e2bf1937a74c01a3576df64bb2b": {
+    "title": "Роналду возвращается? Переговоры о прощальном матче за сборную",
+    "ts": 1791135253
+  },
+  "https://www.rbc.ru/sport/03/10/2026/6ac0d7399a79475401a55a33": {
+    "title": "L'Equipe узнала про переговоры о прощальном матче Роналду за сборную",
+    "ts": 1791135253
+  },
+  "tf:lequipe узнала про переговоры прощальном": {
+    "title": "L'Equipe узнала про переговоры о прощальном матче Роналду за сборную",
+    "ts": 1791135253
+  },
+  "fp:3eca75bf1a932e2e3c8c307166c39278": {
+    "title": "Кофеин в жизни: как утренний чашечка меняет настроение",
+    "ts": 1791136482
+  },
+  "fp:69a5f094d07d5752eda305db54c375ed": {
+    "title": "Паштет из голубого сыра и орехов — новый тренд в закусках",
+    "ts": 1791138686
+  },
+  "https://www.gastronom.ru/recipe/6573/pashtet-iz-golubogo-syra-i-orehov": {
+    "title": "Паштет из голубого сыра и орехов, пошаговый рецепт с фото на 197 ккал",
+    "ts": 1791138686
+  },
+  "tf:паштет голубого сыра орехов пошаговый": {
+    "title": "Паштет из голубого сыра и орехов, пошаговый рецепт с фото на 197 ккал",
+    "ts": 1791138687
+  },
+  "fp:5c68c0eb264edab692a5ca8831ce89d3": {
+    "title": "Новая MMO в мире RuneScape — что ждёт нас?",
+    "ts": 1791139521
+  },
+  "https://dtf.ru/games/5334368-jagex-anonsirovala-novuyu-mmo-vselennoi-runescape": {
+    "title": "Jagex работает над следующей MMO во вселенной RuneScape",
+    "ts": 1791139521
+  },
+  "tf:jagex работает над следующей mmo": {
+    "title": "Jagex работает над следующей MMO во вселенной RuneScape",
+    "ts": 1791139521
+  },
+  "fp:34f9af3da417bd923f01225172a7877e": {
+    "title": "Стамбул — город, где прошлое и будущее переплетаются",
+    "ts": 1791140050
+  },
+  "fp:8007b8dadaa6922cba642dbbf8ca9252": {
+    "title": "Гибридная машина — новый тренд для российской семьи",
+    "ts": 1791145779
+  },
+  "https://auto.mail.ru/article/131777-ekspert-obyasnil-kakoj-tip-avtomobilya-vyigodnee-rossijskoj-seme": {
+    "title": "Эксперт объяснил, какой тип автомобиля выгоднее российской семье",
+    "ts": 1791145779
+  },
+  "tf:эксперт объяснил какой тип автомобиля": {
+    "title": "Эксперт объяснил, какой тип автомобиля выгоднее российской семье",
+    "ts": 1791145779
+  },
+  "fp:e8f43f63e0d4a181638d9d8cb0393f47": {
+    "title": "Netflix дарит нам новую реальность",
+    "ts": 1791146489
+  },
+  "fp:5cf779f36681f2b668255966ec5af0dd": {
+    "title": "ОАЭ запускают зонд к астероидам — как это изменит мир?",
+    "ts": 1791148070
+  },
+  "https://www.ixbt.com/news/2026/10/04/440215-zond-oae-dlia-missii-k-semi-asteroidam-gotov-k-zapusku.html": {
+    "title": "Зонд ОАЭ для миссии к семи астероидам готов к запуску",
+    "ts": 1791148070
+  },
+  "tf:зонд оаэ для миссии семи": {
+    "title": "Зонд ОАЭ для миссии к семи астероидам готов к запуску",
+    "ts": 1791148070
+  },
+  "fp:623d95b124e6b62246c1ae1713123204": {
+    "title": "Эта история шокировала мир в 2001 году",
+    "ts": 1791150286
+  },
+  "https://www.woman.ru/real-life/eto-nasha-malenkaya-taina-istoriya-loren-kavano-kotoruyu-roditeli-shest-let-derzhali-v-shkafu-id5719131": {
+    "title": "«Это наша маленькая тайна»: история Лорен Кавано, которую родители шесть лет держали в шкафу",
+    "ts": 1791150286
+  },
+  "tf:это наша маленькая тайна история": {
+    "title": "«Это наша маленькая тайна»: история Лорен Кавано, которую родители шесть лет держали в шкафу",
+    "ts": 1791150286
+  },
+  "fp:f4c1dc968d4d302761e0ae96e45fb0af": {
+    "title": "Какие подарки выбрать учителю-мужчине?",
+    "ts": 1791152127
+  },
+  "https://ria.ru/20261005/pedagogi-2122202872.html": {
+    "title": "Эксперт рассказала, что подарить мужчине-педагогу на День учителя",
+    "ts": 1791152127
+  },
+  "tf:эксперт рассказала что подарить мужчинепедагогу": {
+    "title": "Эксперт рассказала, что подарить мужчине-педагогу на День учителя",
+    "ts": 1791152127
+  },
+  "fp:3ed419168f61ac0a60170f64611f2979": {
+    "title": "Кино под угрозой? Законы и архивы фильмов",
+    "ts": 1791153144
+  },
+  "https://habr.com/ru/companies/ruvds/articles/1088212": {
+    "title": "[Перевод] Записки из подполья незаконного архивирования фильмов",
+    "ts": 1791153144
+  },
+  "tf:перевод записки подполья незаконного архивирования": {
+    "title": "[Перевод] Записки из подполья незаконного архивирования фильмов",
+    "ts": 1791153144
   }
 }
