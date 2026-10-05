@@ -1,160 +1,4 @@
 {
-  "https://tass.ru/obschestvo/28113829": {
-    "title": "В РУДН поступили стипендиаты президентского фонда Танзании",
-    "ts": 1789473604
-  },
-  "https://nplus1.ru/news/2026/09/15/chimp-vs-virtual-animals": {
-    "title": "Шимпанзе наделили агентностью виртуальных животных",
-    "ts": 1789482237
-  },
-  "https://lenta.ru/news/2026/09/15/v-rossii-vyskazalis-o-neobhodimosti-udarit-oreshnikom-po-zavodam-es": {
-    "title": "В России высказались о необходимости ударить «Орешником» по заводам ЕС",
-    "ts": 1789482808
-  },
-  "https://naked-science.ru/article/paleontology/diplodok-amerika": {
-    "title": "Остатки диплодока впервые нашли за пределами Северной Америки",
-    "ts": 1789485565
-  },
-  "https://auto.mail.ru/article/111035-vrach-rasskazal-kak-borotsya-s-ozhireniem-za-rulem-avtomobilya": {
-    "title": "Врач рассказал, как бороться с ожирением за рулем автомобиля",
-    "ts": 1789486107
-  },
-  "https://www.kolesa.ru/news/sluxi-pervoi-amerikanskoi-modeliu-lr-defender-budet-pikap-na-platforme-stellantis": {
-    "title": "Слухи: первой американской моделью LR Defender будет пикап на платформе Stellantis",
-    "ts": 1789487746
-  },
-  "https://dtf.ru/hard/5300707-control-resonant-na-ps5-pro-tri-graficheskikh-rezhima": {
-    "title": "Control Resonant на PS5 Pro поддерживает три графических режима — один из них с 40 fps, 2160p и рейтрейсингом",
-    "ts": 1789491420
-  },
-  "https://www.gastronom.ru/recipe/66769/kabachki-kak-ananasy-na-zimu": {
-    "title": "Кабачки «как ананасы» на зиму, пошаговый рецепт с фото на 182 ккал",
-    "ts": 1789493410
-  },
-  "https://tass.ru/mezhdunarodnaya-panorama/28114973": {
-    "title": "В ООН заявили, что находятся на связи с США по поднятым РФ вопросам о выдаче виз",
-    "ts": 1789494185
-  },
-  "https://www.woman.ru/stars/kazhdaya-zhenshina-tvorec-darya-khramcova-o-seriale-kukla-pigmaliona-i-vozmozhnosti-nachat-vse-s-chistogo-lista-id7293578": {
-    "title": "«Каждая женщина творец»: Дарья Храмцова о сериале «Кукла Пигмалиона» и возможности начать все с чистого листа",
-    "ts": 1789498116
-  },
-  "https://iz.ru/2167651/2026-09-15/v-moskve-moshcham-spiridona-trimifuntskogo-poklonilis-bolee-35-tys-palomnikov": {
-    "title": "В Москве мощам Спиридона Тримифунтского поклонились более 35 тыс. паломников",
-    "ts": 1789499337
-  },
-  "https://nplus1.ru/news/2026/09/15/diorite-mace-head": {
-    "title": "В кургане древнего кавказца нашли навершие булавы",
-    "ts": 1789500361
-  },
-  "https://iz.ru/2167670/2026-09-15/mertc-otmenil-poezdku-v-niu-jork-dlia-uchastiia-v-sessii-ga-oon": {
-    "title": "Мерц отменил поездку в Нью-Йорк для участия в сессии ГА ООН",
-    "ts": 1789501568
-  },
-  "https://iz.ru/2167654/2026-09-15/eks-deputat-bundestaga-rasskazal-o-nepriiazni-nemtcev-k-mertcu": {
-    "title": "Экс-депутат бундестага рассказал о неприязни немцев к Мерцу",
-    "ts": 1789502222
-  },
-  "https://vc.ru/marketplace/3140068-minimalnaya-tsena-i-ogranicheniya-dlya-marketpleysov": {
-    "title": "Минимальная цена, ниже которой маркетплейс не сможет продать товар, и ограничение срока перечисления денег продавцам: Минэкономразвития подготовило второй пакет мер регулирования платформенной экономи",
-    "ts": 1789503880
-  },
-  "https://nplus1.ru/news/2026/09/15/nmda-autoantibodies-tbi": {
-    "title": "Аутоантитела к NMDA-рецептору снизили тяжесть депрессии после черепно-мозговой травмы",
-    "ts": 1789507237
-  },
-  "https://www.gastronom.ru/recipe/66259/domashnij-myatnyj-zefir": {
-    "title": "Домашний мятный зефир, пошаговый рецепт с фото на 377 ккал",
-    "ts": 1789508197
-  },
-  "https://lenta.ru/news/2026/09/16/vozlyublennyy-pornomodeli-rasskazal-o-vliyanii-ee-orgiy-na-ih-otnosheniya": {
-    "title": "Возлюбленный порномодели рассказал о влиянии ее оргий на их отношения",
-    "ts": 1789509119
-  },
-  "https://tass.ru/mezhdunarodnaya-panorama/28115195": {
-    "title": "ЦТАК: Сеул добивается от Вашингтона доступа к обогащенному урану",
-    "ts": 1789510004
-  },
-  "https://dtf.ru/gameindustry/5301109-wardogs-vozglavila-chart-steam": {
-    "title": "Wardogs стала лидером недельного чарта Steam среди платных игр и устройств",
-    "ts": 1789510589
-  },
-  "https://www.ixbt.com/news/2026/09/15/436048-ssa-otmeniaiut-ograniceniia-na-vybrosy-elektrostancii-v-moment-buma-ii-i-data-centrov.html": {
-    "title": "США отменяют ограничения на выбросы электростанций на фоне бума ИИ и дата-центров",
-    "ts": 1789511607
-  },
-  "https://ria.ru/20260916/boy-2117916556.html": {
-    "title": "Абубакар Нурмагомедов в ноябре проведет первый бой с 2023 года",
-    "ts": 1789512830
-  },
-  "https://vc.ru/services/3140028-dostup-k-internetu-na-festivale-molodezhi-v-ekaterinburge": {
-    "title": "На фестивале молодёжи в Екатеринбурге иностранным участникам предоставили доступ к интернету без ограничений, для россиян была предусмотрена отдельная сеть — СМИ",
-    "ts": 1789513612
-  },
-  "https://naked-science.ru/article/column/diagnostika-gipo-i-gipertireoza": {
-    "title": "Ученые из России предложили математический метод для более точной диагностики гипо- и гипертиреоза",
-    "ts": 1789514521
-  },
-  "https://www.woman.ru/stars/zavist-muzha-i-rebenok-ot-zhenatogo-lovelasa-pochemu-devushka-bez-adresa-tak-i-ostalas-odinokoi-id680133": {
-    "title": "Зависть мужа и ребенок от женатого ловеласа: почему «Девушка без адреса» так и осталась одинокой?",
-    "ts": 1789515155
-  },
-  "https://nplus1.ru/news/2026/09/16/environmental-exposure-suicide": {
-    "title": "Загрязнение воздуха связали с повышенным риском самоубийств в метаанализе",
-    "ts": 1789518379
-  },
-  "https://www.gastronom.ru/news/mozhno-li-est-oblepihu-s-kostochkami-mnenie-dietologa-1029855": {
-    "title": "Можно ли есть облепиху с косточками — мнение диетолога — читать на Gastronom.ru",
-    "ts": 1789519242
-  },
-  "https://auto.mail.ru/article/60054-snimayu-shlyapu-sovetskie-kabrioletyi": {
-    "title": "Снимаю шляпу: история советских кабриолетов",
-    "ts": 1789521283
-  },
-  "https://dtf.ru/cinema/5300808-hbo-obyavila-akterov-dlya-roley-arthura-uizli-i-plaksy-mirtl": {
-    "title": "HBO объявила исполнителей ролей Артура Уизли, Плаксы Миртл и Колина Криви в сериале «Гарри Поттер»",
-    "ts": 1789523783
-  },
-  "https://www.woman.ru/stars/kak-kitai-otmenil-svoyu-samuyu-krasivuyu-aktrisu-a-ona-chut-ne-pokhoronila-kinoindustriyu-id681033": {
-    "title": "Как Китай «отменил» свою самую красивую актрису, а она чуть не похоронила киноиндустрию",
-    "ts": 1789524483
-  },
-  "https://tass.ru/mezhdunarodnaya-panorama/28115485": {
-    "title": "Мерц заявил о готовности \"нажать на тормоза\" из-за объема госзаимствований",
-    "ts": 1789527066
-  },
-  "https://auto.mail.ru/article/130748-belyij-medved-zastryal-v-probke-na-festival-najdite-ego-sredi-yarkih-mashin": {
-    "title": "Белый медведь застрял в пробке на фестиваль: найдите его среди ярких машин",
-    "ts": 1789528046
-  },
-  "https://povar.ru/recipes/zelenye_shi_so_shavelem-11333.html": {
-    "title": "Зеленые щи со щавелем",
-    "ts": 1789529310
-  },
-  "https://lenta.ru/news/2026/09/16/vizit-premiera-kanady-v-evropu-obernulsya-skandalom-iz-za-fon-der-lyayen": {
-    "title": "Визит премьера Канады в Европу обернулся скандалом из-за фон дер Ляйен",
-    "ts": 1789529973
-  },
-  "https://sochiautoparts.ru/post/114118": {
-    "title": "🚗 Volvo Расширяет Электрическую Дистанцию для XC60 и XC90Сегодня, 16 сентября 2...",
-    "ts": 1789532479
-  },
-  "https://www.ixbt.com/news/2026/09/16/436105-predstavlen-pervyi-v-mire-3d-centr-obrabotki-dannyx-ot-huawei.html": {
-    "title": "Представлен первый в мире 3D-центр обработки данных от Huawei",
-    "ts": 1789535454
-  },
-  "https://auto.mail.ru/article/130747-spros-na-mashinyi-s-probegom-v-moskve-vzletel-na-40-nazvan-samyij-likvidnyij-avtomobil": {
-    "title": "Спрос на машины с пробегом в Москве взлетел на 40%: назван самый ликвидный автомобиль",
-    "ts": 1789537529
-  },
-  "https://tass.ru/sport/28115999": {
-    "title": "Карякин: отсутствие россиян бьет по престижу Всемирной шахматной олимпиады",
-    "ts": 1789539976
-  },
-  "https://dtf.ru/hard/5301748-sony-anonsirovala-novye-besprovodnye-naushniki-playstation-pulse-i-edge": {
-    "title": "Sony анонсировала две модели беспроводных наушников PlayStation Pulse",
-    "ts": 1789540914
-  },
   "https://ria.ru/20260916/evropa-2117943899.html": {
     "title": "Медведчук рассказал, к чему может привести ограниченность европейской элиты",
     "ts": 1789542490
@@ -3998,5 +3842,161 @@
   "tf:суфле тыквы пошаговый рецепт фото": {
     "title": "Суфле из тыквы, пошаговый рецепт с фото на 150 ккал",
     "ts": 1791194615
+  },
+  "fp:42e22b108560b8204d8924e395459281": {
+    "title": "Пряный картофель по-деревенски в аэрогриле — новый тренд домашней еды",
+    "ts": 1791196452
+  },
+  "https://www.gastronom.ru/recipe/66685/pryanyj-kartofel-po-derevenski-v-aerogrile": {
+    "title": "Пряный картофель по-деревенски в аэрогриле, пошаговый рецепт с фото на 258 ккал",
+    "ts": 1791196452
+  },
+  "tf:пряный картофель подеревенски аэрогриле пошаговый": {
+    "title": "Пряный картофель по-деревенски в аэрогриле, пошаговый рецепт с фото на 258 ккал",
+    "ts": 1791196452
+  },
+  "fp:a0ff5e4b553a36e081a3e69502d86026": {
+    "title": "Ведьмак 3» снова взял верх — как это влияет на игроков?",
+    "ts": 1791196985
+  },
+  "https://dtf.ru/games/5335998-vedmak-3-obnovil-rekord-po-onlaynu-v-steam": {
+    "title": "«Ведьмак 3» вновь обновил рекорд по онлайну в Steam — спустя сутки после предыдущего пика",
+    "ts": 1791196985
+  },
+  "tf:ведьмак вновь обновил рекорд онлайну": {
+    "title": "«Ведьмак 3» вновь обновил рекорд по онлайну в Steam — спустя сутки после предыдущего пика",
+    "ts": 1791196985
+  },
+  "fp:6997b9279d2b5037c8e3e6d0fd691af3": {
+    "title": "Скидки до 70% на осенние модели — не упустите!",
+    "ts": 1791198407
+  },
+  "fp:61a4ed23dcfa51059c21983b923a0417": {
+    "title": "Баклажаны в рагу — универсальный рецепт для любых вкусов",
+    "ts": 1791199010
+  },
+  "https://www.gastronom.ru/text/ovoshnoe-ragu-s-baklazhanami-10-receptov-s-kartoshkoj-kabachkami-fasolyu-i-ne-tolko-1030022": {
+    "title": "Овощное рагу с баклажанами: 10 рецептов — с картошкой, кабачками, фасолью и не только — читать на Gastronom.ru",
+    "ts": 1791199010
+  },
+  "tf:овощное рагу баклажанами рецептов картошкой": {
+    "title": "Овощное рагу с баклажанами: 10 рецептов — с картошкой, кабачками, фасолью и не только — читать на Gastronom.ru",
+    "ts": 1791199010
+  },
+  "fp:7a69ef032865b7f4db39da40180e292b": {
+    "title": "Ленивый драник — идеальный перекус для лентяев",
+    "ts": 1791199741
+  },
+  "https://www.gastronom.ru/recipe/66501/lenivyj-dranik": {
+    "title": "Ленивый драник, пошаговый рецепт с фото на 314 ккал",
+    "ts": 1791199741
+  },
+  "tf:ленивый драник пошаговый рецепт фото": {
+    "title": "Ленивый драник, пошаговый рецепт с фото на 314 ккал",
+    "ts": 1791199741
+  },
+  "fp:531ddb35738c74cdddac7b523819bf48": {
+    "title": "От России до Кении: самые необычные автоновинки со всего мира",
+    "ts": 1791201884
+  },
+  "https://auto.mail.ru/article/131824-ot-rossii-do-kenii-samyie-neobyichnyie-avtonovinki-so-vsego-mira": {
+    "title": "От России до Кении: самые необычные автоновинки со всего мира",
+    "ts": 1791201884
+  },
+  "tf:россии кении самые необычные автоновинки": {
+    "title": "От России до Кении: самые необычные автоновинки со всего мира",
+    "ts": 1791201884
+  },
+  "fp:c41c1c56f6df9414a1655fe7153eb80a": {
+    "title": "Пентхаус Орбакайте в Майами: миллионы на ремонт затопленной квартиры",
+    "ts": 1791202754
+  },
+  "https://www.woman.ru/stars/orbakaite-potratit-milliony-na-remont-zatoplennogo-pentkhausa-kak-vyglyadyat-apartamenty-pevicy-v-maiami-id7147406": {
+    "title": "Орбакайте потратит миллионы на ремонт затопленного пентхауса: как выглядят апартаменты певицы в Майами",
+    "ts": 1791202754
+  },
+  "tf:орбакайте потратит миллионы ремонт затопленного": {
+    "title": "Орбакайте потратит миллионы на ремонт затопленного пентхауса: как выглядят апартаменты певицы в Майами",
+    "ts": 1791202754
+  },
+  "fp:c5695a215799c8c271f4fa344ad93d64": {
+    "title": "Скидки до 70% на осенние модели — не упусти шанс!",
+    "ts": 1791203390
+  },
+  "fp:e530cc8c52c78573370bdfc0612479b1": {
+    "title": "Нобелевская премия в области оптогенетики — новый этап в медицине",
+    "ts": 1791203797
+  },
+  "https://naked-science.ru/article/medicine/nobelevka-po-meditsine-26": {
+    "title": "Нобелевскую премию по физиологии или медицине 2026 года присудили за открытия в области оптогенетики",
+    "ts": 1791203797
+  },
+  "tf:нобелевскую премию физиологии или медицине": {
+    "title": "Нобелевскую премию по физиологии или медицине 2026 года присудили за открытия в области оптогенетики",
+    "ts": 1791203797
+  },
+  "fp:83698d8e25cfffe24229519486e2938f": {
+    "title": "Ubisoft готовится к перевороту в индустрии игр с ИИ",
+    "ts": 1791205395
+  },
+  "https://dtf.ru/gameindustry/5336482-ubisoft-vnedryaet-ii-v-igry-cherez-proekt-motherbrain": {
+    "title": "СМИ: Ubisoft собирается внедрять ИИ в как можно большее число игр",
+    "ts": 1791205395
+  },
+  "tf:сми ubisoft собирается внедрять как": {
+    "title": "СМИ: Ubisoft собирается внедрять ИИ в как можно большее число игр",
+    "ts": 1791205395
+  },
+  "fp:9537daa6dda3b6d4ff5ca79cb2e74808": {
+    "title": "🚗 1986 Dodge Omni Shelby GLH-T за $9,500 — Стоит ли это «Дьявола»?",
+    "ts": 1791206272
+  },
+  "https://sochiautoparts.ru/post/118795": {
+    "title": "🚗 1986 Dodge Omni Shelby GLH-T за $9,500 — Стоит ли это «Дьявола»?",
+    "ts": 1791206272
+  },
+  "tf:1986 dodge omni shelby glht": {
+    "title": "🚗 1986 Dodge Omni Shelby GLH-T за $9,500 — Стоит ли это «Дьявола»?",
+    "ts": 1791206272
+  },
+  "fp:ef7af95f66e530af0b2db5755d8d7e5e": {
+    "title": "Светлая память блогеру Татулу Петросяну",
+    "ts": 1791208002
+  },
+  "https://www.woman.ru/real-life/v-kemerovo-pokhoronili-blogera-tatula-petrosyana-id7338853": {
+    "title": "В Кемерово похоронили блогера Татула Петросяна",
+    "ts": 1791208002
+  },
+  "tf:кемерово похоронили блогера татула петросяна": {
+    "title": "В Кемерово похоронили блогера Татула Петросяна",
+    "ts": 1791208002
+  },
+  "fp:ed672fd4eb14e7d3f7fb3c1a5fe4e6d0": {
+    "title": "Скидки до 70% на осенние модели — не пропустите!",
+    "ts": 1791209728
+  },
+  "fp:c4ec41c15c1bb92104eff2cb5df47b48": {
+    "title": "🚗 Стоимость ремонта авто взлетела выше инфляции",
+    "ts": 1791213231
+  },
+  "https://sochiautoparts.ru/post/118813": {
+    "title": "🚗 Стоимость ремонта авто взлетела выше инфляции",
+    "ts": 1791213231
+  },
+  "tf:стоимость ремонта авто взлетела выше": {
+    "title": "🚗 Стоимость ремонта авто взлетела выше инфляции",
+    "ts": 1791213231
+  },
+  "fp:68f4601c72fba49d5541736ca28fd690": {
+    "title": "За 11 дней до освобождения произошло жестокое нападение",
+    "ts": 1791214490
+  },
+  "https://lenta.ru/news/2026/10/05/za-11-dney-do-osvobozhdeniya-osuzhdennyy-napal-na-sotrudnikov-kolonii": {
+    "title": "За 11 дней до освобождения осужденный напал на сотрудников российский колонии",
+    "ts": 1791214490
+  },
+  "tf:дней освобождения осужденный напал сотрудников": {
+    "title": "За 11 дней до освобождения осужденный напал на сотрудников российский колонии",
+    "ts": 1791214490
   }
 }
