@@ -1,176 +1,4 @@
 {
-  "https://www.ixbt.com/news/2026/09/26/438358-rossiiskii-printer-naucili-pecatat-elektroniku-i-iskat-brak-priamo-na-xodu.html": {
-    "title": "Российский принтер научили печатать электронику и искать брак прямо на ходу",
-    "ts": 1790383410
-  },
-  "https://www.gastronom.ru/recipe/2628/zakuska-iz-baklazhanov-pomidorov-i-syra-na-hrustyashem-bagete": {
-    "title": "Закуска из баклажанов, помидоров и сыра на хрустящем багете, пошаговый рецепт с фото на 472 ккал",
-    "ts": 1790386142
-  },
-  "https://www.ixbt.com/news/2026/09/26/438356-predstavlena-subaru-impreza-2027-minus-2000-dollarov-plius-28-ls.html": {
-    "title": "Представлена Subaru Impreza 2027: минус 2000 долларов, плюс 28 л.с.",
-    "ts": 1790389577
-  },
-  "https://www.rbc.ru/politics/24/09/2026/6ab560d458c520ce01365163": {
-    "title": "Папа Лев XIV предупредил о превращении ООН в «фарс»",
-    "ts": 1790399749
-  },
-  "https://naked-science.ru/article/biology/dva-faktora-u-koshek": {
-    "title": "Два фактора вдвое повысили риск смерти у кошек",
-    "ts": 1790406032
-  },
-  "https://dtf.ru/games/5162197-007-first-light-predpretenduet-na-pyat-nagrad-golden-joystick-awards": {
-    "title": "007 First Light стала одним из лидеров по номинациям на Golden Joystick Awards 2026 — игра претендует на пять наград",
-    "ts": 1790410292
-  },
-  "https://www.euro-football.ru/article/31/1006318961_manchester_siti_pochti_proigral_delo_veka__samoe_strashnoe_tolko_nachinaetsya": {
-    "title": "«Манчестер Сити» почти проиграл дело века — самое страшное только начинается",
-    "ts": 1790412368
-  },
-  "https://www.woman.ru/news/vanya-dmitrienko-ne-stal-terpet-edkie-shutki-vorobeva-v-shou-golos-deti-id7320825": {
-    "title": "Ваня Дмитриенко не стал терпеть едкие шутки Воробьева в шоу «Голос. Дети»",
-    "ts": 1790415250
-  },
-  "https://www.woman.ru/stars/starshaya-doch-samoilovoi-i-dzhigana-ariela-bolshe-vsego-krovi-bylo-u-mamy-v-garderobnoi-id7321177": {
-    "title": "Старшая дочь Самойловой и Джигана Ариела: «Больше всего крови было у мамы в гардеробной»",
-    "ts": 1790431059
-  },
-  "https://dtf.ru/gameindustry/5320809-satiya-nadella-o-budushchem-xbox": {
-    "title": "Сатья Наделла о реструктуризации Xbox: «Мы должны создать новую бизнес-модель, чтобы масштабироваться»",
-    "ts": 1790431899
-  },
-  "https://habr.com/ru/companies/beget/articles/1084562": {
-    "title": "Как выращивают грибы. И почему белый гриб пока вырастить не удается",
-    "ts": 1790434334
-  },
-  "https://sochiautoparts.ru/post/116587": {
-    "title": "🚗 Ямаха сражается за лидерство в надежности двигателей",
-    "ts": 1790437361
-  },
-  "https://www.rbc.ru/sport/25/09/2026/6ab657e19a79473b6b6124f4": {
-    "title": "«Спартак» отыгрался с 0:2, но все равно уступил «Автомобилисту» в КХЛ",
-    "ts": 1790440700
-  },
-  "https://nplus1.ru/news/2026/09/25/two-ur-cuneiform": {
-    "title": "Итальянцы прочитали клинописный текст на запечатанных в конверты табличках",
-    "ts": 1790441875
-  },
-  "https://www.woman.ru/news/kharlamov-vpervye-rasskazal-pro-rody-kovalchuk-pridetsya-otkachivat-otca-id7321237": {
-    "title": "Харламов впервые рассказал про роды Ковальчук: «Придется откачивать отца»",
-    "ts": 1790443048
-  },
-  "https://www.ixbt.com/news/2026/09/26/438484-soversenno-novyi-honda-cr-v-na-podxode-krossover-s-novoi-gibridnoi-sistemoi-zapustiat-v-proizvodstvo-v-nacale-2027-goda.html": {
-    "title": "Совершенно новый Honda CR-V на подходе — кроссовер с новой гибридной системой запустят в производство в начале 2027 года",
-    "ts": 1790444597
-  },
-  "https://vc.ru/hr/3159698-startup-dumbco-rukopisy-soprovoditelnye-pisma": {
-    "title": "Стартап, который продаёт «тупофоны», устал от однотипных сопроводительных ИИ-писем от кандидатов и попросил писать их от руки",
-    "ts": 1790452250
-  },
-  "https://vc.ru/services/3158891-prilozhenie-spotluma-v-app-store-s-funkciyami-t-banka": {
-    "title": "В App Store появилось приложение Spotluma с функциями «Т-Банка»",
-    "ts": 1790453764
-  },
-  "https://www.kolesa.ru/news/subaru-impreza-novogo-modelnogo-goda-bazovaia-versiia-vernetsia-s-topovym-motorom": {
-    "title": "Subaru Impreza нового модельного года: базовая версия вернется с топовым мотором",
-    "ts": 1790456081
-  },
-  "https://sochiautoparts.ru/post/116641": {
-    "title": "🚗 Дешёвая круизер-мотоцикл — больше, чем кажется",
-    "ts": 1790459741
-  },
-  "https://auto.mail.ru/article/131376-v-mvd-rf-predlozhili-sokratit-srok-prebyivaniya-dlya-dalnobojschikov-iz-sng": {
-    "title": "В МВД РФ предложили сократить срок пребывания для дальнобойщиков из СНГ",
-    "ts": 1790461343
-  },
-  "https://nplus1.ru/news/2026/09/25/nuclear-clocks": {
-    "title": "Физики нашли способ заставить ядерные часы конкурировать с атомными",
-    "ts": 1790464493
-  },
-  "https://tass.ru/obschestvo/28155463": {
-    "title": "В России с 2027 года упростят оформление некоторых региональных пособий",
-    "ts": 1790466991
-  },
-  "https://sochiautoparts.ru/post/116653": {
-    "title": "🚗 Что происходит с гибридом через 10 лет эксплуатации",
-    "ts": 1790469572
-  },
-  "https://iz.ru/2174239/2026-09-27/dolgozhiteliam-moskvy-vyplatiat-bolee-37-tys-rublei-k-stoletiiu": {
-    "title": "Долгожителям Москвы выплатят более 37 тыс. рублей к столетию",
-    "ts": 1790472763
-  },
-  "https://www.euro-football.ru/article/809930/1006319625_v_sbornoy_argentinyi_vyibrali_novogo_kapitana": {
-    "title": "В сборной Аргентины выбрали нового капитана",
-    "ts": 1790478150
-  },
-  "https://www.woman.ru/stars/nadezhde-mikhalkovoi-40-let-neravnyi-brak-s-rezhisserom-poslerodovaya-depressiya-i-nezhelanie-znakomitsya-v-internete-id682299": {
-    "title": "Надежде Михалковой — 40 лет: неравный брак с режиссером, послеродовая депрессия и нежелание знакомиться в Интернете",
-    "ts": 1790480858
-  },
-  "https://dtf.ru/cinema/5320601-top-100-serialov-xxi-veka": {
-    "title": "500 участников киноиндустрии составили список 100 лучших сериалов XXI века — «Во все тяжкие» заняли первое место",
-    "ts": 1790485370
-  },
-  "https://www.woman.ru/real-life/pri-zagadochnykh-obstoyatelstvakh-smerti-oligarkhov-i-ikh-zhen-kotorye-potryasli-ves-mir-id5852143": {
-    "title": "При загадочных обстоятельствах: смерти олигархов и их жен, которые потрясли весь мир",
-    "ts": 1790487300
-  },
-  "https://www.euro-football.ru/article/32/1006319671_gruzinskiy_napadayuschiy_mojet_pereyti_v_borussiyu": {
-    "title": "Грузинский нападающий может перейти в «Боруссию»",
-    "ts": 1790491682
-  },
-  "https://povar.ru/recipes/yablochnye_blinchiki-1078.html": {
-    "title": "Яблочные блинчики",
-    "ts": 1790496696
-  },
-  "https://tass.ru/sport/28156021": {
-    "title": "Клеберсон считает, что Сафонов может выиграть приз лучшему вратарю года",
-    "ts": 1790504855
-  },
-  "https://www.woman.ru/real-life/draznili-lesnymi-brodyagami-kak-zhivet-semya-otshelnikov-antipinykh-vyshedshikh-k-lyudyam-posle-20-let-zhizni-v-taige-id904510": {
-    "title": "«Дразнили лесными бродягами»: как живет семья отшельников Антипиных, вышедших к людям после 20 лет жизни в тайге",
-    "ts": 1790510033
-  },
-  "https://www.woman.ru/stars/mikhailov-zagovoril-o-rasstavanii-s-zhenoi-vot-chto-skazal-artist-id7321969": {
-    "title": "Михайлов заговорил о расставании с женой — вот что сказал артист",
-    "ts": 1790511422
-  },
-  "https://dtf.ru/gameindustry/5322009-byudzhet-physint-v-xbox-znachitelno-nizhe": {
-    "title": "СМИ: бюджет Physint в Xbox значительно меньше 400 миллионов долларов",
-    "ts": 1790515264
-  },
-  "https://naked-science.ru/article/astronomy/sformirovalsya-solntsem-i-yupiterom": {
-    "title": "Происхождение астероида Бенну связали с молодым Юпитером",
-    "ts": 1790521910
-  },
-  "https://www.kolesa.ru/article/toliattinskie-motory-evoliuciia-pod-kapotom-zigulei-samary-i-desiatki": {
-    "title": "Тольяттинские моторы: эволюция под капотом Жигулей, Самары и «десятки»",
-    "ts": 1790533604
-  },
-  "https://auto.mail.ru/article/131406-gde-nelzya-primenyat-wd-40-vyi-udivites": {
-    "title": "Где нельзя применять WD-40? Вы удивитесь!",
-    "ts": 1790538857
-  },
-  "https://sochiautoparts.ru/post/116931": {
-    "title": "🚗 Седем брендов в кризисе: кто спасёт автосферу?",
-    "ts": 1790540806
-  },
-  "https://ria.ru/20260928/netanjahu-2120598039.html": {
-    "title": "Нетаньяху готовит иск в МУС против Эрдогана, пишут СМИ",
-    "ts": 1790545678
-  },
-  "https://www.rbc.ru/politics/28/09/2026/6ab995bd9a79470253610bde": {
-    "title": "Bloomberg узнал, что налоговики КНР начали «охоту» на сверхбогатых",
-    "ts": 1790550558
-  },
-  "https://www.euro-football.ru/article/1003876948/1006320139_tranjirit_no_i_sozdaet_-_de_la_fuente_vstupilsya_za_ferrana_torresa": {
-    "title": "«Транжирит, но и создаёт» - де ла Фуэнте вступился за Феррана Торреса",
-    "ts": 1790551734
-  },
-  "https://tass.ru/obschestvo/28156773": {
-    "title": "Защита Кедышевой просит суд в США освободить ее из-под стражи",
-    "ts": 1790556389
-  },
   "https://auto.mail.ru/article/131407-mashina-naprokat-v-sssr-skolko-eto-stoilo": {
     "title": "Машина напрокат в СССР — сколько это стоило",
     "ts": 1790563973
@@ -3998,5 +3826,177 @@
   "fp:26bcd1e8c4c783310b61e322f46dea50": {
     "title": "Ночное шопинг-бум: скидки до 70%!",
     "ts": 1791330935
+  },
+  "fp:513872bb1108a8eb38baf9bc4491ffab": {
+    "title": "Водителям с магнитными рамками повезло",
+    "ts": 1791332370
+  },
+  "https://auto.mail.ru/article/131937-verhovnyij-sud-otmenil-lishenie-prav-za-magnitnyie-ramki-na-gosnomere": {
+    "title": "Верховный суд отменил лишение прав за магнитные рамки на госномере",
+    "ts": 1791332370
+  },
+  "tf:верховный суд отменил лишение прав": {
+    "title": "Верховный суд отменил лишение прав за магнитные рамки на госномере",
+    "ts": 1791332370
+  },
+  "fp:6a4bd3c6342de64f6c3b9902aa70fdc2": {
+    "title": "Хурма на зиму — не просто варенье",
+    "ts": 1791332938
+  },
+  "https://www.gastronom.ru/recipe/66517/varene-iz-hurmy": {
+    "title": "Варенье из хурмы, пошаговый рецепт с фото на 3671 ккал",
+    "ts": 1791332938
+  },
+  "tf:варенье хурмы пошаговый рецепт фото": {
+    "title": "Варенье из хурмы, пошаговый рецепт с фото на 3671 ккал",
+    "ts": 1791332938
+  },
+  "fp:abc36f2dbec96f99a61ac318968cb627": {
+    "title": "Банки теперь могут хранить криптовалюты — что это значит?",
+    "ts": 1791333906
+  },
+  "https://vc.ru/crypto/3179432-cb-vydal-litsenzii-vtb-sberu-i-t-tekhnologiyam": {
+    "title": "ЦБ выдал «Сберу», ВТБ и «Т-Технологиям» лицензии цифровых депозитариев для работы с криптовалютами",
+    "ts": 1791333906
+  },
+  "tf:выдал сберу втб ттехнологиям лицензии": {
+    "title": "ЦБ выдал «Сберу», ВТБ и «Т-Технологиям» лицензии цифровых депозитариев для работы с криптовалютами",
+    "ts": 1791333906
+  },
+  "fp:07a682a313c5053f1a6b083785544e2f": {
+    "title": "Xbox готовится к новому поколению — что это значит для нас?",
+    "ts": 1791335838
+  },
+  "https://dtf.ru/hard/5338945-asha-sharma-o-budushchem-xbox": {
+    "title": "СМИ: Аша Шарма заявила сотрудникам Xbox, что компания «перейдёт к семейству устройств в десятом консольном поколении»",
+    "ts": 1791335838
+  },
+  "tf:сми аша шарма заявила сотрудникам": {
+    "title": "СМИ: Аша Шарма заявила сотрудникам Xbox, что компания «перейдёт к семейству устройств в десятом консольном поколении»",
+    "ts": 1791335838
+  },
+  "fp:a47db9e4e1af15cd48ebbbdff346a4f0": {
+    "title": "Зимний витаминный дар из ранеток и слив",
+    "ts": 1791340573
+  },
+  "https://povar.ru/recipes/kompot_iz_ranetok_i_sliv-97235.html": {
+    "title": "Компот из ранеток и слив",
+    "ts": 1791340573
+  },
+  "tf:компот ранеток слив": {
+    "title": "Компот из ранеток и слив",
+    "ts": 1791340573
+  },
+  "fp:0a7dd9d84bdcfee1caef0dee0b56afc0": {
+    "title": "Ace Combat 8 взлетела на вершину Steam",
+    "ts": 1791342334
+  },
+  "https://dtf.ru/gameindustry/5339091-ace-combat-8-wings-of-theve-pervoe-mesto-v-chartah-steam": {
+    "title": "Ace Combat 8: Wings of Theve заняла первую строчку в чарте Steam среди платных игр",
+    "ts": 1791342334
+  },
+  "tf:ace combat wings theve заняла": {
+    "title": "Ace Combat 8: Wings of Theve заняла первую строчку в чарте Steam среди платных игр",
+    "ts": 1791342334
+  },
+  "fp:183c931a8d117b837765b370f2ac797c": {
+    "title": "Сонные тренды в соцсетях: что сейчас популярно?",
+    "ts": 1791343428
+  },
+  "fp:d7ea0ae14fda5cb9e11e0317d72baaaa": {
+    "title": "Закладчица из Питера с крупной партией наркотиков задержана в Бурятии",
+    "ts": 1791345825
+  },
+  "https://ria.ru/20261007/burjatija-2122801337.html": {
+    "title": "Закладчицу из Питера задержали в Бурятии с крупной партией наркотиков",
+    "ts": 1791345825
+  },
+  "tf:закладчицу питера задержали бурятии крупной": {
+    "title": "Закладчицу из Питера задержали в Бурятии с крупной партией наркотиков",
+    "ts": 1791345825
+  },
+  "fp:88fc9ccbd3089ba79f159000717b76ba": {
+    "title": "Новый способ казни в США вызвал шок",
+    "ts": 1791346868
+  },
+  "https://ria.ru/20261007/ssha-2122802696.html": {
+    "title": "В США рассказали о применении расстрела как метода казни осужденных",
+    "ts": 1791346868
+  },
+  "tf:сша рассказали применении расстрела как": {
+    "title": "В США рассказали о применении расстрела как метода казни осужденных",
+    "ts": 1791346868
+  },
+  "fp:bd0252d47adb40cd9f055a145da3827d": {
+    "title": "SpaceX отменила запуск на последний момент",
+    "ts": 1791347288
+  },
+  "https://www.ixbt.com/news/2026/10/07/440695-raketa-falcon-9-ne-vzletela-spacex-otmenila-missiiu-v-poslednii-moment.html": {
+    "title": "Ракета Falcon 9 не взлетела: SpaceX отменила миссию в последний момент",
+    "ts": 1791347288
+  },
+  "tf:ракета falcon взлетела spacex отменила": {
+    "title": "Ракета Falcon 9 не взлетела: SpaceX отменила миссию в последний момент",
+    "ts": 1791347288
+  },
+  "fp:f00d3496fa9433d5f07d89c89f6dd7be": {
+    "title": "Почему пшеничное пиво пахнет бананом и как отличить вайсбир от витбира?",
+    "ts": 1791347881
+  },
+  "https://www.gastronom.ru/text/gid-po-pshenichnomu-pivu-pochemu-ono-pahnet-bananom-i-chem-otlichayutsya-vajsbir-vitbir-i-drugie-stili-1029999": {
+    "title": "Гид по пшеничному пиву: почему оно пахнет бананом и чем отличаются вайсбир, витбир и другие стили — читать на Gastronom.ru",
+    "ts": 1791347881
+  },
+  "tf:гид пшеничному пиву почему оно": {
+    "title": "Гид по пшеничному пиву: почему оно пахнет бананом и чем отличаются вайсбир, витбир и другие стили — читать на Gastronom.ru",
+    "ts": 1791347881
+  },
+  "fp:1292d49a0d45d0c60c8c6a48706938f9": {
+    "title": "Крокеты из трески — новый фуршетный хит!",
+    "ts": 1791349009
+  },
+  "https://www.gastronom.ru/recipe/650/hrustyashie-krokety-iz-treski": {
+    "title": "Хрустящие крокеты из трески, пошаговый рецепт с фото на 1317 ккал",
+    "ts": 1791349009
+  },
+  "tf:хрустящие крокеты трески пошаговый рецепт": {
+    "title": "Хрустящие крокеты из трески, пошаговый рецепт с фото на 1317 ккал",
+    "ts": 1791349009
+  },
+  "fp:c08b515b41e1e5fe4ff6f31840929816": {
+    "title": "Растительные анчоусы — новый тренд в кухне?",
+    "ts": 1791349687
+  },
+  "https://povar.ru/recipes/anchousy_iz_baklajanov-97247.html": {
+    "title": "Анчоусы из баклажанов",
+    "ts": 1791349687
+  },
+  "tf:анчоусы баклажанов": {
+    "title": "Анчоусы из баклажанов",
+    "ts": 1791349687
+  },
+  "fp:da14b6a199e39da5d2e2fe5402f3ec61": {
+    "title": "Сказки народов России теперь в VK — что это значит?",
+    "ts": 1791351531
+  },
+  "https://lenta.ru/news/2026/10/06/skazki": {
+    "title": "Сказки народов России появились в VK",
+    "ts": 1791351531
+  },
+  "tf:сказки народов россии появились": {
+    "title": "Сказки народов России появились в VK",
+    "ts": 1791351531
+  },
+  "fp:4e2206a27414afea3d991d1fa9334d66": {
+    "title": "Необычная крыша для Renault Twingo — как это повлияет на рынок?",
+    "ts": 1791352247
+  },
+  "https://www.kolesa.ru/news/novyi-renault-twingo-obrel-neobycnuiu-panoramnuiu-krysu-v-forme-kartofeliny": {
+    "title": "Новый Renault Twingo обрёл необычную панорамную крышу в форме картофелины",
+    "ts": 1791352247
+  },
+  "tf:новый renault twingo обрёл необычную": {
+    "title": "Новый Renault Twingo обрёл необычную панорамную крышу в форме картофелины",
+    "ts": 1791352247
   }
 }
